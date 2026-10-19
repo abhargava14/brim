@@ -237,6 +237,19 @@ final class AccountUsageTests: XCTestCase {
         XCTAssertNotNil(usage.windows[0].resetsAt)
     }
 
+    func testGitHubCLIAccounts() {
+        let json = #"""
+        {"hosts":{"github.com":[
+          {"login":"second-user","active":false,"state":"success","host":"github.com"},
+          {"login":"main-user","active":true,"state":"success","host":"github.com"},
+          {"login":"expired-user","active":false,"state":"error","host":"github.com"}]}}
+        """#
+        let accounts = GitHubAccount.parseStatus(Data(json.utf8))
+        XCTAssertEqual(accounts.map(\.login), ["main-user", "second-user"])
+        XCTAssertEqual(accounts.map(\.isActive), [true, false])
+        XCTAssertEqual(GitHubAccount.parseStatus(Data("not json".utf8)), [])
+    }
+
     func testCopilotFreeWithQuotaSnapshots() throws {
         // A real Copilot Free response (2026-10-19), trimmed and with nothing identifying in it.
         let json = #"""

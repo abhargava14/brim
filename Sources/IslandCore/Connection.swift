@@ -34,6 +34,8 @@ public struct Connection: Codable, Equatable, Identifiable, Sendable {
         public static let resetPath = "resetPath"
         /// Label for the quota bar, e.g. "Credits" (custom endpoints).
         public static let label = "label"
+        /// Which of the GitHub CLI's accounts to read the token from; empty means the active one (Copilot).
+        public static let githubLogin = "githubLogin"
     }
 
     public init(id: String = UUID().uuidString, kind: ToolKind, name: String? = nil, planID: String = Plans.automatic,

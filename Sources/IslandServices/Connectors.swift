@@ -30,7 +30,13 @@ public enum AccountFetcher {
     public static func fetch(_ connection: Connection) async throws -> AccountUsage {
         let saved = Keychain.read(connection.id)
         switch connection.kind {
-        case .copilot: return try await copilot(token: saved ?? GitHubCLI.token())
+        case .copilot:
+            let login = connection.option(Connection.Option.githubLogin)
+            guard let token = saved ?? GitHubCLI.token(user: login) else {
+                throw ConnectorError.needsToken(login.isEmpty ? tokenHelp(for: .copilot)
+                    : "The GitHub CLI isn't signed in to \(login) anymore. Sign in with GitHub again, or paste a token.")
+            }
+            return try await copilot(token: token)
         case .cursor:
             var usage = try await cursor(token: saved ?? VSCodeState.value(app: "Cursor", key: "cursorAuth/accessToken"))
             // Only Cursor's own sign-in says whose it is; a pasted token may be another account.
@@ -47,7 +53,7 @@ public enum AccountFetcher {
     /// What to tell people when no credential was found.
     public static func tokenHelp(for kind: ToolKind) -> String {
         switch kind {
-        case .copilot: return "Sign in with the GitHub CLI (gh auth login), or paste a GitHub token."
+        case .copilot: return "Sign in with GitHub, or paste a GitHub token."
         case .cursor: return "Sign in to the Cursor app on this Mac, or paste your Cursor session token."
         case .windsurf: return "Sign in to the Windsurf app on this Mac, or paste your Windsurf API key."
         case .openrouter: return "Paste an OpenRouter API key (openrouter.ai/keys)."
@@ -63,13 +69,12 @@ public enum AccountFetcher {
 
     // MARK: Services
 
-    private static func copilot(token: String?) async throws -> AccountUsage {
-        guard let token else { throw ConnectorError.needsToken(tokenHelp(for: .copilot)) }
+    private static func copilot(token: String) async throws -> AccountUsage {
         var request = URLRequest(url: URL(string: "https://api.github.com/copilot_internal/user")!)
         request.setValue("token \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue("vscode/1.99.0", forHTTPHeaderField: "Editor-Version")
-        let data = try await send(request, service: "GitHub", help: "GitHub didn't accept the token. Run gh auth login again, or paste a new token.")
+        let data = try await send(request, service: "GitHub", help: "GitHub didn't accept the sign-in. Sign in with GitHub again, or paste a new token.")
         guard let usage = CopilotUsage.parse(data) else { throw ConnectorError.unexpectedResponse("GitHub Copilot") }
         return usage
     }
@@ -168,27 +173,120 @@ public enum AccountFetcher {
 
 // MARK: - Local credentials
 
-/// Reads the GitHub CLI's token, if the CLI is installed and signed in.
+/// Reads the GitHub CLI's sign-ins, if the CLI is installed. `gh` can hold several github.com
+/// accounts; Brim reads any of them by login, so it never has to switch the active one.
 public enum GitHubCLI {
-    public static func token() -> String? {
-        let candidates = ["/opt/homebrew/bin/gh", "/usr/local/bin/gh", "/usr/bin/gh"]
-        guard let path = candidates.first(where: FileManager.default.isExecutableFile(atPath:)) else { return nil }
+    public static var isInstalled: Bool { executable != nil }
+
+    /// The token of `user`, or of the active account when `user` is nil or empty.
+    public static func token(user: String? = nil) -> String? {
+        var arguments = ["auth", "token", "--hostname", "github.com"]
+        if let user, !user.isEmpty { arguments += ["--user", user] }
+        guard let token = run(arguments)?.trimmingCharacters(in: .whitespacesAndNewlines) else { return nil }
+        return token.isEmpty ? nil : token
+    }
+
+    /// The github.com accounts `gh` is signed in to, active first.
+    public static func accounts() -> [GitHubAccount] {
+        guard let output = run(["auth", "status", "--hostname", "github.com", "--json", "hosts"]) else { return [] }
+        return GitHubAccount.parseStatus(Data(output.utf8))
+    }
+
+    private static var executable: String? {
+        ["/opt/homebrew/bin/gh", "/usr/local/bin/gh", "/usr/bin/gh"].first(where: FileManager.default.isExecutableFile(atPath:))
+    }
+
+    private static func run(_ arguments: [String]) -> String? {
+        guard let path = executable else { return nil }
         let process = Process()
         process.executableURL = URL(fileURLWithPath: path)
-        process.arguments = ["auth", "token"]
+        process.arguments = arguments
         let output = Pipe()
         process.standardOutput = output
         process.standardError = Pipe()
         do {
             try process.run()
-            process.waitUntilExit()
         } catch {
             return nil
         }
+        let data = output.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
         guard process.terminationStatus == 0 else { return nil }
-        let token = String(data: output.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        return token?.isEmpty == false ? token : nil
+        return String(data: data, encoding: .utf8)
+    }
+}
+
+/// Signs in to GitHub in the browser with OAuth's device flow: Brim shows a short code, the user
+/// enters it on github.com, and Brim receives a token for that account.
+public enum GitHubDeviceFlow {
+    /// The GitHub CLI's public OAuth app, so the sign-in matches what `gh auth login` grants.
+    static let clientID = "178c6fc778ccc68e1d6a"
+
+    public struct Code: Equatable, Sendable {
+        public var userCode: String
+        public var verificationURL: URL
+        var deviceCode: String
+        var interval: TimeInterval
+        var expiresAt: Date
+    }
+
+    public enum Failure: LocalizedError {
+        case expired, denied, unexpected
+        public var errorDescription: String? {
+            switch self {
+            case .expired: return "The code expired. Start again to get a new one."
+            case .denied: return "GitHub sign-in was cancelled."
+            case .unexpected: return "GitHub answered in a format Brim doesn't understand yet."
+            }
+        }
+    }
+
+    public static func start() async throws -> Code {
+        let root = try await post("https://github.com/login/device/code", ["client_id": clientID, "scope": "read:user"])
+        guard let deviceCode = root["device_code"] as? String, let userCode = root["user_code"] as? String,
+              let uri = (root["verification_uri"] as? String).flatMap(URL.init(string:))
+        else { throw Failure.unexpected }
+        let expiresIn = (root["expires_in"] as? NSNumber)?.doubleValue ?? 900
+        return Code(userCode: userCode, verificationURL: uri, deviceCode: deviceCode,
+                    interval: max(5, (root["interval"] as? NSNumber)?.doubleValue ?? 5), expiresAt: Date().addingTimeInterval(expiresIn))
+    }
+
+    /// Waits until the user approves the code on github.com and returns the token.
+    public static func token(for code: Code) async throws -> String {
+        var interval = code.interval
+        while Date() < code.expiresAt {
+            try await Task.sleep(nanoseconds: UInt64(interval * 1_000_000_000))
+            let root = try await post("https://github.com/login/oauth/access_token", [
+                "client_id": clientID, "device_code": code.deviceCode,
+                "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
+            ])
+            if let token = root["access_token"] as? String, !token.isEmpty { return token }
+            switch root["error"] as? String {
+            case "authorization_pending": continue
+            case "slow_down": interval += 5
+            case "expired_token": throw Failure.expired
+            case "access_denied": throw Failure.denied
+            default: throw Failure.unexpected
+            }
+        }
+        throw Failure.expired
+    }
+
+    private static func post(_ url: String, _ form: [String: String]) async throws -> [String: Any] {
+        var request = URLRequest(url: URL(string: url)!)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 20
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+        var allowed = CharacterSet.urlQueryAllowed
+        allowed.remove(charactersIn: "&=+:")
+        request.httpBody = form.map { "\($0.key)=\($0.value.addingPercentEncoding(withAllowedCharacters: allowed) ?? $0.value)" }
+            .joined(separator: "&").data(using: .utf8)
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard (response as? HTTPURLResponse)?.statusCode == 200,
+              let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+        else { throw Failure.unexpected }
+        return root
     }
 }
 
