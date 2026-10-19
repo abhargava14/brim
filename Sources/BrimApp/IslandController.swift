@@ -35,20 +35,20 @@ final class IslandState: ObservableObject {
     @Published var steppedAside = false
 
     /// Idle wing beside the notch. Kept tight so the island stays near the notch.
-    static let wingWidth: CGFloat = 60
-    static let emptyWingWidth: CGFloat = 28
+    static let wingWidth: CGFloat = 48
+    static let emptyWingWidth: CGFloat = 26
     /// Wings grow to this while an event (connected, near a limit, …) is showing.
-    static let eventWingWidth: CGFloat = 112
-    static let quietEventWingWidth: CGFloat = 88
+    static let eventWingWidth: CGFloat = 100
+    static let quietEventWingWidth: CGFloat = 80
     /// Below this, a wing shows only the glyph (avoids truncated "10…" numbers).
-    static let glyphOnlyWidth: CGFloat = 54
+    static let glyphOnlyWidth: CGFloat = 40
     /// At or above this, a wing can show glyph + number + suffix.
-    static let fullDensityWidth: CGFloat = 76
+    static let fullDensityWidth: CGFloat = 64
     /// Narrower than this next to the notch → fall back to below the menu bar.
     static let minimumNotchWing: CGFloat = 24
 
     var compactWidth: CGFloat { compactWidth(for: nil) }
-    var expandedWidth: CGFloat { isEmpty ? 300 : 370 }
+    var expandedWidth: CGFloat { isEmpty ? 300 : 360 }
 
     func idealWingWidth(for event: IslandEvent.Style?) -> CGFloat {
         switch event {

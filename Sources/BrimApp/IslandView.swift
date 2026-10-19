@@ -402,8 +402,8 @@ struct CompactView: View {
                 detailWing(pair.first)
             }
         }
-        .padding(.horizontal, 6)
-        .font(.system(size: 12.5, weight: .bold, design: .rounded))
+        .padding(.horizontal, 4)
+        .font(.system(size: 12, weight: .bold, design: .rounded))
         .monospacedDigit()
         .foregroundStyle(.white)
         .frame(maxHeight: .infinity)
@@ -411,6 +411,9 @@ struct CompactView: View {
             if pages > 1 { PageDots(count: pages, current: page).padding(.bottom, 4) }
         }
     }
+
+    /// Shared height so left and right wing glyphs + values sit on one centerline.
+    private static let wingLineHeight: CGFloat = 16
 
     private func mood(_ tool: ToolSnapshot) -> GlyphMood {
         if tool.statusMessage != nil && !tool.hasData { return .dim }
@@ -420,29 +423,37 @@ struct CompactView: View {
 
     private func wing(_ tool: ToolSnapshot?, alignment: HorizontalAlignment) -> some View {
         let density = wingDensity(alignment)
-        return HStack(spacing: 4) {
+        return HStack(alignment: .center, spacing: 3) {
             if let tool {
                 if alignment == .trailing { Spacer(minLength: 0) }
-                ToolGlyph(kind: tool.kind, mood: mood(tool), size: 13, playful: model.settings.playful, name: tool.name)
+                // No playful bounce in wings — attention's -3pt hop misaligned left/right.
+                ToolGlyph(kind: tool.kind, mood: mood(tool), size: 12, playful: false, name: tool.name)
+                    .frame(width: 14, height: Self.wingLineHeight, alignment: .center)
                 if density != .iconOnly {
                     RollingText(text: model.compactValue(for: tool))
                         .foregroundStyle(valueColor(tool))
                         .lineLimit(1)
-                        .minimumScaleFactor(0.75)
+                        .minimumScaleFactor(0.7)
+                        .frame(height: Self.wingLineHeight, alignment: .center)
                         .layoutPriority(1)
-                    if density == .full, let suffix = model.wingSuffix(for: tool) { Suffix(text: suffix) }
+                    if density == .full, let suffix = model.wingSuffix(for: tool) {
+                        Suffix(text: suffix)
+                            .frame(height: Self.wingLineHeight, alignment: .center)
+                    }
                 }
                 if alignment == .leading { Spacer(minLength: 0) }
             } else {
                 Image(systemName: "plus.circle")
                     .foregroundStyle(.secondary)
+                    .frame(height: Self.wingLineHeight)
                 if density != .iconOnly {
                     Text("Connect").foregroundStyle(.secondary)
+                        .frame(height: Self.wingLineHeight)
                 }
                 Spacer(minLength: 0)
             }
         }
-        .frame(maxWidth: wingWidth(alignment))
+        .frame(maxWidth: wingWidth(alignment), maxHeight: .infinity, alignment: .center)
     }
 
     private func wingDensity(_ alignment: HorizontalAlignment) -> WingDensity {
@@ -453,43 +464,46 @@ struct CompactView: View {
     private func wingWidth(_ alignment: HorizontalAlignment) -> CGFloat {
         guard state.hasNotch else { return .infinity }
         let wing = alignment == .leading ? state.leftWingWidth(for: nil) : state.rightWingWidth(for: nil)
-        // Keep nearly the full wing for glyph + number; only a small inset for the outer pad.
-        return max(0, wing - 4)
+        return max(0, wing - 2)
     }
 
     /// With a single tool, the right wing shows today's tokens (or, for account tools, the
     /// tightest window when the left wing doesn't already show it).
     private func detailWing(_ tool: ToolSnapshot?) -> some View {
         let density = wingDensity(.trailing)
-        return HStack(spacing: 4) {
+        return HStack(alignment: .center, spacing: 3) {
             Spacer(minLength: 0)
             if density == .iconOnly {
                 EmptyView()
             } else if let tool, tool.hasTokenData {
                 RollingText(text: Format.tokens(tool.today.total))
-                if density == .full { Suffix(text: "today") }
+                    .frame(height: Self.wingLineHeight, alignment: .center)
+                if density == .full { Suffix(text: "today").frame(height: Self.wingLineHeight) }
             } else if let tool, let window = tool.tightestWindow, model.compactValue(for: tool) != Format.percent(window.usedPercent) {
                 Text("\(window.label) \(Format.percent(window.usedPercent))")
                     .foregroundStyle(valueColor(tool))
-                if density == .full { Suffix(text: "used") }
+                    .frame(height: Self.wingLineHeight, alignment: .center)
+                if density == .full { Suffix(text: "used").frame(height: Self.wingLineHeight) }
             }
         }
         .lineLimit(1)
-        .frame(maxWidth: wingWidth(.trailing))
+        .frame(maxWidth: wingWidth(.trailing), maxHeight: .infinity, alignment: .center)
     }
 
     /// The odd last page of the carousel: today's total across every connection.
     private var totalWing: some View {
         let density = wingDensity(.trailing)
-        return HStack(spacing: 4) {
+        return HStack(alignment: .center, spacing: 3) {
             Spacer(minLength: 0)
             if density != .iconOnly {
-                RollingText(text: Format.tokens(model.snapshot.todayTokens)).foregroundStyle(.white.opacity(0.6))
-                if density == .full { Suffix(text: "today") }
+                RollingText(text: Format.tokens(model.snapshot.todayTokens))
+                    .foregroundStyle(.white.opacity(0.6))
+                    .frame(height: Self.wingLineHeight, alignment: .center)
+                if density == .full { Suffix(text: "today").frame(height: Self.wingLineHeight) }
             }
         }
         .lineLimit(1)
-        .frame(maxWidth: wingWidth(.trailing))
+        .frame(maxWidth: wingWidth(.trailing), maxHeight: .infinity, alignment: .center)
     }
 
     private func valueColor(_ tool: ToolSnapshot) -> Color {

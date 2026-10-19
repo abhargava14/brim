@@ -48,10 +48,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Menu bar
 
     private func setUpStatusItem() {
-        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        // Icon-only: never grow for a title / percentage beside the mark.
+        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         item.button?.image = Self.defaultImage
-        item.button?.imagePosition = .imageLeading
-        item.button?.font = .monospacedDigitSystemFont(ofSize: NSFont.systemFontSize - 1, weight: .medium)
+        item.button?.imagePosition = .imageOnly
+        item.button?.imageScaling = .scaleProportionallyDown
         statusItem = item
 
         model.$snapshot.combineLatest(settings.$showInMenuBar, settings.$compactMetric, settings.$placement)
@@ -79,18 +80,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func updateStatusItem() {
         guard let item = statusItem else { return }
-        // One glyph and one value, for the most urgent tool; the menu lists all of them.
-        let showValue = settings.showInMenuBar || settings.placement == .menuBarOnly
-        let top = model.featuredTools.first(where: \.hasData)
+        // Always the Brim mark only — no tool glyph, %, or connection count in the bar.
+        // Usage lives in the tooltip and the island / menu.
+        item.button?.title = ""
+        item.button?.imagePosition = .imageOnly
         if settings.enabledConnections.isEmpty {
             item.button?.image = NSImage(systemSymbolName: "square.dashed", accessibilityDescription: "Brim: nothing connected")
-            item.button?.title = ""
+            item.button?.toolTip = "Brim — nothing connected"
         } else {
-            item.button?.image = showValue ? top.flatMap { BrimAssets.menuImage(for: $0.kind, size: 15) } ?? Self.defaultImage : Self.defaultImage
-            item.button?.title = showValue ? top.map { " " + model.compactValue(for: $0) } ?? "" : ""
-            item.button?.toolTip = top.flatMap { tool in tool.tightestWindow.map { "\(tool.name): \($0.label) \(Format.used($0))" } }
+            item.button?.image = Self.defaultImage
+            item.button?.toolTip = statusItemTooltip()
         }
         item.menu = settings.enabledConnections.isEmpty ? buildEmptyMenu() : buildMenu()
+    }
+
+    /// One-line summary for hover; keeps the menu bar itself icon-only.
+    private func statusItemTooltip() -> String {
+        let tools = model.featuredTools.filter(\.hasData)
+        guard !tools.isEmpty else { return "Brim" }
+        let parts = tools.prefix(4).map { tool -> String in
+            if let window = tool.tightestWindow {
+                return "\(tool.name) \(Format.used(window))"
+            }
+            return "\(tool.name) \(Format.tokens(tool.today.total))"
+        }
+        return parts.joined(separator: " · ")
     }
 
     private func buildEmptyMenu() -> NSMenu {
