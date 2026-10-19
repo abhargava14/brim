@@ -1,12 +1,14 @@
 import AppKit
 import Combine
 import IslandCore
+import IslandServices
 import SwiftUI
 
 @main
 @MainActor
-enum AIIslandMain {
+enum BrimMain {
     static func main() {
+        BrimMigration.run()
         let app = NSApplication.shared
         let delegate = AppDelegate()
         app.delegate = delegate
@@ -46,7 +48,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func setUpStatusItem() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        item.button?.image = NSImage(systemSymbolName: "sparkle", accessibilityDescription: "AI Island")
+        item.button?.image = NSImage(systemSymbolName: "sparkle", accessibilityDescription: "Brim")
         item.button?.imagePosition = .imageLeading
         item.button?.font = .monospacedDigitSystemFont(ofSize: NSFont.systemFontSize - 1, weight: .medium)
         statusItem = item
@@ -72,7 +74,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let showValue = settings.showInMenuBar || settings.placement == .menuBarOnly
         let top = model.featuredTools.first(where: \.hasData)
         let symbol = showValue ? top?.kind.symbol ?? "sparkle" : "sparkle"
-        item.button?.image = NSImage(systemSymbolName: symbol, accessibilityDescription: "AI Island")
+        item.button?.image = NSImage(systemSymbolName: symbol, accessibilityDescription: "Brim")
         item.button?.title = showValue ? top.map { " " + model.compactValue(for: $0) } ?? "" : ""
         item.menu = buildMenu()
     }
@@ -113,7 +115,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         menu.addItem(withTitle: "Connections & Settings…", action: #selector(openSettings), keyEquivalent: ",").target = self
         menu.addItem(.separator())
-        menu.addItem(withTitle: "Quit AI Island", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        menu.addItem(withTitle: "Quit Brim", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         return menu
     }
 
@@ -137,7 +139,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Settings window
 
     @objc func openSettings() {
-        setup.show(.settings, title: "AI Island", size: NSSize(width: 600, height: 680)) {
+        setup.show(.settings, title: "Brim", size: NSSize(width: 600, height: 680)) {
             SettingsView(model: model, settings: settings)
         }
     }

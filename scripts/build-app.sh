@@ -1,23 +1,25 @@
 #!/bin/bash
-# Builds "AI Island.app" (with the ai-island command inside it) from the Swift package.
-#   ./scripts/build-app.sh            -> build/AI Island.app
-#   ./scripts/build-app.sh --install  -> also copies it to /Applications, links `ai-island` and launches the app
+# Builds "Brim.app" (with the brim command inside it) from the Swift package.
+#   ./scripts/build-app.sh            -> build/Brim.app
+#   ./scripts/build-app.sh --install  -> also copies it to /Applications, links `brim` and launches the app
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
-APP_NAME="AI Island"
-BUNDLE_ID="com.aiisland.app"
+APP_NAME="Brim"
+BUNDLE_ID="com.brim.app"
 VERSION="${VERSION:-0.2.0}"
 APP="build/$APP_NAME.app"
 
-swift build -c release --product AIIsland
-swift build -c release --product ai-island
+swift build -c release --product BrimApp
+swift build -c release --product brim
 BIN_DIR="$(swift build -c release --show-bin-path)"
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Helpers" "$APP/Contents/Resources"
-cp "$BIN_DIR/AIIsland" "$APP/Contents/MacOS/AIIsland"
-cp "$BIN_DIR/ai-island" "$APP/Contents/Helpers/ai-island"
+cp "$BIN_DIR/BrimApp" "$APP/Contents/MacOS/Brim"
+cp "$BIN_DIR/brim" "$APP/Contents/Helpers/brim"
+# The old command name, kept while people move over.
+ln -sf brim "$APP/Contents/Helpers/ai-island"
 
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -27,7 +29,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>CFBundleName</key><string>$APP_NAME</string>
     <key>CFBundleDisplayName</key><string>$APP_NAME</string>
     <key>CFBundleIdentifier</key><string>$BUNDLE_ID</string>
-    <key>CFBundleExecutable</key><string>AIIsland</string>
+    <key>CFBundleExecutable</key><string>Brim</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleShortVersionString</key><string>$VERSION</string>
     <key>CFBundleVersion</key><string>$VERSION</string>
@@ -40,21 +42,25 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 PLIST
 
 # Ad-hoc signatures so macOS runs them locally (and Launch at Login works).
-codesign --force --sign - "$APP/Contents/Helpers/ai-island"
+codesign --force --sign - "$APP/Contents/Helpers/brim"
 codesign --force --sign - "$APP"
 echo "Built $APP"
 
 if [[ "${1:-}" == "--install" ]]; then
+    pkill -x Brim 2>/dev/null || true
     pkill -x AIIsland 2>/dev/null || true
-    rm -rf "/Applications/$APP_NAME.app"
+    rm -rf "/Applications/$APP_NAME.app" "/Applications/AI Island.app"
     cp -R "$APP" /Applications/
-    CLI="/Applications/$APP_NAME.app/Contents/Helpers/ai-island"
+    CLI="/Applications/$APP_NAME.app/Contents/Helpers/brim"
     if [[ -w /usr/local/bin ]]; then
-        ln -sf "$CLI" /usr/local/bin/ai-island && echo "Linked /usr/local/bin/ai-island"
+        BIN=/usr/local/bin
     else
-        mkdir -p "$HOME/.local/bin"
-        ln -sf "$CLI" "$HOME/.local/bin/ai-island" && echo "Linked ~/.local/bin/ai-island (make sure it's on your PATH)"
+        BIN="$HOME/.local/bin"
+        mkdir -p "$BIN"
     fi
+    ln -sf "$CLI" "$BIN/brim"
+    ln -sf "$CLI" "$BIN/ai-island"
+    echo "Linked $BIN/brim (and the old name, ai-island). Make sure $BIN is on your PATH."
     open "/Applications/$APP_NAME.app"
     echo "Installed to /Applications/$APP_NAME.app"
 fi

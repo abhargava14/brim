@@ -1,13 +1,16 @@
-# AI Island
+# Brim
 
 **See your AI coding usage at a glance, right in your Mac's notch.**
 
-AI Island is a small, free, open-source Mac app. It lives around the notch at the top of your
+Brim is a small, free, open-source Mac app. It lives around the notch at the top of your
 screen and shows how much you've used your AI coding tools today, and how close you are to each
 plan's limits. Hover over it for the details.
 
+Brim used to be called AI Island. Updating moves your connections, saved tokens, settings and
+the Claude Code status line over on first launch, and the old `ai-island` command still works.
+
 <!-- Screenshot: add docs/assets/hero.png (exported from the Claude Design file), then uncomment:
-<p align="center"><img src="docs/assets/hero.png" alt="AI Island around the MacBook notch, expanded to show Claude Code and GitHub Copilot usage" width="560"></p>
+<p align="center"><img src="docs/assets/hero.png" alt="Brim around the MacBook notch, expanded to show Claude Code and GitHub Copilot usage" width="560"></p>
 -->
 
 ```
@@ -46,7 +49,7 @@ plan's limits. Hover over it for the details.
 ## Requirements
 
 - A Mac running **macOS 13 Ventura or later**. Apple silicon or Intel.
-- **Apple's developer tools**, because AI Island is built on your Mac from source. If you don't
+- **Apple's developer tools**, because Brim is built on your Mac from source. If you don't
   have them, open Terminal and run:
 
   ```bash
@@ -65,30 +68,30 @@ Pick **one** of these.
 Open **Terminal** and paste:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/OWNER/ai-island/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/OWNER/brim/main/install.sh | bash
 ```
 
-It downloads AI Island, builds it (about a minute the first time), puts **AI Island** in your
-Applications folder, adds the `ai-island` terminal command, and starts the app.
+It downloads Brim, builds it (about a minute the first time), puts **Brim** in your
+Applications folder, adds the `brim` terminal command, and starts the app.
 
 ### Option 2: From a download or a clone
 
 ```bash
-git clone https://github.com/OWNER/ai-island.git
-cd ai-island
+git clone https://github.com/OWNER/brim.git
+cd brim
 ./scripts/build-app.sh --install
 ```
 
 ### Option 3: Homebrew
 
 ```bash
-brew install --HEAD OWNER/tap/ai-island
+brew install --HEAD OWNER/tap/brim
 ```
 
 ### First launch
 
-AI Island isn't signed with an Apple developer certificate yet. If macOS says it can't be opened:
-open **Applications**, right-click **AI Island**, choose **Open**, then **Open** again. You only
+Brim isn't signed with an Apple developer certificate yet. If macOS says it can't be opened:
+open **Applications**, right-click **Brim**, choose **Open**, then **Open** again. You only
 need to do this once.
 
 You'll know it's running when you see the ✳ icon in your menu bar and a black shape around the
@@ -96,7 +99,7 @@ notch.
 
 ## Connect your first tool
 
-On first launch, AI Island adds **Claude Code** and **Codex**. If you use either, you'll see your
+On first launch, Brim adds **Claude Code** and **Codex**. If you use either, you'll see your
 usage within a few seconds. To add more, use whichever way you prefer. Both change the same
 list, so you can mix them.
 
@@ -112,13 +115,13 @@ list, so you can mix them.
 ### In the terminal
 
 ```bash
-ai-island add claude          # Claude Code
-ai-island add codex           # Codex CLI
-ai-island add copilot         # GitHub Copilot
-ai-island add cursor          # Cursor
-ai-island add openrouter      # OpenRouter (asks for your API key)
+brim add claude          # Claude Code
+brim add codex           # Codex CLI
+brim add copilot         # GitHub Copilot
+brim add cursor          # Cursor
+brim add openrouter      # OpenRouter (asks for your API key)
 
-ai-island status              # see your usage
+brim status              # see your usage
 ```
 
 Each `add` checks the connection straight away and tells you whether it worked, and what to do if
@@ -127,7 +130,7 @@ it didn't.
 **Two accounts of the same tool?** Add it twice and give each a name:
 
 ```bash
-ai-island add claude --name "Claude · Work" --path ~/work/.claude/projects
+brim add claude --name "Claude · Work" --path ~/work/.claude/projects
 ```
 
 ## Using the island
@@ -158,8 +161,8 @@ when an app is full screen.
 
 | Tool | What you need | What you'll see |
 |---|---|---|
-| **Claude Code** | Nothing. AI Island reads its local logs. | Tokens, sessions, 5-hour and weekly limits* |
-| **Codex CLI** | Nothing. AI Island reads its local logs. | Tokens, sessions, 5-hour and weekly limits |
+| **Claude Code** | Nothing. Brim reads its local logs. | Tokens, sessions, 5-hour and weekly limits* |
+| **Codex CLI** | Nothing. Brim reads its local logs. | Tokens, sessions, 5-hour and weekly limits |
 | **GitHub Copilot** ⚠︎ | The [GitHub CLI](https://cli.github.com) signed in (`gh auth login`), or a GitHub token | Your plan and premium requests used, e.g. 212 / 300 |
 | **Cursor** ⚠︎ | The Cursor app signed in on this Mac | Your plan and included usage % |
 | **Windsurf** ⚠︎ | The Windsurf app signed in on this Mac | Your plan and credits used % |
@@ -167,18 +170,18 @@ when an app is full screen.
 | **Log folder** | A folder of Claude Code- or Codex-style `.jsonl` logs | Tokens and sessions |
 | **Usage URL** | Any web address that returns your usage as JSON | Your usage as a % of your limit |
 
-\* Claude Code only shares plan limits with one extra step. Run `ai-island claude-limits connect`,
+\* Claude Code only shares plan limits with one extra step. Run `brim claude-limits connect`,
 or use **Settings → Plan usage → Connect**. It adds a tiny status-line script to Claude Code and
 keeps any status line you already have.
 
-⚠︎ **Experimental.** Copilot, Cursor and Windsurf don't offer a public way to read usage, so AI
-Island uses the same private connection their own apps use. If one of them changes it, that
+⚠︎ **Experimental.** Copilot, Cursor and Windsurf don't offer a public way to read usage, so
+Brim uses the same private connection their own apps use. If one of them changes it, that
 connection shows a message and everything else keeps working.
 
 <details>
 <summary><b>Connecting a Usage URL (for any other tool)</b></summary>
 
-If a service shows your usage at a URL that returns JSON, AI Island can read it. Tell it where the
+If a service shows your usage at a URL that returns JSON, Brim can read it. Tell it where the
 numbers are with "dot paths":
 
 ```json
@@ -186,7 +189,7 @@ numbers are with "dot paths":
 ```
 
 ```bash
-ai-island add custom --name "Acme AI" \
+brim add custom --name "Acme AI" \
   --url https://api.acme.dev/v1/usage \
   --used data.used --limit data.limit --plan-path data.plan \
   --token-stdin                     # then paste the token and press Enter
@@ -199,7 +202,7 @@ The token is sent as `Authorization: Bearer <token>` by default. Change it with
 ## Plans and limits
 
 Every connection has a plan, such as Claude **Max 5×**, Copilot **Pro+** or Cursor **Ultra**.
-Choose it in Settings or with `ai-island plan <name> <plan>`, or leave it on **Automatic**.
+Choose it in Settings or with `brim plan <name> <plan>`, or leave it on **Automatic**.
 
 The plan decides what the island shows first:
 
@@ -207,24 +210,24 @@ The plan decides what the island shows first:
   Windsurf): how much of the limit you've used, as a %.
 - **Pay-as-you-go API keys:** tokens used today.
 
-Limits and percentages always come from the tool itself. AI Island never guesses them.
+Limits and percentages always come from the tool itself. Brim never guesses them.
 
 ## Command reference
 
 | Command | What it does |
 |---|---|
-| `ai-island status` | Usage for everything connected. Add `--json` for scripts. |
-| `ai-island list` | Every connection, and whether it's on or off |
-| `ai-island kinds` | Tools you can add, and their plan names |
-| `ai-island add <tool> [options]` | Add and connect a tool |
-| `ai-island connect <name>` / `--all` | Turn a connection back on, or all of them |
-| `ai-island disconnect <name>` / `--all` | Turn a connection off (keeps its settings) |
-| `ai-island remove <name>` | Delete a connection and its saved token |
-| `ai-island set <name> [options]` | Change a connection's name, folder, URL… |
-| `ai-island plan <name> <plan>` | Set a connection's plan (`auto` to go back) |
-| `ai-island claude-limits connect` | Share Claude Code's 5-hour and weekly limits |
-| `ai-island open` | Open the app |
-| `ai-island help` | All options, with examples |
+| `brim status` | Usage for everything connected. Add `--json` for scripts. |
+| `brim list` | Every connection, and whether it's on or off |
+| `brim kinds` | Tools you can add, and their plan names |
+| `brim add <tool> [options]` | Add and connect a tool |
+| `brim connect <name>` / `--all` | Turn a connection back on, or all of them |
+| `brim disconnect <name>` / `--all` | Turn a connection off (keeps its settings) |
+| `brim remove <name>` | Delete a connection and its saved token |
+| `brim set <name> [options]` | Change a connection's name, folder, URL… |
+| `brim plan <name> <plan>` | Set a connection's plan (`auto` to go back) |
+| `brim claude-limits connect` | Share Claude Code's 5-hour and weekly limits |
+| `brim open` | Open the app |
+| `brim help` | All options, with examples |
 
 Common options: `--name`, `--plan`, `--path` (log folder), `--token-stdin` (paste a token
 safely).
@@ -232,22 +235,22 @@ safely).
 ## Privacy
 
 - **No account, no analytics, no tracking.**
-- **Your prompts, replies and code are never read.** For Claude Code and Codex, AI Island reads
+- **Your prompts, replies and code are never read.** For Claude Code and Codex, Brim reads
   only usage numbers from their logs: tokens, model, time, session and project folder name.
 - **Tokens are stored in your Mac's Keychain**, never in plain files.
 - **Network:** log-based tools never touch the network. Copilot, Cursor, Windsurf, OpenRouter and
   Usage URLs are contacted directly from your Mac, and only that tool's own service.
-- Your connection list lives in `~/Library/Application Support/AIIsland/connections.json`. It
+- Your connection list lives in `~/Library/Application Support/Brim/connections.json`. It
   holds no secrets.
 
 ## Troubleshooting
 
-**macOS says the app "can't be opened".** Right-click AI Island in Applications and choose
+**macOS says the app "can't be opened".** Right-click Brim in Applications and choose
 **Open**. See [First launch](#first-launch).
 
 **A tool says "No logs found yet".** Use that tool once, then wait a few seconds. If it keeps its
 logs somewhere unusual, set the folder: Settings → open the connection → **Choose…**, or
-`ai-island set <name> --path /path/to/logs`.
+`brim set <name> --path /path/to/logs`.
 
 **Copilot says GitHub didn't accept the token.** Run `gh auth login` again, or paste a new token
 in Settings.
@@ -255,28 +258,28 @@ in Settings.
 **Cursor or Windsurf won't connect.** Open that app and make sure you're signed in, then click
 **Check now**. These connections are experimental and may stop working when those apps update.
 
-**Claude's 5-hour and weekly limits don't show.** Run `ai-island claude-limits connect`. The
+**Claude's 5-hour and weekly limits don't show.** Run `brim claude-limits connect`. The
 numbers appear after Claude Code's next reply. They're only available on Claude subscriptions,
 not API keys.
 
-**`ai-island: command not found`.** Open Settings → **Terminal → Install**, or add
+**`brim: command not found`.** Open Settings → **Terminal → Install**, or add
 `~/.local/bin` to your PATH:
 `echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc`, then open a new terminal.
 
-**macOS asks whether AI Island can use a Keychain item.** That happens once if you saved a token
+**macOS asks whether Brim can use a Keychain item.** That happens once if you saved a token
 from the terminal. Choose **Always Allow**.
 
 ## Uninstall
 
 ```bash
-ai-island claude-limits disconnect           # if you connected Claude's limits
-osascript -e 'quit app "AI Island"'
-rm -rf "/Applications/AI Island.app"
-rm -f /usr/local/bin/ai-island ~/.local/bin/ai-island
-rm -rf ~/Library/Application\ Support/AIIsland ~/.ai-island
+brim claude-limits disconnect           # if you connected Claude's limits
+osascript -e 'quit app "Brim"'
+rm -rf "/Applications/Brim.app"
+rm -f /usr/local/bin/brim ~/.local/bin/brim
+rm -rf ~/Library/Application\ Support/BrimApp ~/.brim
 ```
 
-Saved tokens are in **Keychain Access** under `com.aiisland.app.connections`. Delete them there
+Saved tokens are in **Keychain Access** under `com.brim.app.connections`. Delete them there
 if you like.
 
 ## Contributing
@@ -285,8 +288,8 @@ Bug reports and pull requests are welcome. Adding a tool is the most useful cont
 
 ```bash
 swift test                    # run the tests (needs Xcode)
-swift run AIIsland            # run the app from source
-swift run ai-island status    # run the command from source
+swift run BrimApp            # run the app from source
+swift run brim status    # run the command from source
 ```
 
 How the code is organised:
@@ -295,8 +298,8 @@ How the code is organised:
 |---|---|
 | `Sources/IslandCore` | Log parsing, usage totals, connections, plans. Plain Swift, fully tested. |
 | `Sources/IslandServices` | Talking to Copilot, Cursor, Windsurf and OpenRouter; Keychain |
-| `Sources/AIIsland` | The Mac app: the island, menu bar and Settings |
-| `Sources/AIIslandCLI` | The `ai-island` command |
+| `Sources/BrimApp` | The Mac app: the island, menu bar and Settings |
+| `Sources/BrimCLI` | The `brim` command |
 
 **To add a tool:** add it to `ToolKind` and `Plans`, write a parser for its logs or its usage
 response (with a test using a sample response), and give it an icon and colour in

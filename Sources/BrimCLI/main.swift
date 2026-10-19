@@ -2,10 +2,14 @@ import Foundation
 import IslandCore
 import IslandServices
 
-// `ai-island`: connect AI tools and check usage from the terminal. It edits the same connections
+// `brim`: connect AI tools and check usage from the terminal. It edits the same connections
 // file as the app, so changes show up on the island within one refresh.
 
 let version = "0.2.0"
+BrimMigration.run()
+if URL(fileURLWithPath: CommandLine.arguments[0]).lastPathComponent == "ai-island" {
+    FileHandle.standardError.write(Data("ai-island is now called brim. The old name still works for now.\n".utf8))
+}
 let store = ConnectionStore()
 var file = store.load()
 var arguments = Array(CommandLine.arguments.dropFirst())
@@ -46,13 +50,13 @@ func flag(_ name: String) -> Bool {
 }
 
 func positional(_ index: Int, _ what: String) -> String {
-    guard arguments.count > index else { fail("missing \(what). Run `ai-island help`.") }
+    guard arguments.count > index else { fail("missing \(what). Run `brim help`.") }
     return arguments[index]
 }
 
 func find(_ query: String) -> Connection {
     guard let connection = file.find(query) else {
-        fail("no connection named \"\(query)\". Run `ai-island list` to see them.")
+        fail("no connection named \"\(query)\". Run `brim list` to see them.")
     }
     return connection
 }
@@ -99,7 +103,7 @@ func parseKind(_ text: String) -> ToolKind {
     if let kind = ToolKind(rawValue: key) ?? ToolKind.allCases.first(where: { $0.rawValue.lowercased() == key }) ?? aliases[key] {
         return kind
     }
-    fail("unknown tool \"\(text)\". Run `ai-island kinds` to see what you can connect.")
+    fail("unknown tool \"\(text)\". Run `brim kinds` to see what you can connect.")
 }
 
 /// Applies the kind-specific flags shared by `add` and `set`.
@@ -207,7 +211,7 @@ func bar(_ percent: Double, width: Int = 12) -> String {
 
 func printReports(_ reports: [ToolReport]) {
     if reports.isEmpty {
-        print("Nothing connected. Try: ai-island add claude")
+        print("Nothing connected. Try: brim add claude")
         return
     }
     let tokens = reports.compactMap(\.todayTokens).reduce(0, +)
@@ -234,25 +238,25 @@ func printReports(_ reports: [ToolReport]) {
 
 func printHelp() {
     print("""
-    \(bold("ai-island")) \(version) — AI usage in your Mac's notch
+    \(bold("brim")) \(version) — AI usage in your Mac's notch
 
     \(bold("USAGE"))
-      ai-island [status] [--json]          Usage of every connected tool
-      ai-island list                       All connections and whether they're connected
-      ai-island kinds                      Tools you can connect, with their plans
-      ai-island add <tool> [options]       Add and connect a tool (any number, any mix)
-      ai-island connect <name>|--all       Connect a saved connection again [--token T]
-      ai-island disconnect <name>|--all    Stop tracking (keeps settings and token)
-      ai-island remove <name>              Forget a connection and its token
-      ai-island set <name> [options]       Change a connection's options
-      ai-island plan <name> <plan>         Set the plan (or "auto")
-      ai-island claude-limits connect|disconnect|status
-                                           Share Claude's 5h / weekly limits with AI Island
-      ai-island open                       Open the AI Island app
+      brim [status] [--json]          Usage of every connected tool
+      brim list                       All connections and whether they're connected
+      brim kinds                      Tools you can connect, with their plans
+      brim add <tool> [options]       Add and connect a tool (any number, any mix)
+      brim connect <name>|--all       Connect a saved connection again [--token T]
+      brim disconnect <name>|--all    Stop tracking (keeps settings and token)
+      brim remove <name>              Forget a connection and its token
+      brim set <name> [options]       Change a connection's options
+      brim plan <name> <plan>         Set the plan (or "auto")
+      brim claude-limits connect|disconnect|status
+                                           Share Claude's 5h / weekly limits with Brim
+      brim open                       Open the Brim app
 
     \(bold("OPTIONS"))  (for add and set)
       --name N           Your label, e.g. "Claude · Work"
-      --plan P           A plan ID from `ai-island kinds`
+      --plan P           A plan ID from `brim kinds`
       --path DIR         Log folder (claude, codex, custom-logs)
       --format F         claude or codex (custom-logs)
       --url URL          Usage URL (custom)
@@ -261,12 +265,12 @@ func printHelp() {
       --token T | --token-stdin   Save a token in the Keychain (prompted if needed)
 
     \(bold("EXAMPLES"))
-      ai-island add claude
-      ai-island add claude --name "Claude · Work" --path ~/work/.claude/projects --plan max5
-      ai-island add copilot
-      ai-island add openrouter            # prompts for the API key
-      ai-island add custom --name Acme --url https://api.acme.dev/usage --used data.used --limit data.limit
-      ai-island disconnect --all
+      brim add claude
+      brim add claude --name "Claude · Work" --path ~/work/.claude/projects --plan max5
+      brim add copilot
+      brim add openrouter            # prompts for the API key
+      brim add custom --name Acme --url https://api.acme.dev/usage --used data.used --limit data.limit
+      brim disconnect --all
 
     Connect as many tools as you like. Changes show up in the app within one refresh.
     """)
@@ -305,7 +309,7 @@ case "status", "usage":
     }
 
 case "list", "ls":
-    if file.connections.isEmpty { print("No connections yet. Try: ai-island add claude") }
+    if file.connections.isEmpty { print("No connections yet. Try: brim add claude") }
     for connection in file.connections {
         let state = connection.isEnabled ? green("● on ") : dim("○ off")
         let plan = Plans.tier(connection.planID, for: connection.kind)?.name ?? "auto"
@@ -356,7 +360,7 @@ case "disconnect":
     if flag("all") {
         file.connections = file.connections.map { var c = $0; c.isEnabled = false; return c }
         save()
-        print("Disconnected everything. Run `ai-island connect <name>` to turn one back on.")
+        print("Disconnected everything. Run `brim connect <name>` to turn one back on.")
     } else {
         var connection = find(positional(0, "connection name (or --all)"))
         connection.isEnabled = false
@@ -402,7 +406,7 @@ case "claude-limits":
     default:
         switch setup.state() {
         case .connected: print(green("Connected") + (setup.planWindows().isEmpty ? dim(" · waiting for Claude Code's next reply") : ""))
-        case .notConnected: print("Not connected. Run: ai-island claude-limits connect")
+        case .notConnected: print("Not connected. Run: brim claude-limits connect")
         case .unreadable: print(amber("Claude Code's settings.json could not be read."))
         }
     }
@@ -410,10 +414,10 @@ case "claude-limits":
 case "open":
     let process = Process()
     process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-    process.arguments = ["-b", "com.aiisland.app"]
+    process.arguments = ["-b", "com.brim.app"]
     try? process.run()
     process.waitUntilExit()
-    if process.terminationStatus != 0 { fail("AI Island.app isn't installed. Run the installer, or ./scripts/build-app.sh --install") }
+    if process.terminationStatus != 0 { fail("Brim.app isn't installed. Run the installer, or ./scripts/build-app.sh --install") }
 
 case "version", "--version", "-v":
     print(version)
@@ -422,5 +426,5 @@ case "help", "--help", "-h":
     printHelp()
 
 default:
-    fail("unknown command \"\(command)\". Run `ai-island help`.")
+    fail("unknown command \"\(command)\". Run `brim help`.")
 }

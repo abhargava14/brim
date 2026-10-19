@@ -1,6 +1,6 @@
-# Building AI Island with Cursor
+# Building Brim with Cursor
 
-> **For you (the human):** unzip `ai-island.zip`, open the `ai-island` folder in Cursor, then
+> **For you (the human):** unzip `ai-island.zip`, open the unzipped folder in Cursor, then
 > paste this into Cursor's Agent chat:
 >
 > *"Read CURSOR.md and follow it. Start with Phase 1 and stop after each phase to show me the
@@ -12,12 +12,12 @@
 
 ## 1. What you're working on
 
-**AI Island** is a free, open-source macOS app that sits around the MacBook notch (like the
+**Brim** is a free, open-source macOS app that sits around the MacBook notch (like the
 iPhone's Dynamic Island) and shows how much of each AI coding tool the user has used today:
 tokens and plan-limit percentages. Users connect **any number** of tools (Claude Code, Codex,
 GitHub Copilot, Cursor, Windsurf, OpenRouter, any log folder, any JSON usage URL), including
 several accounts of one tool. There are two ways to connect: the app's Settings window and the
-`ai-island` command-line tool. Both edit the same file.
+`brim` command-line tool. Both edit the same file.
 
 The code already exists and is complete, but **it has never been compiled**. It was written
 without access to a Mac or a Swift toolchain. Your first job is to make it build, pass its
@@ -62,7 +62,7 @@ Package.swift                     4 targets + tests
 Sources/IslandCore/               Foundation-only logic (unit tested)
   Models.swift                    ToolKind, LogFormat, TokenCounts, PlanWindow, ToolSnapshot, UsageSnapshot
   Connection.swift                Connection (one user connection), LogSource, DefaultLogLocations
-  ConnectionStore.swift           ~/Library/Application Support/AIIsland/connections.json (shared by app + CLI)
+  ConnectionStore.swift           ~/Library/Application Support/Brim/connections.json (shared by app + CLI)
   ClaudeLogParser.swift           Claude Code transcript lines + status-line plan windows
   CodexLogParser.swift            Codex rollout lines + rate limits
   AccountUsage.swift              response parsers: Copilot, Cursor, Windsurf, OpenRouter/custom URL
@@ -72,18 +72,18 @@ Sources/IslandCore/               Foundation-only logic (unit tested)
   Formatting.swift, JSONHelpers.swift
 Sources/IslandServices/           macOS services shared by app + CLI
   Connectors.swift                AccountFetcher (network), GitHubCLI, VSCodeState (SQLite), Keychain
-Sources/AIIsland/                 the app (AppKit + SwiftUI)
-  AIIslandApp.swift               entry point, AppDelegate, menu bar item
+Sources/BrimApp/                 the app (AppKit + SwiftUI)
+  BrimApp.swift               entry point, AppDelegate, menu bar item
   AppSettings.swift               preferences + the connections list (backed by ConnectionStore)
   UsageModel.swift                runs connections, merges data, raises island "moments"
   IslandController.swift          notch-aware floating NSPanel, hover tracking
   IslandView.swift                compact / moment / expanded views, animations
   SettingsView.swift              connections list, add/remove, plans, tokens, CLI install
-Sources/AIIslandCLI/main.swift    the `ai-island` command
+Sources/BrimCLI/main.swift    the `brim` command
 Tests/IslandCoreTests/            XCTest suite for IslandCore
-scripts/build-app.sh              builds "AI Island.app" with the CLI inside (Contents/Helpers)
+scripts/build-app.sh              builds "Brim.app" with the CLI inside (Contents/Helpers)
 install.sh                        one-line installer (clone + build + install)
-packaging/homebrew/ai-island.rb   Homebrew formula (from source)
+packaging/homebrew/brim.rb   Homebrew formula (from source)
 ```
 
 **Data flow:** `AppSettings.connections` → `UsageModel.refresh()` → log connections are scanned
@@ -113,8 +113,8 @@ Fix errors in `Sources/IslandCore` and `Tests/` only. Likely problem areas:
 ## 6. Phase 2: build the services, CLI and app
 
 ```bash
-swift build --product ai-island
-swift build --product AIIsland
+swift build --product brim
+swift build --product BrimApp
 ```
 
 Likely problem areas:
@@ -140,10 +140,10 @@ Likely problem areas:
 ## 7. Phase 3: run it and check behaviour
 
 ```bash
-swift run ai-island help
-swift run ai-island list          # creates connections.json with Claude Code + Codex
-swift run ai-island status
-swift run AIIsland                # the app (Ctrl-C to quit)
+swift run brim help
+swift run brim list          # creates connections.json with Claude Code + Codex
+swift run brim status
+swift run BrimApp                # the app (Ctrl-C to quit)
 ```
 
 Then go through this checklist and report what passes. Fix what doesn't.
@@ -163,7 +163,7 @@ Then go through this checklist and report what passes. Fix what doesn't.
 - [ ] The switch connects and disconnects; Disconnect all / Connect all work.
 - [ ] Two Claude connections with different folders show separate totals.
 - [ ] Renaming a connection or changing its plan updates the island.
-- [ ] Changes made with `ai-island` in a terminal show up within one refresh, and the reverse.
+- [ ] Changes made with `brim` in a terminal show up within one refresh, and the reverse.
 - [ ] Remove deletes the connection and its Keychain token.
 
 **Moments**
@@ -191,7 +191,7 @@ accounts**. Copilot, Cursor and Windsurf use private, undocumented endpoints (ma
 | OpenRouter | saved API key | `GET https://openrouter.ai/api/v1/key` (documented) |
 
 For each one the user has:
-1. `swift run ai-island add <tool>`, then `swift run ai-island status --json`.
+1. `swift run brim add <tool>`, then `swift run brim status --json`.
 2. If parsing fails, capture the real response, **redact** tokens, emails and IDs, and change
    the parser in `AccountUsage.swift` to match it.
 3. Add a test that uses the redacted response as its fixture.
@@ -200,16 +200,16 @@ For each one the user has:
 ## 9. Phase 5: package it
 
 ```bash
-./scripts/build-app.sh            # build/AI Island.app with Contents/Helpers/ai-island
-./scripts/build-app.sh --install  # copies to /Applications, links ai-island, launches it
+./scripts/build-app.sh            # build/Brim.app with Contents/Helpers/brim
+./scripts/build-app.sh --install  # copies to /Applications, links brim, launches it
 ```
 
 - [ ] The app launches from /Applications, with no Dock icon (LSUIElement).
-- [ ] Settings → Terminal → Install links `ai-island`, and `ai-island status` works in a new
+- [ ] Settings → Terminal → Install links `brim`, and `brim status` works in a new
       terminal.
 - [ ] Settings → General → Launch at login works (it needs the app in /Applications).
-- [ ] Once the user has a GitHub repo, replace `OWNER/ai-island` in `install.sh`,
-      `packaging/homebrew/ai-island.rb` and `README.md`.
+- [ ] Once the user has a GitHub repo, replace `OWNER/brim` in `install.sh`,
+      `packaging/homebrew/brim.rb` and `README.md`.
 - [ ] CI (`.github/workflows/ci.yml`) passes on GitHub's macOS runner.
 
 ## 10. Phase 6 (optional): next features
@@ -217,8 +217,8 @@ For each one the user has:
 Only after phases 1–5 pass, and only if the user asks:
 
 1. **"Needs you" and "Done" moments for Claude Code.** Use Claude Code hooks (`Notification` and
-   `Stop` events). Add `ai-island hook <event>` to the CLI, which appends one JSON line (event,
-   project folder name, time, no content) to `~/Library/Application Support/AIIsland/events.jsonl`.
+   `Stop` events). Add `brim hook <event>` to the CLI, which appends one JSON line (event,
+   project folder name, time, no content) to `~/Library/Application Support/Brim/events.jsonl`.
    Install the hooks in `~/.claude/settings.json` the way `ClaudeStatusLineSetup` does: back up
    first and keep any existing hooks. The app watches the file and shows the moments
    (amber "needs you" until answered, green "done" for 6 s).

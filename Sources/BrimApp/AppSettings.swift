@@ -35,7 +35,7 @@ enum IslandPlacement: String, CaseIterable, Identifiable {
     }
 }
 
-/// User preferences (UserDefaults) and the connections file shared with the `ai-island` command.
+/// User preferences (UserDefaults) and the connections file shared with the `brim` command.
 @MainActor
 final class AppSettings: ObservableObject {
     private let defaults = UserDefaults.standard
@@ -85,7 +85,11 @@ final class AppSettings: ObservableObject {
         didSet { defaults.set(refreshSeconds, forKey: "refreshSeconds") }
     }
 
+    private static let keys = ["showIsland", "placement", "hideInFullScreen", "showInMenuBar", "compactMetric",
+                               "expandOnHover", "playful", "pinnedID", "refreshSeconds", "didOnboard"]
+
     init() {
+        Self.copyLegacyDefaults(into: defaults)
         let file = store.load()
         connections = file.connections
         showIsland = defaults.object(forKey: "showIsland") as? Bool ?? true
@@ -101,12 +105,22 @@ final class AppSettings: ObservableObject {
         save()
     }
 
+    /// Carries preferences over from AI Island (bundled and `swift run` builds) when Brim has none yet.
+    private static func copyLegacyDefaults(into defaults: UserDefaults) {
+        guard !keys.contains(where: { defaults.object(forKey: $0) != nil }) else { return }
+        for suite in ["com.aiisland.app", "AIIsland"] {
+            guard let legacy = UserDefaults(suiteName: suite)?.persistentDomain(forName: suite), !legacy.isEmpty else { continue }
+            for key in keys { if let value = legacy[key] { defaults.set(value, forKey: key) } }
+            return
+        }
+    }
+
     private func save() {
         try? store.save(ConnectionFile(connections: connections))
         lastSeenFileDate = store.modificationDate()
     }
 
-    /// Picks up changes the `ai-island` command made to the connections file.
+    /// Picks up changes the `brim` command made to the connections file.
     func reloadIfChangedOnDisk() {
         guard let date = store.modificationDate(), date != lastSeenFileDate else { return }
         lastSeenFileDate = date

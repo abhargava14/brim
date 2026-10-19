@@ -15,7 +15,7 @@ public enum ConnectorError: LocalizedError {
         switch self {
         case .needsToken(let help): return help
         case .unauthorized(let help): return help
-        case .unexpectedResponse(let what): return "\(what) answered in a format AI Island doesn't understand yet."
+        case .unexpectedResponse(let what): return "\(what) answered in a format Brim doesn't understand yet."
         case .http(let code): return "The service returned an error (HTTP \(code)). Try again later."
         }
     }
@@ -150,7 +150,7 @@ public enum AccountFetcher {
         var request = request
         request.timeoutInterval = 20
         if request.value(forHTTPHeaderField: "User-Agent") == nil {
-            request.setValue("AIIsland/0.2 (macOS)", forHTTPHeaderField: "User-Agent")
+            request.setValue("Brim/0.2 (macOS)", forHTTPHeaderField: "User-Agent")
         }
         let (data, response) = try await URLSession.shared.data(for: request)
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
@@ -230,9 +230,11 @@ public enum VSCodeState {
 
 /// Tokens the user pasted, one Keychain item per connection.
 public enum Keychain {
-    private static let service = "com.aiisland.app.connections"
+    public static let service = "com.brim.app.connections"
+    /// Where AI Island, Brim's old name, kept the same tokens.
+    static let legacyService = "com.aiisland.app.connections"
 
-    public static func read(_ account: String) -> String? {
+    public static func read(_ account: String, service: String = service) -> String? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -257,7 +259,7 @@ public enum Keychain {
         SecItemAdd(item as CFDictionary, nil)
     }
 
-    public static func delete(_ account: String) {
+    public static func delete(_ account: String, service: String = service) {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -268,5 +270,14 @@ public enum Keychain {
 
     public static func has(_ account: String) -> Bool {
         read(account) != nil
+    }
+
+    /// Moves tokens saved under the old service name to the current one.
+    public static func migrateLegacy(accounts: [String]) {
+        for account in accounts {
+            guard let token = read(account, service: legacyService) else { continue }
+            if read(account) == nil { save(token, for: account) }
+            delete(account, service: legacyService)
+        }
     }
 }

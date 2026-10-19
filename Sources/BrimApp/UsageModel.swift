@@ -34,7 +34,7 @@ final class UsageModel: ObservableObject {
     let statusLine: ClaudeStatusLineSetup
 
     private let engine = UsageEngine(historyDays: 30)
-    private let queue = DispatchQueue(label: "ai-island.usage", qos: .utility)
+    private let queue = DispatchQueue(label: "brim.usage", qos: .utility)
     private var timer: Timer?
     private var isScanning = false
     private var scanAgain = false
@@ -59,10 +59,7 @@ final class UsageModel: ObservableObject {
     private static let milestones: [Int64] = [1_000_000, 5_000_000, 10_000_000, 25_000_000, 50_000_000, 100_000_000, 250_000_000, 500_000_000]
     private static let thresholds: [Double] = [80, 95, 100]
 
-    static var supportDirectory: URL {
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("AIIsland", isDirectory: true)
-    }
+    static var supportDirectory: URL { ClaudeStatusLineSetup.defaultSupportDirectory }
 
     init(settings: AppSettings) {
         self.settings = settings

@@ -154,8 +154,8 @@ struct SettingsView: View {
         Section {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("ai-island command")
-                    Text(cliMessage ?? "Connect tools and check usage from the terminal, e.g. ai-island add copilot or ai-island status.")
+                    Text("brim command")
+                    Text(cliMessage ?? "Connect tools and check usage from the terminal, e.g. brim add copilot or brim status.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .textSelection(.enabled)
@@ -355,7 +355,7 @@ struct ConnectionRow: View {
                 .disabled(token.isEmpty)
             }
             Text(AccountFetcher.canAutoConnect(connection.kind)
-                 ? "Optional. Without a token, AI Island uses your existing sign-in on this Mac. " + AccountFetcher.tokenHelp(for: connection.kind)
+                 ? "Optional. Without a token, Brim uses your existing sign-in on this Mac. " + AccountFetcher.tokenHelp(for: connection.kind)
                  : AccountFetcher.tokenHelp(for: connection.kind))
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -389,29 +389,32 @@ struct ConnectionRow: View {
 
 // MARK: - Command-line tool
 
-/// Links the `ai-island` command shipped inside the app bundle into the user's PATH.
+/// Links the `brim` command shipped inside the app bundle into the user's PATH.
 enum CommandLineTool {
     static func install() -> String {
-        let source = Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/ai-island")
+        let source = Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/brim")
         guard FileManager.default.isExecutableFile(atPath: source.path) else {
-            return "This build doesn't include the command. Build with ./scripts/build-app.sh, or run: swift build -c release --product ai-island"
+            return "This build doesn't include the command. Build with ./scripts/build-app.sh, or run: swift build -c release --product brim"
         }
         let home = FileManager.default.homeDirectoryForCurrentUser
         let candidates = [URL(fileURLWithPath: "/usr/local/bin"), URL(fileURLWithPath: "/opt/homebrew/bin"), home.appendingPathComponent(".local/bin")]
         for directory in candidates {
             try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             guard FileManager.default.isWritableFile(atPath: directory.path) else { continue }
-            let link = directory.appendingPathComponent("ai-island")
+            let link = directory.appendingPathComponent("brim")
             try? FileManager.default.removeItem(at: link)
             do {
                 try FileManager.default.createSymbolicLink(at: link, withDestinationURL: source)
             } catch {
                 continue
             }
+            let alias = directory.appendingPathComponent("ai-island")
+            try? FileManager.default.removeItem(at: alias)
+            try? FileManager.default.createSymbolicLink(at: alias, withDestinationURL: source)
             let onPath = (ProcessInfo.processInfo.environment["PATH"] ?? "").split(separator: ":").contains { $0 == directory.path }
-            return "Installed at \(link.path). Try: ai-island status"
+            return "Installed at \(link.path). Try: brim status"
                 + (onPath || directory.path != home.appendingPathComponent(".local/bin").path ? "" : "\nAdd ~/.local/bin to your PATH: echo 'export PATH=\"$HOME/.local/bin:$PATH\"' >> ~/.zshrc")
         }
-        return "Couldn't write to /usr/local/bin or ~/.local/bin. Run: sudo ln -sf \"\(source.path)\" /usr/local/bin/ai-island"
+        return "Couldn't write to /usr/local/bin or ~/.local/bin. Run: sudo ln -sf \"\(source.path)\" /usr/local/bin/brim"
     }
 }

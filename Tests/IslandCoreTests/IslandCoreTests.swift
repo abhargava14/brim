@@ -294,7 +294,7 @@ final class StatusLineSetupTests: XCTestCase {
         XCTAssertTrue(FileManager.default.isExecutableFile(atPath: setup.scriptURL.path))
         var settings = try XCTUnwrap(JSON.object(Data(contentsOf: settingsURL)))
         XCTAssertEqual(settings["model"] as? String, "opus")
-        XCTAssertTrue(FileManager.default.fileExists(atPath: settingsURL.appendingPathExtension("ai-island-backup").path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: settingsURL.appendingPathExtension("brim-backup").path))
 
         // Connecting twice must not overwrite the saved original with our own entry.
         try setup.connect()
@@ -316,6 +316,57 @@ final class StatusLineSetupTests: XCTestCase {
         try setup.disconnect()
         let settings = try XCTUnwrap(JSON.object(Data(contentsOf: setup.settingsURL)))
         XCTAssertNil(settings["statusLine"])
+    }
+
+    func testMovesAIIslandFolderAndRepointsStatusLine() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let fm = FileManager.default
+        let old = root.appendingPathComponent("AIIsland")
+        try fm.createDirectory(at: old, withIntermediateDirectories: true)
+        try #"{"connections":[]}"#.write(to: old.appendingPathComponent("connections.json"), atomically: true, encoding: .utf8)
+        try "#!/bin/sh".write(to: old.appendingPathComponent("ai-island-statusline.sh"), atomically: true, encoding: .utf8)
+        try #"{"type":"command","command":"~/my-line.sh"}"#
+            .write(to: old.appendingPathComponent("claude-statusline.previous.json"), atomically: true, encoding: .utf8)
+        let settingsURL = root.appendingPathComponent("claude/settings.json")
+        try fm.createDirectory(at: settingsURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try #"{"statusLine":{"type":"command","command":"'\#(old.path)/ai-island-statusline.sh'"}}"#
+            .write(to: settingsURL, atomically: true, encoding: .utf8)
+
+        XCTAssertTrue(LegacyMigration.moveSupportFolder(in: root))
+        XCTAssertFalse(fm.fileExists(atPath: old.path))
+        let new = root.appendingPathComponent("Brim")
+        XCTAssertTrue(fm.fileExists(atPath: new.appendingPathComponent("connections.json").path))
+        XCTAssertFalse(LegacyMigration.moveSupportFolder(in: root))
+
+        let setup = ClaudeStatusLineSetup(supportDirectory: new, settingsURL: settingsURL)
+        XCTAssertEqual(setup.state(), .connected)
+        XCTAssertTrue(try setup.repairIfMoved())
+        XCTAssertFalse(try setup.repairIfMoved())
+        let settings = try XCTUnwrap(JSON.object(Data(contentsOf: settingsURL)))
+        let command = try XCTUnwrap((settings["statusLine"] as? [String: Any])?["command"] as? String)
+        XCTAssertTrue(command.contains(setup.scriptURL.path))
+        XCTAssertFalse(fm.fileExists(atPath: new.appendingPathComponent("ai-island-statusline.sh").path))
+
+        try setup.disconnect()
+        let restored = try XCTUnwrap(JSON.object(Data(contentsOf: settingsURL)))
+        XCTAssertEqual((restored["statusLine"] as? [String: Any])?["command"] as? String, "~/my-line.sh")
+    }
+
+    func testMergesIntoExistingBrimFolderWithoutOverwriting() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let fm = FileManager.default
+        let old = root.appendingPathComponent("AIIsland"), new = root.appendingPathComponent("Brim")
+        try fm.createDirectory(at: old, withIntermediateDirectories: true)
+        try fm.createDirectory(at: new, withIntermediateDirectories: true)
+        try "old".write(to: old.appendingPathComponent("connections.json"), atomically: true, encoding: .utf8)
+        try "old".write(to: old.appendingPathComponent("claude-statusline.json"), atomically: true, encoding: .utf8)
+        try "new".write(to: new.appendingPathComponent("claude-statusline.json"), atomically: true, encoding: .utf8)
+
+        XCTAssertTrue(LegacyMigration.moveSupportFolder(in: root))
+        XCTAssertEqual(try String(contentsOf: new.appendingPathComponent("connections.json")), "old")
+        XCTAssertEqual(try String(contentsOf: new.appendingPathComponent("claude-statusline.json")), "new")
     }
 }
 

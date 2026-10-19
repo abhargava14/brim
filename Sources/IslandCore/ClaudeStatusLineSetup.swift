@@ -1,11 +1,11 @@
 import Foundation
 
-/// Connects AI Island as Claude Code's status line command, which is how Claude Code hands plan
+/// Connects Brim as Claude Code's status line command, which is how Claude Code hands plan
 /// usage (5-hour and weekly windows) to other programs.
 ///
 /// Only the `statusLine` entry of Claude Code's `settings.json` is changed, a backup is written
 /// first, and a status line the user already had keeps working: the bridge script saves the input
-/// for AI Island and then runs the previous command with the same input.
+/// for Brim and then runs the previous command with the same input.
 public struct ClaudeStatusLineSetup: Sendable {
     public enum State: Equatable {
         case notConnected
@@ -21,9 +21,9 @@ public struct ClaudeStatusLineSetup: Sendable {
         }
     }
 
-    public static let marker = "ai-island-statusline"
+    public static let marker = "brim-statusline"
 
-    /// AI Island's own folder, e.g. `~/Library/Application Support/AIIsland`.
+    /// Brim's own folder, e.g. `~/Library/Application Support/Brim`.
     public let supportDirectory: URL
     /// Claude Code's `settings.json`.
     public let settingsURL: URL
@@ -41,9 +41,9 @@ public struct ClaudeStatusLineSetup: Sendable {
         return home.appendingPathComponent(".claude/settings.json")
     }
 
-    /// AI Island's support folder, shared by the app and the CLI.
+    /// Brim's support folder, shared by the app and the CLI.
     public static var defaultSupportDirectory: URL {
-        FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/AIIsland", isDirectory: true)
+        LegacyMigration.applicationSupport.appendingPathComponent(LegacyMigration.supportFolder, isDirectory: true)
     }
 
     public var scriptURL: URL { supportDirectory.appendingPathComponent("\(Self.marker).sh") }
@@ -108,7 +108,21 @@ public struct ClaudeStatusLineSetup: Sendable {
     }
 
     static func isOurs(_ entry: Any?) -> Bool {
-        ((entry as? [String: Any])?["command"] as? String)?.contains(marker) == true
+        guard let command = (entry as? [String: Any])?["command"] as? String else { return false }
+        return command.contains(marker) || command.contains(LegacyMigration.legacyMarker)
+    }
+
+    /// Points Claude Code at this folder's bridge again when it still runs one from an old location
+    /// (AI Island's folder, before the rename). Returns true when it changed anything.
+    @discardableResult
+    public func repairIfMoved() throws -> Bool {
+        guard let settings = readSettings(), Self.isOurs(settings["statusLine"]),
+              let command = (settings["statusLine"] as? [String: Any])?["command"] as? String,
+              !command.contains(scriptURL.path)
+        else { return false }
+        try connect()
+        try? FileManager.default.removeItem(at: supportDirectory.appendingPathComponent("\(LegacyMigration.legacyMarker).sh"))
+        return true
     }
 
     /// Settings as a dictionary; an empty one when the file does not exist yet, nil when unreadable.
@@ -123,7 +137,7 @@ public struct ClaudeStatusLineSetup: Sendable {
         let fm = FileManager.default
         try fm.createDirectory(at: settingsURL.deletingLastPathComponent(), withIntermediateDirectories: true)
         if fm.fileExists(atPath: settingsURL.path) {
-            let backup = settingsURL.appendingPathExtension("ai-island-backup")
+            let backup = settingsURL.appendingPathExtension("brim-backup")
             try? fm.removeItem(at: backup)
             try fm.copyItem(at: settingsURL, to: backup)
         }
@@ -135,7 +149,7 @@ public struct ClaudeStatusLineSetup: Sendable {
         let dir = supportDirectory.path.replacingOccurrences(of: "'", with: "'\\''")
         return """
         #!/bin/sh
-        # Installed by AI Island. Saves Claude Code's status line input so AI Island can show your
+        # Installed by Brim. Saves Claude Code's status line input so Brim can show your
         # plan usage, then runs your previous status line command (if any) with the same input.
         DIR='\(dir)'
         INPUT=$(cat)

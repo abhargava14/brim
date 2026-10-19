@@ -1,21 +1,21 @@
 #!/bin/bash
-# AI Island installer: builds from source and installs the app and the `ai-island` command.
+# Brim installer: builds from source and installs the app and the `brim` command.
 #
-#   curl -fsSL https://raw.githubusercontent.com/OWNER/ai-island/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/OWNER/brim/main/install.sh | bash
 #
-# Set AI_ISLAND_REPO to install from a fork, AI_ISLAND_REF for a branch or tag.
+# Set BRIM_REPO to install from a fork, BRIM_REF for a branch or tag.
 set -euo pipefail
 
-REPO="${AI_ISLAND_REPO:-https://github.com/OWNER/ai-island.git}"
-REF="${AI_ISLAND_REF:-main}"
-SRC="${AI_ISLAND_SRC:-$HOME/.ai-island/src}"
+REPO="${BRIM_REPO:-https://github.com/OWNER/brim.git}"
+REF="${BRIM_REF:-main}"
+SRC="${BRIM_SRC:-$HOME/.brim/src}"
 
 say() { printf '\033[1m==>\033[0m %s\n' "$*"; }
 die() { printf '\033[31merror:\033[0m %s\n' "$*" >&2; exit 1; }
 
-[[ "$(uname)" == "Darwin" ]] || die "AI Island runs on macOS."
+[[ "$(uname)" == "Darwin" ]] || die "Brim runs on macOS."
 major="$(sw_vers -productVersion | cut -d. -f1)"
-(( major >= 13 )) || die "AI Island needs macOS 13 Ventura or later."
+(( major >= 13 )) || die "Brim needs macOS 13 Ventura or later."
 command -v git >/dev/null || die "git is missing. Run: xcode-select --install"
 command -v swift >/dev/null || die "Swift is missing. Run: xcode-select --install (or install Xcode)"
 
@@ -24,7 +24,7 @@ if [[ -d "$SRC/.git" ]]; then
     git -C "$SRC" fetch --depth 1 origin "$REF"
     git -C "$SRC" checkout -q FETCH_HEAD
 else
-    say "Downloading AI Island"
+    say "Downloading Brim"
     mkdir -p "$(dirname "$SRC")"
     git clone --depth 1 --branch "$REF" "$REPO" "$SRC"
 fi
@@ -34,14 +34,14 @@ say "Building (this takes a minute the first time)"
 
 cat <<'DONE'
 
-AI Island is running in your notch. Connect your AI tools:
+Brim is running in your notch. Connect your AI tools:
 
   In the app:      click the island → ⚙, or the ✳ menu bar icon → Connections & Settings
-  In the terminal: ai-island add claude
-                   ai-island add codex
-                   ai-island add copilot
-                   ai-island add openrouter
-                   ai-island status
+  In the terminal: brim add claude
+                   brim add codex
+                   brim add copilot
+                   brim add openrouter
+                   brim status
 
-Run `ai-island help` for everything else.
+Run `brim help` for everything else.
 DONE

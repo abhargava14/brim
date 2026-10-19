@@ -1,7 +1,7 @@
 import Foundation
 
-/// The connections file shared by the app and the `ai-island` command:
-/// `~/Library/Application Support/AIIsland/connections.json`.
+/// The connections file shared by the app and the `brim` command:
+/// `~/Library/Application Support/Brim/connections.json`.
 ///
 /// Tokens are never written here; they live in the Keychain, keyed by connection ID.
 public struct ConnectionFile: Codable, Equatable, Sendable {
@@ -22,8 +22,7 @@ public struct ConnectionStore: Sendable {
     }
 
     public static var defaultURL: URL {
-        FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Application Support/AIIsland/connections.json")
+        ClaudeStatusLineSetup.defaultSupportDirectory.appendingPathComponent("connections.json")
     }
 
     /// The saved file, or a starter file when there is none yet.

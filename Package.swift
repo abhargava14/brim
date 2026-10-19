@@ -2,12 +2,12 @@
 import PackageDescription
 
 let package = Package(
-    name: "AIIsland",
+    name: "Brim",
     platforms: [.macOS(.v13)],
     products: [
-        .executable(name: "AIIsland", targets: ["AIIsland"]),
-        // Named with a dash so it never collides with "AIIsland" on case-insensitive disks.
-        .executable(name: "ai-island", targets: ["AIIslandCLI"]),
+        .executable(name: "BrimApp", targets: ["BrimApp"]),
+        // The app target is "BrimApp" so its binary never collides with "brim" on case-insensitive disks.
+        .executable(name: "brim", targets: ["BrimCLI"]),
     ],
     targets: [
         // Log parsing, aggregation, connections and pricing. Foundation only, so it builds and tests anywhere.
@@ -19,9 +19,9 @@ let package = Package(
             linkerSettings: [.linkedLibrary("sqlite3")]
         ),
         // The notch island, menu bar item and settings window.
-        .executableTarget(name: "AIIsland", dependencies: ["IslandCore", "IslandServices"]),
-        // `ai-island`: connect tools and check usage from the terminal.
-        .executableTarget(name: "AIIslandCLI", dependencies: ["IslandCore", "IslandServices"]),
+        .executableTarget(name: "BrimApp", dependencies: ["IslandCore", "IslandServices"]),
+        // `brim`: connect tools and check usage from the terminal.
+        .executableTarget(name: "BrimCLI", dependencies: ["IslandCore", "IslandServices"]),
         .testTarget(name: "IslandCoreTests", dependencies: ["IslandCore"]),
     ]
 )

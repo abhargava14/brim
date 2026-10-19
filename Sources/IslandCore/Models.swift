@@ -8,7 +8,7 @@ public enum DataSource: Sendable {
     case account
 }
 
-/// The log formats AI Island can read.
+/// The log formats Brim can read.
 public enum LogFormat: String, Codable, CaseIterable, Sendable {
     case claude
     case codex
