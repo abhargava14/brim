@@ -9,7 +9,7 @@ struct IslandView: View {
     @ObservedObject var state: IslandState
     let openSettings: () -> Void
 
-    private var cornerRadius: CGFloat { state.isExpanded ? 26 : state.barHeight / 2.2 }
+    private var cornerRadius: CGFloat { state.isExpanded ? 28 : (state.hasNotch ? 14 : 16) }
     private var width: CGFloat {
         state.isExpanded ? IslandState.expandedWidth : state.compactWidth(for: model.event?.style)
     }
@@ -29,7 +29,8 @@ struct IslandView: View {
             } else if let event = model.event {
                 EventView(event: event, state: state, playful: settings.playful)
                     .id(event.id)
-                    .transition(.asymmetric(insertion: .opacity.combined(with: .offset(y: -6)), removal: .opacity))
+                    .transition(.asymmetric(insertion: .opacity.combined(with: .offset(y: 4)).animation(.easeOut(duration: 0.2).delay(0.08)),
+                                            removal: .opacity))
             } else {
                 CompactView(model: model, state: state)
                     .transition(.opacity)
@@ -40,10 +41,13 @@ struct IslandView: View {
         .background(NotchShape(bottomRadius: cornerRadius).fill(Color.black))
         .overlay(EventGlow(event: state.isExpanded ? nil : model.event, radius: cornerRadius))
         .clipShape(NotchShape(bottomRadius: cornerRadius))
-        .shadow(color: .black.opacity(state.isExpanded ? 0.45 : 0), radius: 18, y: 8)
+        .shadow(color: .black.opacity(state.isExpanded ? 0.35 : 0), radius: 25, y: 18)
+        .shadow(color: .black.opacity(state.isExpanded ? 0.2 : 0), radius: 7, y: 4)
         .overlay(alignment: .top) {
             if let event = model.event, event.celebrates, settings.playful, !state.isExpanded {
-                ConfettiBurst(colors: [event.kind.tint, .white, .yellow, .green])
+                ConfettiBurst(colors: event.style == .milestone
+                              ? [event.kind.tint, .white, event.kind.tint.opacity(0.6)]
+                              : [Brand.good, .white, event.kind.tint, Color(red: 0x9B / 255, green: 0xE7 / 255, blue: 0xAE / 255)])
                     .id(event.id)
                     .allowsHitTesting(false)
             }
@@ -61,8 +65,8 @@ struct IslandView: View {
             if model.event != nil && !state.isExpanded { model.dismissEvent() }
             if !state.expansionLocked { state.isExpanded.toggle() }
         }
-        .animation(.spring(response: 0.38, dampingFraction: 0.78), value: state.isExpanded)
-        .animation(.spring(response: 0.42, dampingFraction: 0.7), value: model.event?.id)
+        .animation(.spring(response: 0.38, dampingFraction: 0.82), value: state.isExpanded)
+        .animation(.spring(response: 0.38, dampingFraction: 0.82), value: model.event?.id)
     }
 }
 
@@ -151,7 +155,7 @@ struct ToolGlyph: View {
             .rotationEffect(.degrees(rotation))
             .scaleEffect(scale)
             .offset(y: offsetY)
-            .opacity(mood == .working && kind != .claude && animated && phase ? 0.45 : 1)
+            .opacity(mood == .working && kind != .claude && animated && phase ? 0.4 : 1)
             .onAppear { start() }
             .onChange(of: mood) { _ in phase = false; start() }
     }
@@ -201,8 +205,8 @@ struct ToolGlyph: View {
             break
         case .working:
             let animation: Animation = kind == .claude
-                ? .linear(duration: 2.4).repeatForever(autoreverses: false)
-                : .easeInOut(duration: 0.55).repeatForever(autoreverses: true)
+                ? .linear(duration: 6).repeatForever(autoreverses: false)
+                : .easeInOut(duration: 0.8).repeatForever(autoreverses: true)
             withAnimation(animation) { phase = true }
         case .attention:
             withAnimation(.spring(response: 0.25, dampingFraction: 0.35).repeatCount(3, autoreverses: true)) { phase = true }
@@ -266,27 +270,34 @@ struct EventGlow: View {
 
     private var color: Color? {
         switch event?.style {
-        case .warning: return .orange
-        case .limit: return .red
-        case .connected, .milestone: return .green
-        case .disconnected, .none: return nil
+        case .warning: return Brand.attention
+        case .limit: return Brand.limit
+        case .connected: return Brand.good
+        case .milestone, .disconnected, .none: return nil
         }
     }
 
+    private var sweeps: Bool { event != nil && event?.style != .disconnected }
+
     var body: some View {
-        if let color {
+        if sweeps {
             ZStack {
-                NotchShape(bottomRadius: radius).stroke(color.opacity(0.9), lineWidth: 1.5)
-                GeometryReader { geometry in
-                    LinearGradient(colors: [.clear, color.opacity(0.35), .clear], startPoint: .leading, endPoint: .trailing)
-                        .frame(width: geometry.size.width * 0.35)
-                        .offset(x: sweep ? geometry.size.width : -geometry.size.width * 0.35)
+                if let color {
+                    NotchShape(bottomRadius: radius)
+                        .stroke(color, lineWidth: 1.5)
+                        .shadow(color: color.opacity(0.45), radius: 8)
                 }
+                GeometryReader { geometry in
+                    LinearGradient(colors: [.clear, .white.opacity(0.17), .clear], startPoint: .leading, endPoint: .trailing)
+                        .frame(width: 90)
+                        .offset(x: sweep ? geometry.size.width : -90)
+                }
+                .clipShape(NotchShape(bottomRadius: radius))
             }
             .allowsHitTesting(false)
             .onAppear {
                 sweep = false
-                withAnimation(.easeInOut(duration: 1.2)) { sweep = true }
+                withAnimation(.easeInOut(duration: 1.1).delay(0.15)) { sweep = true }
             }
         }
     }
@@ -310,46 +321,49 @@ struct CompactView: View {
             let pair = Array(tools.dropFirst(page * 2).prefix(2))
             content(pair, total: tools.count, page: page, pages: pages)
                 .id(page)
-                .transition(.asymmetric(insertion: .move(edge: .bottom).combined(with: .opacity),
-                                        removal: .move(edge: .top).combined(with: .opacity)))
-                .animation(.spring(response: 0.45, dampingFraction: 0.85), value: page)
+                .transition(.asymmetric(
+                    insertion: .offset(y: 13).combined(with: .opacity).animation(.spring(response: 0.46, dampingFraction: 0.72)),
+                    removal: .offset(y: -13).combined(with: .opacity).animation(.easeIn(duration: 0.28))
+                ))
+                .animation(.spring(response: 0.46, dampingFraction: 0.72), value: page)
         }
         .clipped()
     }
 
     @ViewBuilder
     private func content(_ pair: [ToolSnapshot], total: Int, page: Int, pages: Int) -> some View {
-        HStack(spacing: 0) {
+        HStack(spacing: state.hasNotch ? 0 : 16) {
             wing(pair.first, alignment: .leading)
             if state.hasNotch {
                 Spacer().frame(width: state.notchWidth)
-            } else {
-                Spacer(minLength: 8)
             }
             if pair.count > 1 {
                 wing(pair[1], alignment: .trailing)
+            } else if pages > 1 {
+                totalWing
             } else {
                 detailWing(pair.first)
             }
         }
-        .padding(.horizontal, 14)
-        .font(.system(size: 12, weight: .semibold, design: .rounded))
+        .padding(.horizontal, 13)
+        .font(.system(size: 12.5, weight: .bold, design: .rounded))
         .monospacedDigit()
         .foregroundStyle(.white)
         .frame(maxHeight: .infinity)
         .overlay(alignment: .bottom) {
-            if pages > 1 { PageDots(count: pages, current: page).padding(.bottom, 2) }
+            if pages > 1 { PageDots(count: pages, current: page).padding(.bottom, 4) }
         }
     }
 
     private func mood(_ tool: ToolSnapshot) -> GlyphMood {
+        if tool.statusMessage != nil && !tool.hasData { return .dim }
         if (tool.tightestWindow?.usedPercent ?? 0) >= 95 { return .attention }
         return model.isWorking(tool) ? .working : .idle
     }
 
     @ViewBuilder
     private func wing(_ tool: ToolSnapshot?, alignment: HorizontalAlignment) -> some View {
-        HStack(spacing: 5) {
+        HStack(spacing: 6) {
             if let tool {
                 if alignment == .trailing { Spacer(minLength: 0) }
                 ToolGlyph(kind: tool.kind, mood: mood(tool), size: 14, playful: model.settings.playful, name: tool.name)
@@ -357,6 +371,7 @@ struct CompactView: View {
                     RollingText(text: model.compactValue(for: tool))
                         .foregroundStyle(valueColor(tool))
                         .lineLimit(1)
+                    if let suffix = model.wingSuffix(for: tool) { Suffix(text: suffix) }
                 }
                 if alignment == .leading { Spacer(minLength: 0) }
             } else {
@@ -374,22 +389,36 @@ struct CompactView: View {
     private func wingWidth(_ alignment: HorizontalAlignment) -> CGFloat {
         guard state.hasNotch else { return .infinity }
         let wing = alignment == .leading ? state.leftWingWidth(for: nil) : state.rightWingWidth(for: nil)
-        return max(0, wing - 14)
+        return max(0, wing - 13)
     }
 
-    /// With a single tool, the right wing shows its tightest window or today's tokens.
+    /// With a single tool, the right wing shows today's tokens (or, for account tools, the
+    /// tightest window when the left wing doesn't already show it).
     @ViewBuilder
     private func detailWing(_ tool: ToolSnapshot?) -> some View {
         HStack(spacing: 4) {
             Spacer(minLength: 0)
             if glyphOnly {
                 EmptyView()
-            } else if let tool, let window = tool.tightestWindow {
-                Text("\(window.label) \(Format.percent(window.usedPercent))")
-                    .foregroundStyle(PlanBar.color(for: window.usedPercent))
             } else if let tool, tool.hasTokenData {
                 RollingText(text: Format.tokens(tool.today.total))
-                    .foregroundStyle(.secondary)
+                Suffix(text: "today")
+            } else if let tool, let window = tool.tightestWindow, model.compactValue(for: tool) != Format.percent(window.usedPercent) {
+                Text("\(window.label) \(Format.percent(window.usedPercent))")
+                    .foregroundStyle(valueColor(tool))
+            }
+        }
+        .lineLimit(1)
+        .frame(maxWidth: wingWidth(.trailing))
+    }
+
+    /// The odd last page of the carousel: today's total across every connection.
+    private var totalWing: some View {
+        HStack(spacing: 4) {
+            Spacer(minLength: 0)
+            if !glyphOnly {
+                RollingText(text: Format.tokens(model.snapshot.todayTokens)).foregroundStyle(.white.opacity(0.6))
+                Suffix(text: "today")
             }
         }
         .lineLimit(1)
@@ -397,8 +426,21 @@ struct CompactView: View {
     }
 
     private func valueColor(_ tool: ToolSnapshot) -> Color {
+        if tool.statusMessage != nil && !tool.hasData { return Brand.attention }
         guard let percent = tool.tightestWindow?.usedPercent, percent >= 80 else { return .white }
         return PlanBar.color(for: percent)
+    }
+}
+
+/// A small unit after a wing value: "today", "tok", or the account's short name.
+struct Suffix: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: 10.5, weight: .bold, design: .rounded))
+            .foregroundStyle(.white.opacity(0.35))
+            .lineLimit(1)
     }
 }
 
@@ -407,11 +449,11 @@ struct PageDots: View {
     let current: Int
 
     var body: some View {
-        HStack(spacing: 3) {
+        HStack(spacing: 4) {
             ForEach(0..<min(count, 8), id: \.self) { index in
-                Capsule()
-                    .fill(Color.white.opacity(index == current ? 0.8 : 0.25))
-                    .frame(width: index == current ? 6 : 3, height: 2)
+                Circle()
+                    .fill(Color.white.opacity(index == current ? 1 : 0.3))
+                    .frame(width: 4, height: 4)
             }
         }
     }
@@ -428,49 +470,51 @@ struct EventView: View {
         switch event.style {
         case .connected, .milestone: return .celebrate
         case .warning, .limit: return .attention
-        case .disconnected: return .idle
+        case .disconnected: return .dim
         }
     }
 
-    private var accent: Color {
+    private var titleColor: Color {
         switch event.style {
-        case .connected, .milestone: return .green
-        case .warning: return .orange
-        case .limit: return .red
-        case .disconnected: return .secondary
+        case .connected, .milestone: return .white
+        case .warning: return Brand.attention
+        case .limit: return Brand.limit
+        case .disconnected: return .white.opacity(0.6)
         }
     }
 
-    private var icon: String? {
-        switch event.style {
-        case .connected: return "checkmark.circle.fill"
-        case .milestone: return "party.popper.fill"
-        case .warning: return "gauge.high"
-        case .limit: return "hand.raised.fill"
-        case .disconnected: return "bolt.horizontal.circle"
+    /// "resets in 1h 20m": the lead-in is quiet, the time stands out.
+    private var detail: Text {
+        let quiet = Color.white.opacity(0.6)
+        for lead in ["resets in ", "back in "] where event.detail.hasPrefix(lead) {
+            return Text(lead).foregroundColor(quiet) + Text(event.detail.dropFirst(lead.count)).foregroundColor(.white)
         }
+        let plain = event.style == .connected
+        return Text(event.detail).foregroundColor(plain ? .white : quiet)
     }
 
     var body: some View {
         HStack(spacing: 0) {
             HStack(spacing: 6) {
-                ToolGlyph(kind: event.kind, mood: mood, size: 12, playful: playful)
-                Text(event.title).lineLimit(1)
+                ToolGlyph(kind: event.kind, mood: mood, size: 15, playful: playful)
+                Text(event.title).foregroundStyle(titleColor).lineLimit(1)
                 Spacer(minLength: 0)
             }
-            .frame(maxWidth: state.hasNotch ? max(0, state.leftWingWidth(for: event.style) - 14) : .infinity)
-            if state.hasNotch { Spacer().frame(width: state.notchWidth) } else { Spacer(minLength: 8) }
+            .frame(maxWidth: state.hasNotch ? max(0, state.leftWingWidth(for: event.style) - 13) : .infinity)
+            if state.hasNotch { Spacer().frame(width: state.notchWidth) } else { Spacer(minLength: 16) }
             HStack(spacing: 5) {
                 Spacer(minLength: 0)
                 if state.rightWingWidth(for: event.style) >= IslandState.glyphOnlyWidth {
-                    Text(event.detail).foregroundStyle(.secondary).lineLimit(1)
+                    detail.lineLimit(1)
                 }
-                if let icon { Image(systemName: icon).foregroundStyle(accent) }
+                if event.style == .connected {
+                    Image(systemName: "checkmark").font(.system(size: 11, weight: .heavy)).foregroundStyle(Brand.good)
+                }
             }
-            .frame(maxWidth: state.hasNotch ? max(0, state.rightWingWidth(for: event.style) - 14) : .infinity)
+            .frame(maxWidth: state.hasNotch ? max(0, state.rightWingWidth(for: event.style) - 13) : .infinity)
         }
-        .padding(.horizontal, 14)
-        .font(.system(size: 12, weight: .semibold, design: .rounded))
+        .padding(.horizontal, 13)
+        .font(.system(size: 12.5, weight: .bold, design: .rounded))
         .foregroundStyle(.white)
         .frame(maxHeight: .infinity)
     }
@@ -488,29 +532,20 @@ struct ExpandedView: View {
     var body: some View {
         let tools = model.featuredTools
         VStack(alignment: .leading, spacing: 10) {
-            Color.clear.frame(height: max(state.barHeight - 6, 4))
+            Color.clear.frame(height: (state.hasNotch ? 44 : 40) - 10)
 
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text("Today")
-                    .font(.system(size: 15, weight: .bold, design: .rounded))
+            HStack(spacing: 5) {
+                Text("Today").foregroundStyle(.white.opacity(0.6))
+                Text("·").foregroundStyle(.white.opacity(0.35))
                 RollingText(text: "\(Format.tokens(model.snapshot.todayTokens)) tokens")
-                    .font(.system(size: 15, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.secondary)
-                Text("· \(tools.count) connected")
-                    .font(.system(size: 12, weight: .medium, design: .rounded))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                    .font(.system(size: 13, weight: .heavy, design: .rounded))
+                Text("·").foregroundStyle(.white.opacity(0.35))
+                Text("\(tools.count) connected").foregroundStyle(.white.opacity(0.6)).lineLimit(1)
                 Spacer()
-                Button(action: { model.refresh(forceAccounts: true) }) {
-                    Image(systemName: "arrow.clockwise")
-                }
-                .help("Refresh now")
-                Button(action: openSettings) {
-                    Image(systemName: "gearshape.fill")
-                }
-                .help("Settings")
+                RoundButton(symbol: "arrow.clockwise", help: "Refresh now") { model.refresh(forceAccounts: true) }
+                RoundButton(symbol: "gearshape.fill", help: "Settings", action: openSettings)
             }
-            .buttonStyle(.plain)
+            .font(.system(size: 13, weight: .bold, design: .rounded))
             .foregroundStyle(.white)
             .monospacedDigit()
 
@@ -523,25 +558,31 @@ struct ExpandedView: View {
                 .padding(.vertical, 8)
             }
 
-            ScrollView(.vertical, showsIndicators: tools.count > 3) {
+            ScrollView(.vertical, showsIndicators: false) {
                 VStack(spacing: 8) {
                     ForEach(Array(tools.enumerated()), id: \.element.id) { index, tool in
                         ToolCard(tool: tool, model: model, openSettings: openSettings)
                             .opacity(appeared ? 1 : 0)
                             .offset(y: appeared ? 0 : -10)
-                            .animation(.spring(response: 0.45, dampingFraction: 0.8).delay(Double(min(index, 8)) * 0.04), value: appeared)
+                            .scaleEffect(appeared ? 1 : 0.98, anchor: .top)
+                            .animation(.spring(response: 0.34, dampingFraction: 0.82).delay(0.14 + Double(min(index, 8)) * 0.05), value: appeared)
                     }
                 }
+                .padding(.bottom, tools.count > 3 ? 24 : 0)
             }
-            .frame(maxHeight: 470)
-            .fixedSize(horizontal: false, vertical: tools.count <= 2)
-
-            Text("Logs are read locally. Account tools are checked every 5 minutes.")
-            .font(.system(size: 10))
-            .foregroundStyle(.tertiary)
+            .frame(maxHeight: 560)
+            .fixedSize(horizontal: false, vertical: tools.count <= 3)
+            .mask(
+                VStack(spacing: 0) {
+                    Color.black
+                    if tools.count > 3 {
+                        LinearGradient(colors: [.black, .clear], startPoint: .top, endPoint: .bottom).frame(height: 36)
+                    }
+                }
+            )
         }
-        .padding(.horizontal, 16)
-        .padding(.bottom, 14)
+        .padding(.horizontal, 12)
+        .padding(.bottom, 12)
         .foregroundStyle(.white)
         .onAppear { appeared = true }
     }
@@ -556,45 +597,44 @@ struct ToolCard: View {
         VStack(alignment: .leading, spacing: 9) {
             header
             if let message = tool.statusMessage, !tool.hasData {
-                Text(message)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                ProblemRow(message: message, openSettings: openSettings)
             } else if tool.hasTokenData {
                 tokenDetails
             } else {
                 accountDetails
             }
         }
-        .padding(12)
-        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.white.opacity(0.07)))
+        .padding(.vertical, 12)
+        .padding(.horizontal, 14)
+        .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Color.white.opacity(0.07)))
     }
+
+    private var isAccount: Bool { tool.kind.source == .account }
 
     private var header: some View {
         HStack(spacing: 6) {
             ToolGlyph(kind: tool.kind, mood: model.isWorking(tool) ? .working : .idle, size: 15, playful: model.settings.playful, name: tool.name)
             Text(tool.name)
-                .font(.system(size: 13, weight: .semibold))
+                .font(.system(size: 13, weight: .heavy, design: .rounded))
                 .lineLimit(1)
             if let plan = tool.planName {
                 Text(plan)
-                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+                    .font(.system(size: 10.5, weight: .heavy, design: .rounded))
                     .padding(.horizontal, 6)
-                    .padding(.vertical, 1)
-                    .background(Capsule().fill(tool.kind.tint.opacity(0.22)))
+                    .padding(.vertical, 1.5)
+                    .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(tool.kind.tint.opacity(0.16)))
                     .foregroundStyle(tool.kind.tint)
             }
+            Spacer(minLength: 6)
             if let model = tool.topModel {
                 Text(Format.modelName(model))
-                    .font(.system(size: 11, weight: .medium, design: .monospaced))
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.35))
                     .lineLimit(1)
-            }
-            Spacer()
-            if let updated = tool.updatedAt {
-                Text(Format.ago(updated))
-                    .font(.system(size: 10))
-                    .foregroundStyle(.secondary)
+            } else if isAccount, let updated = tool.updatedAt {
+                Text("updated \(Format.ago(updated))")
+                    .font(.system(size: 10.5, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.35))
             }
         }
     }
@@ -603,15 +643,20 @@ struct ToolCard: View {
     private var tokenDetails: some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
             RollingText(text: Format.tokens(tool.today.total))
-                .font(.system(size: 24, weight: .bold, design: .rounded))
+                .font(.system(size: 24, weight: .heavy, design: .rounded))
             Text("tokens today")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .font(.system(size: 12, weight: .bold, design: .rounded))
+                .foregroundStyle(.white.opacity(0.6))
             Spacer()
-            Stat(label: "sessions", value: "\(tool.todaySessions)")
-            Stat(label: "requests", value: "\(tool.todayRequests)")
+            Text("\(tool.todaySessions) sessions · \(tool.todayRequests) req")
+                .font(.system(size: 11, weight: .bold, design: .rounded))
+                .foregroundStyle(.white.opacity(0.35))
         }
         .monospacedDigit()
+
+        if model.isWorking(tool) {
+            WorkingLine(tint: tool.kind.tint)
+        }
 
         TokenBreakdown(tokens: tool.today, tint: tool.kind.tint)
 
@@ -629,17 +674,17 @@ struct ToolCard: View {
 
         HistoryBars(points: Array(tool.daily.suffix(14)), tint: tool.kind.tint)
 
-        HStack(spacing: 12) {
-            Text("5h \(Format.tokens(tool.last5Hours.total))")
-            Text("7d \(Format.tokens(tool.week.total))")
-            Text("30d \(Format.tokens(tool.month.total))")
+        HStack(spacing: 10) {
+            Text("14 days").foregroundStyle(.white.opacity(0.35))
             Spacer()
-            if let last = tool.lastActivity {
-                Text(Format.ago(last))
+            ForEach([("5h", tool.last5Hours), ("7d", tool.week), ("30d", tool.month)], id: \.0) { key, counts in
+                HStack(spacing: 3) {
+                    Text(key).foregroundStyle(.white.opacity(0.35))
+                    Text(Format.tokens(counts.total)).foregroundStyle(.white.opacity(0.6))
+                }
             }
         }
-        .font(.system(size: 10.5, weight: .medium, design: .rounded))
-        .foregroundStyle(.secondary)
+        .font(.system(size: 10.5, weight: .bold, design: .rounded))
         .monospacedDigit()
     }
 
@@ -647,29 +692,114 @@ struct ToolCard: View {
     private var accountDetails: some View {
         if tool.planWindows.isEmpty {
             Text("Connected. The service didn't report any limits for this plan.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .font(.system(size: 11.5, weight: .bold, design: .rounded))
+                .foregroundStyle(.white.opacity(0.6))
         }
         ForEach(tool.planWindows, id: \.label) { window in
-            PlanBar(window: window)
+            QuotaRow(window: window)
         }
         if let message = tool.statusMessage {
-            Label(message, systemImage: "exclamationmark.triangle.fill")
-                .font(.caption)
-                .foregroundStyle(.orange)
-                .fixedSize(horizontal: false, vertical: true)
+            ProblemRow(message: message, openSettings: openSettings)
         }
     }
 }
 
-struct Stat: View {
-    let label: String
-    let value: String
+/// 26pt round header button.
+struct RoundButton: View {
+    let symbol: String
+    let help: String
+    let action: () -> Void
+    @State private var hovering = false
 
     var body: some View {
-        VStack(alignment: .trailing, spacing: 0) {
-            RollingText(text: value).font(.system(size: 13, weight: .semibold, design: .rounded))
-            Text(label).font(.system(size: 9.5)).foregroundStyle(.secondary)
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 11.5, weight: .bold))
+                .frame(width: 26, height: 26)
+                .background(Circle().fill(Color.white.opacity(hovering ? 0.16 : 0.08)))
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .help(help)
+    }
+}
+
+/// A connection that needs the user: what went wrong and a way to fix it.
+struct ProblemRow: View {
+    let message: String
+    let openSettings: () -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Brand.attention)
+            Text(message)
+                .foregroundStyle(.white.opacity(0.6))
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 4)
+            Button(action: openSettings) {
+                Text("Sign in")
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+                    .background(Capsule().fill(Brand.attention.opacity(0.16)))
+                    .foregroundStyle(Brand.attention)
+            }
+            .buttonStyle(.plain)
+        }
+        .font(.system(size: 11.5, weight: .bold, design: .rounded))
+    }
+}
+
+/// "Working" with a pulsing dot while the tool's logs are being written.
+struct WorkingLine: View {
+    let tint: Color
+    @State private var pulse = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Circle().fill(tint).frame(width: 6, height: 6).opacity(pulse ? 0.35 : 1)
+            Text("Working").foregroundStyle(.white.opacity(0.6))
+        }
+        .font(.system(size: 11.5, weight: .bold, design: .rounded))
+        .onAppear {
+            guard !reduceMotion else { return }
+            withAnimation(.easeInOut(duration: 0.7).repeatForever(autoreverses: true)) { pulse = true }
+        }
+    }
+}
+
+/// An account quota: a label row ("Premium requests · 212 / 300 · resets in 13d") over a full-width bar.
+struct QuotaRow: View {
+    let window: PlanWindow
+    @State private var filled = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(spacing: 4) {
+                Text(window.label).foregroundStyle(.white.opacity(0.6))
+                Text("·").foregroundStyle(.white.opacity(0.35))
+                Text(window.detail ?? Format.percent(window.usedPercent))
+                    .foregroundStyle(window.usedPercent >= 80 ? PlanBar.color(for: window.usedPercent) : .white)
+                if let reset = window.resetsAt {
+                    Text("· resets in \(Format.countdown(to: reset))").foregroundStyle(.white.opacity(0.35))
+                }
+                Spacer(minLength: 0)
+            }
+            .lineLimit(1)
+            GeometryReader { geometry in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Color.white.opacity(0.12))
+                    Capsule()
+                        .fill(PlanBar.color(for: window.usedPercent))
+                        .frame(width: max(4, geometry.size.width * (filled ? min(window.usedPercent, 100) : 0) / 100))
+                }
+            }
+            .frame(height: 6)
+        }
+        .font(.system(size: 11.5, weight: .bold, design: .rounded))
+        .monospacedDigit()
+        .onAppear {
+            withAnimation(.timingCurve(0.25, 1, 0.4, 1, duration: 0.9).delay(0.3)) { filled = true }
         }
     }
 }
@@ -688,10 +818,10 @@ struct TokenBreakdown: View {
 
     private var parts: [Part] {
         [
-            Part(name: "In", value: tokens.input, color: tint),
-            Part(name: "Out", value: tokens.output, color: tint.opacity(0.7)),
-            Part(name: "Cache write", value: tokens.cacheWrite, color: Color.white.opacity(0.45)),
-            Part(name: "Cache read", value: tokens.cacheRead, color: Color.white.opacity(0.2)),
+            Part(name: "input", value: tokens.input, color: Color.white.opacity(0.9)),
+            Part(name: "output", value: tokens.output, color: tint),
+            Part(name: "cache write", value: tokens.cacheWrite, color: tint.opacity(0.55)),
+            Part(name: "cache read", value: tokens.cacheRead, color: tint.opacity(0.28)),
         ]
     }
 
@@ -709,16 +839,18 @@ struct TokenBreakdown: View {
             .frame(height: 6)
             .clipShape(Capsule())
 
-            HStack(spacing: 10) {
-                ForEach(parts) { part in
+            HStack(spacing: 0) {
+                ForEach(Array(parts.enumerated()), id: \.element.id) { index, part in
+                    if index > 0 { Spacer(minLength: 6) }
                     HStack(spacing: 4) {
                         Circle().fill(part.color).frame(width: 6, height: 6)
-                        Text("\(part.name) \(Format.tokens(part.value))")
+                        Text(part.name).foregroundStyle(.white.opacity(0.35))
+                        Text(Format.tokens(part.value)).foregroundStyle(.white.opacity(0.6))
                     }
                 }
             }
-            .font(.system(size: 10, weight: .medium, design: .rounded))
-            .foregroundStyle(.secondary)
+            .font(.system(size: 10.5, weight: .bold, design: .rounded))
+            .lineLimit(1)
             .monospacedDigit()
         }
     }
@@ -731,41 +863,40 @@ struct PlanBar: View {
 
     static func color(for percent: Double) -> Color {
         switch percent {
-        case ..<60: return .green
-        case ..<85: return .orange
-        default: return .red
+        case ..<80: return Brand.good
+        case ..<95: return Brand.attention
+        default: return Brand.limit
         }
     }
 
     var body: some View {
         HStack(spacing: 8) {
             Text(window.label)
-                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .foregroundStyle(.white.opacity(0.6))
                 .lineLimit(1)
-                .frame(width: 70, alignment: .leading)
+                .frame(width: 38, alignment: .leading)
             GeometryReader { geometry in
                 ZStack(alignment: .leading) {
                     Capsule().fill(Color.white.opacity(0.12))
                     Capsule()
                         .fill(Self.color(for: window.usedPercent))
-                        .frame(width: max(4, geometry.size.width * (filled ? window.usedPercent : 0) / 100))
+                        .frame(width: max(4, geometry.size.width * (filled ? min(window.usedPercent, 100) : 0) / 100))
                 }
             }
             .frame(height: 6)
-            Text(window.detail.map { "\($0)" } ?? Format.percent(window.usedPercent))
-                .font(.system(size: 11, weight: .semibold, design: .rounded))
+            Text(window.detail ?? Format.percent(window.usedPercent))
+                .foregroundStyle(window.usedPercent >= 80 ? Self.color(for: window.usedPercent) : .white.opacity(0.6))
                 .lineLimit(1)
-                .frame(minWidth: 36, alignment: .trailing)
-            if let reset = window.resetsAt {
-                Text(Format.countdown(to: reset))
-                    .font(.system(size: 10))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 52, alignment: .trailing)
-            }
+                .frame(minWidth: 34, alignment: .trailing)
+            Text(window.resetsAt.map { "resets \(Format.countdown(to: $0))" } ?? "")
+                .foregroundStyle(.white.opacity(0.35))
+                .lineLimit(1)
+                .frame(width: 84, alignment: .trailing)
         }
+        .font(.system(size: 11.5, weight: .bold, design: .rounded))
         .monospacedDigit()
         .onAppear {
-            withAnimation(.spring(response: 0.8, dampingFraction: 0.85).delay(0.1)) { filled = true }
+            withAnimation(.timingCurve(0.25, 1, 0.4, 1, duration: 0.9).delay(0.3)) { filled = true }
         }
     }
 }
@@ -786,12 +917,12 @@ struct HistoryBars: View {
         HStack(alignment: .bottom, spacing: 3) {
             ForEach(Array(points.enumerated()), id: \.element.id) { index, point in
                 RoundedRectangle(cornerRadius: 2, style: .continuous)
-                    .fill(index == points.count - 1 ? tint : tint.opacity(0.4))
-                    .frame(height: max(2, 30 * CGFloat(Double(point.tokens.total) / peak)))
+                    .fill(point.tokens.total == 0 ? Color.white.opacity(0.12) : index == points.count - 1 ? tint : tint.opacity(0.45))
+                    .frame(height: max(2, 28 * CGFloat(Double(point.tokens.total) / peak)))
                     .frame(maxWidth: .infinity)
                     .help("\(Self.dayFormatter.string(from: point.date)): \(Format.tokens(point.tokens.total)) tokens")
             }
         }
-        .frame(height: 30, alignment: .bottom)
+        .frame(height: 28, alignment: .bottom)
     }
 }

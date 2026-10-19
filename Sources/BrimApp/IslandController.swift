@@ -214,7 +214,7 @@ final class IslandController {
         } else {
             state.hasNotch = false
             state.notchWidth = 0
-            state.barHeight = menuBarHeight
+            state.barHeight = max(menuBarHeight, 32)
             state.rightWingLimit = .infinity
         }
         let canvas = Self.canvas

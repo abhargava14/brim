@@ -229,10 +229,11 @@ final class UsageModel: ObservableObject {
                 guard let crossed = Self.thresholds.last(where: { before < $0 && window.usedPercent >= $0 }),
                       limitAlerts.shouldAnnounce(connectionID: tool.id, window: window, threshold: crossed)
                 else { continue }
-                let reset = window.resetsAt.map { "resets in \(Format.countdown(to: $0))" } ?? ""
+                let countdown = window.resetsAt.map { Format.countdown(to: $0) }
+                let reset = countdown.map { "resets in \($0)" } ?? ""
                 if crossed >= 100 {
                     enqueue(IslandEvent(connectionID: tool.id, kind: tool.kind, style: .limit,
-                                        title: "\(tool.name) · \(window.label) limit", detail: reset.isEmpty ? "limit reached" : "back, \(reset)"))
+                                        title: "\(window.label) limit", detail: countdown.map { "back in \($0)" } ?? tool.name))
                 } else {
                     enqueue(IslandEvent(connectionID: tool.id, kind: tool.kind, style: .warning,
                                         title: "\(window.label) \(Format.percent(window.usedPercent))", detail: reset.isEmpty ? tool.name : reset))
@@ -360,7 +361,7 @@ final class UsageModel: ObservableObject {
 
     /// The short text for one connection in the compact island and the menu bar.
     func compactValue(for tool: ToolSnapshot) -> String {
-        guard tool.hasData else { return "–" }
+        guard tool.hasData else { return tool.statusMessage != nil ? "sign in" : "–" }
         let billing = settings.connection(tool.id).map(Plans.billing(for:)) ?? .usageWindows
         let tokens = Format.tokens(tool.today.total)
         let percent = tool.tightestWindow.map { Format.percent($0.usedPercent) }
@@ -390,11 +391,24 @@ final class UsageModel: ObservableObject {
             if tightest >= 95 { return 1 }
             if let last = tool.lastActivity, now.timeIntervalSince(last) < 120 { return 2 }
             if tightest >= 80 { return 3 }
-            return tool.hasData ? 4 : 5
+            if tool.statusMessage != nil && !tool.hasData { return 4 }
+            return 5
         }
         return tools.enumerated()
             .sorted { (rank($0.element), $0.offset) < (rank($1.element), $1.offset) }
             .map(\.element)
+    }
+
+    /// Tells apart two connections of the same tool in the wings ("core", "work").
+    func wingSuffix(for tool: ToolSnapshot) -> String? {
+        guard snapshot.tools.filter({ $0.kind == tool.kind }).count > 1 else { return nil }
+        var name = tool.name
+        for prefix in [tool.kind.displayName, tool.kind.shortName] where name.hasPrefix(prefix) {
+            name = String(name.dropFirst(prefix.count))
+            break
+        }
+        let word = name.split(whereSeparator: { !$0.isLetter && !$0.isNumber }).first.map { String($0.prefix(5)).lowercased() }
+        return word?.isEmpty == false ? word : nil
     }
 
     func isWorking(_ tool: ToolSnapshot) -> Bool {
