@@ -110,7 +110,7 @@ func parseKind(_ text: String) -> ToolKind {
 func applyOptions(to connection: inout Connection) {
     typealias O = Connection.Option
     let mapping: [(flag: String, key: String)] = [
-        ("path", O.path), ("format", O.format), ("url", O.url), ("header", O.authHeader), ("prefix", O.authPrefix),
+        ("path", O.path), ("config", O.configDir), ("format", O.format), ("url", O.url), ("header", O.authHeader), ("prefix", O.authPrefix),
         ("used", O.usedPath), ("limit", O.limitPath), ("plan-path", O.planPath), ("reset", O.resetPath), ("label", O.label),
         ("github-user", O.githubLogin),
     ]
@@ -139,18 +139,55 @@ struct ToolReport: Encodable {
     let id: String
     let name: String
     let kind: String
-    let plan: String?
+    var plan: String?
     let todayTokens: Int64?
-    let windows: [Window]
+    var windows: [Window]
     let error: String?
     /// The signed-in account, as the tool reports it. Printed only; never saved.
     var account: String? = nil
+    /// Set when `windows` is an older reading (an idle Claude account whose sign-in expired).
+    var limitsAsOf: Date? = nil
+    var limitsNote: String? = nil
+    var tokens: Tokens? = nil
+    var models: [Model]? = nil
 
     struct Window: Encodable {
         let label: String
         let usedPercent: Double
         let resetsAt: Date?
         let detail: String?
+        var model: String? = nil
+    }
+
+    struct Counts: Encodable {
+        let input, output, cacheWrite, cacheRead, total: Int64
+        init(_ t: TokenCounts) { (input, output, cacheWrite, cacheRead, total) = (t.input, t.output, t.cacheWrite, t.cacheRead, t.total) }
+    }
+
+    struct Tokens: Encodable {
+        let today, last5Hours, week, month: Counts
+    }
+
+    struct Model: Encodable {
+        let model: String
+        let today, week: Counts
+    }
+}
+
+/// Live Claude limits per connection ID, from Anthropic (see `ClaudeUsageFetcher`).
+func fetchClaudeLimits(_ connections: [Connection]) async -> [String: (account: ClaudeAccount, result: Result<[PlanWindow], Error>)] {
+    await withTaskGroup(of: (String, ClaudeAccount, Result<[PlanWindow], Error>).self) { group in
+        for connection in connections where connection.kind == .claude {
+            guard let dir = connection.claudeConfigDir() else { continue }
+            group.addTask {
+                let account = ClaudeAccounts.account(configDir: dir)
+                do { return (connection.id, account, .success(try await ClaudeUsageFetcher.fetch(account))) }
+                catch { return (connection.id, account, .failure(error)) }
+            }
+        }
+        var results: [String: (account: ClaudeAccount, result: Result<[PlanWindow], Error>)] = [:]
+        for await (id, account, result) in group { results[id] = (account, result) }
+        return results
     }
 }
 
@@ -182,15 +219,38 @@ func collectReports() async -> [ToolReport] {
         return results
     }
 
+    let claude = await fetchClaudeLimits(active)
+    let cacheURL = ClaudeLimitsCache.defaultURL(supportDirectory: ClaudeStatusLineSetup.defaultSupportDirectory)
+    var cache = ClaudeLimitsCache.load(from: cacheURL)
+    for entry in claude.values {
+        if case .success(let windows) = entry.result { cache.readings[entry.account.key] = .init(windows: windows, fetchedAt: Date()) }
+    }
+    if claude.values.contains(where: { if case .success = $0.result { return true } else { return false } }) { cache.save(to: cacheURL) }
+
     return active.map { connection -> ToolReport in
         let plan = Plans.tier(connection.planID, for: connection.kind)?.name
         func windows(_ list: [PlanWindow]) -> [ToolReport.Window] {
-            list.map { ToolReport.Window(label: $0.label, usedPercent: $0.usedPercent, resetsAt: $0.resetsAt, detail: $0.detail) }
+            list.map { ToolReport.Window(label: $0.label, usedPercent: $0.usedPercent, resetsAt: $0.resetsAt, detail: $0.detail, model: $0.model) }
         }
-        if let tool = logs[connection.id] {
-            return ToolReport(id: connection.id, name: connection.name, kind: connection.kind.rawValue, plan: plan,
-                              todayTokens: tool.today.total, windows: windows(tool.planWindows),
-                              error: tool.hasData ? nil : "No logs found", account: tool.accountLabel)
+        if var tool = logs[connection.id] {
+            var report = ToolReport(id: connection.id, name: connection.name, kind: connection.kind.rawValue, plan: plan,
+                                    todayTokens: tool.today.total, windows: [],
+                                    error: tool.hasData ? nil : "No logs found", account: tool.accountLabel)
+            if let entry = claude[connection.id] {
+                let live = try? entry.result.get()
+                var failure: String?
+                if case .failure(let error) = entry.result { failure = error.localizedDescription }
+                let resolved = ClaudeLimits.resolve(live: live, statusLine: tool.planWindows, cached: cache.readings[entry.account.key], failure: failure)
+                tool.planWindows = resolved.windows
+                report.account = entry.account.email
+                report.plan = plan ?? entry.account.planLabel
+                report.limitsAsOf = resolved.asOf
+                report.limitsNote = resolved.note
+            }
+            report.windows = windows(tool.planWindows)
+            report.tokens = .init(today: .init(tool.today), last5Hours: .init(tool.last5Hours), week: .init(tool.week), month: .init(tool.month))
+            report.models = tool.models.map { .init(model: $0.model, today: .init($0.today), week: .init($0.week)) }
+            return report
         }
         switch accounts[connection.id] {
         case .success(let usage):
@@ -212,7 +272,44 @@ func bar(_ percent: Double, width: Int = 12) -> String {
     return percent >= 95 ? red(text) : percent >= 80 ? amber(text) : green(text)
 }
 
-func printReports(_ reports: [ToolReport]) {
+/// The `/usage`-style block for one log connection: every limit, tokens by kind, tokens per model.
+func printFullDetails(_ report: ToolReport) {
+    if !report.windows.isEmpty {
+        print("  " + dim("PLAN USAGE"))
+        for window in report.windows {
+            let plan = PlanWindow(label: window.label, usedPercent: window.usedPercent, resetsAt: window.resetsAt, model: window.model)
+            let title = ClaudeUsageResponse.title(for: plan).padding(toLength: 20, withPad: " ", startingAt: 0)
+            let reset = window.resetsAt.map { dim(Format.reset($0)) } ?? ""
+            print("  \(title) \(bar(window.usedPercent)) \(Format.percent(window.usedPercent).leftPad(4)) used  \(reset)")
+        }
+    }
+    if let tokens = report.tokens {
+        print("  " + dim(tableHeader("TOKENS", width: 10, columns: ["input", "output", "cache write", "cache read", "total"])))
+        for (name, counts) in [("today", tokens.today), ("last 5h", tokens.last5Hours), ("7 days", tokens.week), ("30 days", tokens.month)] {
+            let cells = [counts.input, counts.output, counts.cacheWrite, counts.cacheRead].map { Format.tokens($0).leftPad(11) }.joined(separator: " ")
+            print("  \(name.padding(toLength: 10, withPad: " ", startingAt: 0))\(cells) \(bold(Format.tokens(counts.total).leftPad(11)))")
+        }
+    }
+    if let models = report.models, !models.isEmpty {
+        print("  " + dim(tableHeader("BY MODEL · 7 DAYS", width: 18, columns: ["input", "output", "cache write", "cache read", "total", "today"])))
+        for usage in models {
+            let w = usage.week
+            let cells = [w.input, w.output, w.cacheWrite, w.cacheRead].map { Format.tokens($0).leftPad(11) }.joined(separator: " ")
+            let today = usage.today.total == 0 ? "–" : Format.tokens(usage.today.total)
+            print("  \(Format.modelName(usage.model).padding(toLength: 18, withPad: " ", startingAt: 0))\(cells) \(bold(Format.tokens(w.total).leftPad(11))) \(dim(today.leftPad(11)))")
+        }
+    }
+}
+
+func tableHeader(_ title: String, width: Int, columns: [String]) -> String {
+    title.padding(toLength: width, withPad: " ", startingAt: 0) + columns.map { $0.leftPad(11) }.joined(separator: " ")
+}
+
+extension String {
+    func leftPad(_ width: Int) -> String { count >= width ? self : String(repeating: " ", count: width - count) + self }
+}
+
+func printReports(_ reports: [ToolReport], full: Bool = false, emails: Bool = true) {
     if reports.isEmpty {
         print("Nothing connected. Try: brim add claude")
         return
@@ -229,14 +326,24 @@ func printReports(_ reports: [ToolReport]) {
             header += "  \(Format.tokens(tokens)) tokens today"
         }
         print(header)
-        if let account = report.account, !account.isEmpty { print("  " + dim(account)) }
+        if emails, let account = report.account, !account.isEmpty { print("  " + dim(account)) }
         if let error = report.error { print("  " + amber(error)) }
-        for window in report.windows {
+        let limitsNote = [report.limitsAsOf.map { "as of \(Format.ago($0))" }, report.limitsNote].compactMap { $0 }.joined(separator: " · ")
+        if full {
+            printFullDetails(report)
+            if !limitsNote.isEmpty { print("  " + amber(limitsNote)) }
+            continue
+        }
+        for window in report.windows where window.model == nil {
             let reset = window.resetsAt.map { dim(Format.reset($0)) } ?? ""
             let detail = window.detail.map { dim(" (\($0) used)") } ?? ""
             let label = window.label.padding(toLength: max(12, window.label.count), withPad: " ", startingAt: 0)
             print("  \(label) \(bar(window.usedPercent)) \(Format.percent(window.usedPercent)) used\(detail)  \(reset)")
         }
+        if !limitsNote.isEmpty { print("  " + amber(limitsNote)) }
+    }
+    if !full, reports.contains(where: { $0.kind == ToolKind.claude.rawValue }) {
+        print(dim("\nbrim status --full for every limit, tokens by kind and per model"))
     }
 }
 
@@ -248,6 +355,9 @@ func printHelp() {
 
     \(bold("USAGE"))
       brim [status] [--json]          Usage of every connected tool
+      brim status --full              Also every Claude limit (5h, week, per model), tokens by kind and per model
+                                      [--no-emails] hides account emails
+      brim claude accounts            Claude Code sign-ins on this Mac and which are connected
       brim list                       All connections and whether they're connected
       brim kinds                      Tools you can connect, with their plans
       brim add <tool> [options]       Add and connect a tool (any number, any mix)
@@ -264,6 +374,8 @@ func printHelp() {
       --name N           Your label, e.g. "Claude · Work"
       --plan P           A plan ID from `brim kinds`
       --path DIR         Log folder (claude, codex, custom-logs)
+      --config DIR       Claude Code config folder, e.g. ~/.claude-personal (claude)
+      --new-account      Sign in to another Claude account in a new folder [--label personal] (claude add)
       --format F         claude or codex (custom-logs)
       --url URL          Usage URL (custom)
       --used P --limit P JSON paths to used / limit values, e.g. data.usage (custom)
@@ -272,7 +384,8 @@ func printHelp() {
 
     \(bold("EXAMPLES"))
       brim add claude
-      brim add claude --name "Claude · Work" --path ~/work/.claude/projects --plan max5
+      brim add claude --new-account --label personal
+      brim add claude --name "Claude · Work" --config ~/.claude-work
       brim add copilot
       brim add copilot --github-user other-login   # another account the GitHub CLI is signed in to
       brim add openrouter            # prompts for the API key
@@ -288,6 +401,14 @@ func testConnection(_ connection: Connection) async {
     if connection.kind.source == .localLogs {
         let found = connection.logSource()?.roots.contains { FileManager.default.fileExists(atPath: $0.path) } ?? false
         print(found ? green("✓ ") + "Found \(connection.kind.displayName) logs." : amber("! ") + "No logs found yet. Use the tool once, or pass --path.")
+        if let dir = connection.claudeConfigDir() {
+            do {
+                let windows = try await ClaudeUsageFetcher.fetch(ClaudeAccounts.account(configDir: dir))
+                print(green("✓ ") + "Limits: " + windows.filter { $0.model == nil }.map { "\($0.label) \(Format.used($0))" }.joined(separator: " · "))
+            } catch {
+                print(amber("! ") + error.localizedDescription)
+            }
+        }
         return
     }
     do {
@@ -305,14 +426,31 @@ if !arguments.isEmpty { arguments.removeFirst() }
 switch command {
 case "status", "usage":
     let json = flag("json")
-    let reports = runBlocking { await collectReports() }
+    let full = flag("full")
+    let emails = !flag("no-emails")
+    var reports = runBlocking { await collectReports() }
+    if !emails { reports = reports.map { var r = $0; r.account = nil; return r } }
     if json {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         encoder.dateEncodingStrategy = .iso8601
         print(String(data: (try? encoder.encode(reports)) ?? Data("[]".utf8), encoding: .utf8) ?? "[]")
     } else {
-        printReports(reports)
+        printReports(reports, full: full, emails: emails)
+    }
+
+case "claude":
+    guard arguments.first == "accounts" else { fail("try: brim claude accounts") }
+    arguments.removeFirst()
+    let emails = !flag("no-emails")
+    let accounts = ClaudeAccounts.discover()
+    if accounts.isEmpty { print("No Claude Code folders found. Add one with: brim add claude --new-account") }
+    for account in accounts {
+        let used = file.connections.first { $0.kind == .claude && $0.claudeConfigDir()?.standardizedFileURL == account.configDir.standardizedFileURL }
+        let path = account.configDir.path.replacingOccurrences(of: FileManager.default.homeDirectoryForCurrentUser.path, with: "~")
+        let who = account.isSignedIn ? "\(account.kindLabel)\(account.planLabel.map { " · \($0)" } ?? "")" : "not signed in"
+        print("\(bold(path))  \(who)\(emails ? account.email.map { "  " + dim($0) } ?? "" : "")")
+        print("  " + (used.map { green("● ") + "connected as \($0.name)" } ?? dim("○ not connected · brim add claude --config \(path)")))
     }
 
 case "list", "ls":
@@ -335,8 +473,29 @@ case "kinds":
 case "add":
     let kind = parseKind(positional(0, "tool"))
     arguments.removeFirst()
+    var newAccount: ClaudeAccount?
+    if kind == .claude, flag("new-account") {
+        let label = option("label") ?? "personal"
+        print("Signing in to a new Claude account with Claude Code. Finish in your browser…")
+        let result: Result<ClaudeAccount, Error> = runBlocking {
+            do {
+                return .success(try await ClaudeAccountSetup.addAccount(label: label) { url in
+                    print(dim("If the browser didn't open, visit: \(url.absoluteString)"))
+                })
+            } catch { return .failure(error) }
+        }
+        switch result {
+        case .success(let account): newAccount = account
+        case .failure(let error): fail(error.localizedDescription)
+        }
+    }
     var connection = file.add(kind)
+    if let newAccount { connection.options[Connection.Option.configDir] = newAccount.configDir.path }
+    let namedByUser = arguments.contains("--name")
     applyOptions(to: &connection)
+    if kind == .claude, !namedByUser, let dir = connection.claudeConfigDir(), !connection.option(Connection.Option.configDir).isEmpty {
+        connection.name = ClaudeAccounts.account(configDir: dir).suggestedName
+    }
     let needsToken = kind == .openrouter || (kind == .customEndpoint && arguments.contains("--token-stdin"))
     if let token = readToken(ask: needsToken, label: "\(kind.displayName) token") {
         Keychain.save(token, for: connection.id)
