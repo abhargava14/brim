@@ -214,7 +214,9 @@ func printReports(_ reports: [ToolReport]) {
         print("Nothing connected. Try: brim add claude")
         return
     }
-    let tokens = reports.compactMap(\.todayTokens).reduce(0, +)
+    let sources = file.connections.filter(\.isEnabled).compactMap { c in c.logSource().map { (id: c.id, source: $0) } }
+    let covered = LogSource.coveredIDs(in: sources)
+    let tokens = reports.filter { !covered.contains($0.id) }.compactMap(\.todayTokens).reduce(0, +)
     print(bold("Today") + "  \(Format.tokens(tokens)) tokens · \(reports.count) connected")
     for report in reports {
         print("")

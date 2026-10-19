@@ -259,6 +259,28 @@ final class AccountUsageTests: XCTestCase {
         XCTAssertEqual(CursorUsage.userID(fromAccessToken: token), "user_abc")
     }
 
+    func testCursorPrefersItsOwnPercentages() throws {
+        // A real usage-summary response (Pro+, 2026-10-19), with nothing identifying in it.
+        let summary = #"""
+        {"billingCycleStart":"2026-10-17T11:12:19.000Z","billingCycleEnd":"2026-11-17T11:12:19.000Z",
+         "membershipType":"pro_plus","limitType":"user","isUnlimited":false,
+         "autoModelSelectedDisplayMessage":"You've used 5% of your included total usage",
+         "namedModelSelectedDisplayMessage":"You've used 64% of your included API usage",
+         "individualUsage":{"plan":{"enabled":true,"used":6576,"limit":7000,"remaining":424,
+           "breakdown":{"included":6576,"bonus":0,"total":6576},
+           "autoPercentUsed":2.5633333333333335,"apiPercentUsed":63.63636363636363,"totalPercentUsed":5.239840637450199},
+          "onDemand":{"enabled":false,"used":0,"limit":null,"remaining":null}},
+         "teamUsage":{}}
+        """#
+        let usage = try XCTUnwrap(CursorUsage.parseSummary(Data(summary.utf8)))
+        XCTAssertEqual(usage.planName, "Pro+")
+        XCTAssertEqual(usage.windows.map(\.label), ["API", "Total"])
+        XCTAssertEqual(usage.windows[0].usedPercent, 63.64, accuracy: 0.01)
+        XCTAssertEqual(usage.windows[1].usedPercent, 5.24, accuracy: 0.01)
+        XCTAssertNotNil(usage.windows[0].resetsAt)
+        XCTAssertEqual(Format.percent(usage.windows[0].usedPercent), "64%")
+    }
+
     func testWindsurfFindsNestedFields() throws {
         let json = #"{"userStatus":{"planStatus":{"planInfo":{"planName":"Pro"},"availablePromptCredits":"50000","usedPromptCredits":"12500","planEnd":"2026-11-01T00:00:00Z"}}}"#
         let usage = try XCTUnwrap(WindsurfUsage.parse(Data(json.utf8)))
@@ -384,5 +406,41 @@ final class FormatTests: XCTestCase {
         XCTAssertEqual(Format.countdown(to: now.addingTimeInterval(130 * 60), now: now), "2h 10m")
         XCTAssertEqual(Format.countdown(to: now.addingTimeInterval(45 * 60), now: now), "45m")
         XCTAssertEqual(Format.modelName("claude-sonnet-4-5-20250929"), "sonnet-4-5")
+    }
+}
+
+final class OverlappingLogRootTests: XCTestCase {
+    private func source(_ format: LogFormat, _ paths: String...) -> LogSource {
+        LogSource(format: format, roots: paths.map { URL(fileURLWithPath: $0) })
+    }
+
+    func testNestedAndDuplicateRootsAreCoveredOnce() {
+        let sources: [(id: String, source: LogSource)] = [
+            ("core", source(.claude, "/Users/me/.claude/projects/-Users-me-Core")),
+            ("main", source(.claude, "/Users/me/.claude/projects")),
+            ("again", source(.claude, "/Users/me/.claude/projects/")),
+            ("sibling", source(.claude, "/Users/me/.claude/projects-other")),
+            ("codex", source(.codex, "/Users/me/.claude/projects/x")),
+            ("work", source(.claude, "/Users/me/work-claude/projects")),
+        ]
+        XCTAssertEqual(LogSource.coveredIDs(in: sources), ["core", "again"])
+    }
+
+    func testMultiRootSourceIsCoveredOnlyWhenEveryRootIs() {
+        let sources: [(id: String, source: LogSource)] = [
+            ("main", source(.claude, "/a/projects")),
+            ("mixed", source(.claude, "/a/projects/one", "/b/projects")),
+        ]
+        XCTAssertTrue(LogSource.coveredIDs(in: sources).isEmpty)
+    }
+
+    func testTotalSkipsCoveredConnections() {
+        var main = ToolSnapshot(id: "main", kind: .claude, name: "Claude Code")
+        main.today = TokenCounts(input: 20, output: 2_119, cacheWrite: 102_000, cacheRead: 635_870)
+        var core = ToolSnapshot(id: "core", kind: .claude, name: "Claude · Core")
+        core.today = TokenCounts(input: 14, output: 1_300, cacheWrite: 42_000, cacheRead: 549_244)
+        let snapshot = UsageSnapshot(tools: [main, core], generatedAt: Date(), coveredIDs: ["core"])
+        XCTAssertEqual(snapshot.todayTokens, main.today.total)
+        XCTAssertEqual(UsageSnapshot(tools: [main, core], generatedAt: Date()).todayTokens, main.today.total + core.today.total)
     }
 }

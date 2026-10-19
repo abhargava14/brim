@@ -105,6 +105,30 @@ public struct LogSource: Equatable, Sendable {
         self.format = format
         self.roots = roots
     }
+
+    /// Connections whose logs another connection of the same format already reads: every root
+    /// is the same folder as, or inside, one of the other's roots. Their tokens would be counted
+    /// twice in a combined total. Of two identical sources, the later one is the duplicate.
+    public static func coveredIDs(in sources: [(id: String, source: LogSource)]) -> Set<String> {
+        func path(_ url: URL) -> String {
+            let path = url.standardizedFileURL.resolvingSymlinksInPath().path
+            return path.count > 1 && path.hasSuffix("/") ? String(path.dropLast()) : path
+        }
+        let paths = sources.map { $0.source.roots.map(path) }
+        var covered = Set<String>()
+        for (i, entry) in sources.enumerated() where !paths[i].isEmpty {
+            let isCovered = paths[i].allSatisfy { root in
+                sources.indices.contains { j in
+                    guard j != i, sources[j].source.format == entry.source.format else { return false }
+                    return paths[j].contains { other in
+                        root.hasPrefix(other == "/" ? "/" : other + "/") || (root == other && j < i)
+                    }
+                }
+            }
+            if isCovered { covered.insert(entry.id) }
+        }
+        return covered
+    }
 }
 
 /// Where each tool keeps its logs by default.

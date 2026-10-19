@@ -201,7 +201,8 @@ final class UsageModel: ObservableObject {
             tools.append(tool)
         }
 
-        let next = UsageSnapshot(tools: tools, generatedAt: Date())
+        let sources = settings.enabledConnections.compactMap { c in c.logSource().map { (id: c.id, source: $0) } }
+        let next = UsageSnapshot(tools: tools, generatedAt: Date(), coveredIDs: LogSource.coveredIDs(in: sources))
         detectEvents(old: snapshot, new: next)
         snapshot = next
         states = newStates

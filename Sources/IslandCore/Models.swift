@@ -243,10 +243,14 @@ public struct ToolSnapshot: Equatable, Sendable, Identifiable {
 public struct UsageSnapshot: Equatable, Sendable {
     public let tools: [ToolSnapshot]
     public let generatedAt: Date
+    /// Connections whose logs another connection already reads (see `LogSource.coveredIDs`);
+    /// they keep their own card but stay out of the combined total.
+    public let coveredIDs: Set<String>
 
-    public init(tools: [ToolSnapshot], generatedAt: Date) {
+    public init(tools: [ToolSnapshot], generatedAt: Date, coveredIDs: Set<String> = []) {
         self.tools = tools
         self.generatedAt = generatedAt
+        self.coveredIDs = coveredIDs
     }
 
     public static let empty = UsageSnapshot(tools: [], generatedAt: .distantPast)
@@ -255,5 +259,7 @@ public struct UsageSnapshot: Equatable, Sendable {
         tools.first { $0.id == id }
     }
 
-    public var todayTokens: Int64 { tools.reduce(0) { $0 + $1.today.total } }
+    public var todayTokens: Int64 {
+        tools.filter { !coveredIDs.contains($0.id) }.reduce(0) { $0 + $1.today.total }
+    }
 }
