@@ -23,14 +23,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var model = UsageModel(settings: settings)
     private var island: IslandController?
     private var statusItem: NSStatusItem?
-    private var settingsWindow: NSWindow?
+    private let setup = SetupWindows()
     private var cancellables = Set<AnyCancellable>()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        island = IslandController(model: model, settings: settings) { [weak self] in
-            self?.openSettings()
-        }
         setUpStatusItem()
+        island = IslandController(
+            model: model, settings: settings, setup: setup,
+            statusItemFrame: { [weak self] in self?.statusItem?.button?.window?.frame },
+            openSettings: { [weak self] in self?.openSettings() }
+        )
         model.start()
 
         // First run: show settings so people see which tools were found and how to add more.
@@ -49,17 +51,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         item.button?.font = .monospacedDigitSystemFont(ofSize: NSFont.systemFontSize - 1, weight: .medium)
         statusItem = item
 
-        model.$snapshot.combineLatest(settings.$showInMenuBar, settings.$compactMetric)
+        model.$snapshot.combineLatest(settings.$showInMenuBar, settings.$compactMetric, settings.$placement)
             .receive(on: RunLoop.main)
-            .sink { [weak self] _, _, _ in self?.updateStatusItem() }
+            .sink { [weak self] _, _, _, _ in self?.updateStatusItem() }
             .store(in: &cancellables)
+
+        // The island's right wing stops at this item, so lay it out again whenever the item moves or resizes.
+        if let window = item.button?.window {
+            for name in [NSWindow.didMoveNotification, NSWindow.didResizeNotification] {
+                NotificationCenter.default.publisher(for: name, object: window)
+                    .sink { [weak self] _ in Task { @MainActor in self?.island?.position() } }
+                    .store(in: &cancellables)
+            }
+        }
     }
 
     private func updateStatusItem() {
         guard let item = statusItem else { return }
-        // The menu bar shows the two most relevant tools; the menu lists all of them.
-        let parts = model.featuredTools.filter(\.hasData).prefix(2).map { "\($0.kind.shortName) \(model.compactValue(for: $0))" }
-        item.button?.title = settings.showInMenuBar && !parts.isEmpty ? " " + parts.joined(separator: " · ") : ""
+        // One glyph and one value, for the most urgent tool; the menu lists all of them.
+        let showValue = settings.showInMenuBar || settings.placement == .menuBarOnly
+        let top = model.featuredTools.first(where: \.hasData)
+        let symbol = showValue ? top?.kind.symbol ?? "sparkle" : "sparkle"
+        item.button?.image = NSImage(systemSymbolName: symbol, accessibilityDescription: "AI Island")
+        item.button?.title = showValue ? top.map { " " + model.compactValue(for: $0) } ?? "" : ""
         item.menu = buildMenu()
     }
 
@@ -123,16 +137,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Settings window
 
     @objc func openSettings() {
-        if settingsWindow == nil {
-            let window = NSWindow(contentViewController: NSHostingController(rootView: SettingsView(model: model, settings: settings)))
-            window.title = "AI Island"
-            window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
-            window.isReleasedWhenClosed = false
-            window.setContentSize(NSSize(width: 600, height: 680))
-            window.center()
-            settingsWindow = window
+        setup.show(.settings, title: "AI Island", size: NSSize(width: 600, height: 680)) {
+            SettingsView(model: model, settings: settings)
         }
-        NSApp.activate(ignoringOtherApps: true)
-        settingsWindow?.makeKeyAndOrderFront(nil)
     }
 }

@@ -11,11 +11,12 @@ struct IslandView: View {
 
     private var cornerRadius: CGFloat { state.isExpanded ? 26 : state.barHeight / 2.2 }
     private var width: CGFloat {
-        state.isExpanded ? IslandState.expandedWidth : state.compactWidth(forEvent: model.event != nil)
+        state.isExpanded ? IslandState.expandedWidth : state.compactWidth(for: model.event?.style)
     }
 
     var body: some View {
         island
+            .offset(x: state.isExpanded ? 0 : state.xOffset(for: model.event?.style))
             .frame(width: IslandController.canvas.width, height: IslandController.canvas.height, alignment: .top)
             .environment(\.colorScheme, .dark)
     }
@@ -58,7 +59,7 @@ struct IslandView: View {
         .contentShape(Rectangle())
         .onTapGesture {
             if model.event != nil && !state.isExpanded { model.dismissEvent() }
-            state.isExpanded.toggle()
+            if !state.expansionLocked { state.isExpanded.toggle() }
         }
         .animation(.spring(response: 0.38, dampingFraction: 0.78), value: state.isExpanded)
         .animation(.spring(response: 0.42, dampingFraction: 0.7), value: model.event?.id)
@@ -282,9 +283,8 @@ struct CompactView: View {
         let tools = model.featuredTools
         TimelineView(.periodic(from: .now, by: Self.pageSeconds)) { context in
             let pages = max(1, Int(ceil(Double(tools.count) / 2)))
-            // The most urgent pair always shows first and stays while something is urgent.
-            let urgent = tools.first.map { ($0.tightestWindow?.usedPercent ?? 0) >= 95 || model.isWorking($0) } ?? false
-            let page = urgent ? 0 : Int(context.date.timeIntervalSince1970 / Self.pageSeconds) % pages
+            // `featuredTools` puts urgent and working tools first; the pages keep turning regardless.
+            let page = Int(context.date.timeIntervalSince1970 / Self.pageSeconds) % pages
             let pair = Array(tools.dropFirst(page * 2).prefix(2))
             content(pair, total: tools.count, page: page, pages: pages)
                 .id(page)
@@ -331,9 +331,11 @@ struct CompactView: View {
             if let tool {
                 if alignment == .trailing { Spacer(minLength: 0) }
                 ToolGlyph(kind: tool.kind, mood: mood(tool), playful: model.settings.playful)
-                RollingText(text: model.compactValue(for: tool))
-                    .foregroundStyle(valueColor(tool))
-                    .lineLimit(1)
+                if alignment == .leading || !glyphOnly {
+                    RollingText(text: model.compactValue(for: tool))
+                        .foregroundStyle(valueColor(tool))
+                        .lineLimit(1)
+                }
                 if alignment == .leading { Spacer(minLength: 0) }
             } else {
                 Image(systemName: "plus.circle")
@@ -342,7 +344,15 @@ struct CompactView: View {
                 Spacer(minLength: 0)
             }
         }
-        .frame(maxWidth: state.hasNotch ? IslandState.wingWidth - 14 : .infinity)
+        .frame(maxWidth: wingWidth(alignment))
+    }
+
+    private var glyphOnly: Bool { state.rightWingWidth(for: nil) < IslandState.glyphOnlyWidth }
+
+    private func wingWidth(_ alignment: HorizontalAlignment) -> CGFloat {
+        guard state.hasNotch else { return .infinity }
+        let wing = alignment == .leading ? state.leftWingWidth(for: nil) : state.rightWingWidth(for: nil)
+        return max(0, wing - 14)
     }
 
     /// With a single tool, the right wing shows its tightest window or today's tokens.
@@ -350,7 +360,9 @@ struct CompactView: View {
     private func detailWing(_ tool: ToolSnapshot?) -> some View {
         HStack(spacing: 4) {
             Spacer(minLength: 0)
-            if let tool, let window = tool.tightestWindow {
+            if glyphOnly {
+                EmptyView()
+            } else if let tool, let window = tool.tightestWindow {
                 Text("\(window.label) \(Format.percent(window.usedPercent))")
                     .foregroundStyle(PlanBar.color(for: window.usedPercent))
             } else if let tool, tool.hasTokenData {
@@ -359,7 +371,7 @@ struct CompactView: View {
             }
         }
         .lineLimit(1)
-        .frame(maxWidth: state.hasNotch ? IslandState.wingWidth - 14 : .infinity)
+        .frame(maxWidth: wingWidth(.trailing))
     }
 
     private func valueColor(_ tool: ToolSnapshot) -> Color {
@@ -424,14 +436,16 @@ struct EventView: View {
                 Text(event.title).lineLimit(1)
                 Spacer(minLength: 0)
             }
-            .frame(maxWidth: state.hasNotch ? IslandState.eventWingWidth - 14 : .infinity)
+            .frame(maxWidth: state.hasNotch ? max(0, state.leftWingWidth(for: event.style) - 14) : .infinity)
             if state.hasNotch { Spacer().frame(width: state.notchWidth) } else { Spacer(minLength: 8) }
             HStack(spacing: 5) {
                 Spacer(minLength: 0)
-                Text(event.detail).foregroundStyle(.secondary).lineLimit(1)
+                if state.rightWingWidth(for: event.style) >= IslandState.glyphOnlyWidth {
+                    Text(event.detail).foregroundStyle(.secondary).lineLimit(1)
+                }
                 if let icon { Image(systemName: icon).foregroundStyle(accent) }
             }
-            .frame(maxWidth: state.hasNotch ? IslandState.eventWingWidth - 14 : .infinity)
+            .frame(maxWidth: state.hasNotch ? max(0, state.rightWingWidth(for: event.style) - 14) : .infinity)
         }
         .padding(.horizontal, 14)
         .font(.system(size: 12, weight: .semibold, design: .rounded))

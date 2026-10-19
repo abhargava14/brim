@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import IslandCore
 import SwiftUI
 
 /// Geometry and expansion state shared by the island window and its SwiftUI content.
@@ -12,17 +13,40 @@ final class IslandState: ObservableObject {
     @Published var barHeight: CGFloat = 32
     /// Size of the visible island, measured by the view; used for hover hit-testing.
     @Published var islandSize: CGSize = .zero
+    /// Room between the notch and the app's own menu bar item; the right wing never grows past it.
+    @Published var rightWingLimit: CGFloat = .infinity
+    /// A setup window is open: the island stays compact.
+    @Published var expansionLocked = false
 
     static let expandedWidth: CGFloat = 440
     static let wingWidth: CGFloat = 92
     /// Wings grow to this while an event (connected, near a limit, …) is showing.
     static let eventWingWidth: CGFloat = 140
+    static let quietEventWingWidth: CGFloat = 112
+    /// A right wing narrower than this shows only the glyph.
+    static let glyphOnlyWidth: CGFloat = 40
 
-    var compactWidth: CGFloat { compactWidth(forEvent: false) }
+    var compactWidth: CGFloat { compactWidth(for: nil) }
 
-    func compactWidth(forEvent event: Bool) -> CGFloat {
-        let wing = event ? Self.eventWingWidth : Self.wingWidth
-        return hasNotch ? notchWidth + 2 * wing : (event ? 300 : 230)
+    func leftWingWidth(for event: IslandEvent.Style?) -> CGFloat {
+        switch event {
+        case .none: return Self.wingWidth
+        case .disconnected: return Self.quietEventWingWidth
+        default: return Self.eventWingWidth
+        }
+    }
+
+    func rightWingWidth(for event: IslandEvent.Style?) -> CGFloat {
+        max(0, min(leftWingWidth(for: event), rightWingLimit))
+    }
+
+    func compactWidth(for event: IslandEvent.Style?) -> CGFloat {
+        hasNotch ? leftWingWidth(for: event) + notchWidth + rightWingWidth(for: event) : (event != nil ? 300 : 230)
+    }
+
+    /// Shift that keeps the gap between the wings over the notch when the right wing is capped.
+    func xOffset(for event: IslandEvent.Style?) -> CGFloat {
+        hasNotch ? (rightWingWidth(for: event) - leftWingWidth(for: event)) / 2 : 0
     }
 }
 
@@ -37,7 +61,8 @@ final class IslandPanel: NSPanel {
         )
         isFloatingPanel = true
         level = .statusBar
-        collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle]
+        // Allowed over full-screen apps; `IslandController` hides it there when the user wants.
+        collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenAuxiliary]
         backgroundColor = .clear
         isOpaque = false
         hasShadow = false
@@ -63,17 +88,26 @@ final class ClickThroughHostingView<Content: View>: NSHostingView<Content> {
 @MainActor
 final class IslandController {
     static let canvas = CGSize(width: 640, height: 680)
+    /// Height of the island when it hangs below the menu bar.
+    static let belowMenuBarHeight: CGFloat = 30
 
     let state = IslandState()
     private let panel = IslandPanel()
+    private let model: UsageModel
     private let settings: AppSettings
+    /// The app's own menu bar item, in screen coordinates.
+    private let statusItemFrame: () -> NSRect?
     private var monitors: [Any] = []
     private var collapseTask: Task<Void, Never>?
     private var expandTask: Task<Void, Never>?
     private var cancellables = Set<AnyCancellable>()
+    private var fullScreenAppActive = false
 
-    init(model: UsageModel, settings: AppSettings, openSettings: @escaping () -> Void) {
+    init(model: UsageModel, settings: AppSettings, setup: SetupWindows,
+         statusItemFrame: @escaping () -> NSRect?, openSettings: @escaping () -> Void) {
+        self.model = model
         self.settings = settings
+        self.statusItemFrame = statusItemFrame
         let root = IslandView(model: model, settings: settings, state: state, openSettings: openSettings)
         panel.contentView = ClickThroughHostingView(rootView: root)
 
@@ -82,9 +116,26 @@ final class IslandController {
             .sink { [weak self] _ in Task { @MainActor in self?.position() } }
             .store(in: &cancellables)
 
-        settings.$showIsland
-            .sink { [weak self] show in Task { @MainActor in self?.setVisible(show) } }
+        settings.$showIsland.combineLatest(settings.$placement, settings.$hideInFullScreen)
+            .sink { [weak self] _, _, _ in Task { @MainActor in self?.updateVisibility() } }
             .store(in: &cancellables)
+
+        state.$isExpanded
+            .removeDuplicates()
+            .sink { [weak model] expanded in Task { @MainActor in model?.setMomentsPaused(expanded, reason: "expanded") } }
+            .store(in: &cancellables)
+
+        setup.$open
+            .sink { [weak self] open in Task { @MainActor in self?.lockExpansion(open != nil) } }
+            .store(in: &cancellables)
+
+        let workspace = NSWorkspace.shared.notificationCenter
+        for name in [NSWorkspace.activeSpaceDidChangeNotification, NSWorkspace.didActivateApplicationNotification] {
+            workspace.publisher(for: name)
+                .sink { [weak self] _ in Task { @MainActor in self?.checkFullScreen() } }
+                .store(in: &cancellables)
+        }
+        checkFullScreen()
 
         let events: NSEvent.EventTypeMask = [.mouseMoved, .leftMouseDragged]
         if let global = NSEvent.addGlobalMonitorForEvents(matching: events, handler: { [weak self] _ in
@@ -100,8 +151,15 @@ final class IslandController {
         }
     }
 
-    func setVisible(_ visible: Bool) {
-        if visible {
+    /// Shown unless the user turned it off, chose the menu bar only, or a full-screen app is in front.
+    private var shouldShow: Bool {
+        settings.showIsland && settings.placement != .menuBarOnly && !(settings.hideInFullScreen && fullScreenAppActive)
+    }
+
+    private func updateVisibility() {
+        // Only full screen holds moments; when the user hides the island they simply play out unseen.
+        model.setMomentsPaused(settings.showIsland && settings.placement != .menuBarOnly && !shouldShow, reason: "fullScreen")
+        if shouldShow {
             position()
             panel.orderFrontRegardless()
         } else {
@@ -111,7 +169,17 @@ final class IslandController {
     }
 
     func toggleExpanded() {
+        guard !state.expansionLocked else { return }
         state.isExpanded.toggle()
+    }
+
+    private func lockExpansion(_ locked: Bool) {
+        state.expansionLocked = locked
+        if locked {
+            expandTask?.cancel()
+            expandTask = nil
+            state.isExpanded = false
+        }
     }
 
     /// The screen with the menu bar; on a MacBook that is usually the one with the notch.
@@ -119,33 +187,74 @@ final class IslandController {
         NSScreen.screens.first ?? NSScreen.main
     }
 
-    private func position() {
+    /// Lays the island out for the current screen, placement and menu bar. Call again when the
+    /// app's menu bar item changes size.
+    func position() {
         guard let screen else { return }
         let frame = screen.frame
-        if screen.safeAreaInsets.top > 0,
-           let left = screen.auxiliaryTopLeftArea, let right = screen.auxiliaryTopRightArea {
+        let menuBarHeight = max(frame.maxY - screen.visibleFrame.maxY, screen.safeAreaInsets.top, 24)
+        var top = frame.maxY
+        if settings.placement == .belowMenuBar {
+            state.hasNotch = false
+            state.notchWidth = 0
+            state.barHeight = Self.belowMenuBarHeight
+            state.rightWingLimit = .infinity
+            top = frame.maxY - menuBarHeight
+        } else if screen.safeAreaInsets.top > 0,
+                  let left = screen.auxiliaryTopLeftArea, let right = screen.auxiliaryTopRightArea {
             state.hasNotch = true
             state.notchWidth = frame.width - left.width - right.width
             state.barHeight = screen.safeAreaInsets.top
+            let notchMaxX = frame.maxX - right.width
+            if let item = statusItemFrame(), item.width > 0, frame.intersects(item), item.minX > notchMaxX {
+                state.rightWingLimit = item.minX - notchMaxX - 6
+            } else {
+                state.rightWingLimit = .infinity
+            }
         } else {
             state.hasNotch = false
             state.notchWidth = 0
-            state.barHeight = max(frame.maxY - screen.visibleFrame.maxY, 24)
+            state.barHeight = menuBarHeight
+            state.rightWingLimit = .infinity
         }
         let canvas = Self.canvas
         panel.setFrame(
-            NSRect(x: frame.midX - canvas.width / 2, y: frame.maxY - canvas.height, width: canvas.width, height: canvas.height),
+            NSRect(x: frame.midX - canvas.width / 2, y: top - canvas.height, width: canvas.width, height: canvas.height),
             display: true
         )
+    }
+
+    /// Whether the frontmost app has a window covering the island's whole screen. Only window
+    /// sizes and owners are read, never their contents or titles.
+    private func checkFullScreen() {
+        var active = false
+        if let screen, let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier,
+           pid != ProcessInfo.processInfo.processIdentifier,
+           let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] {
+            active = windows.contains { info in
+                guard (info[kCGWindowOwnerPID as String] as? pid_t) == pid,
+                      (info[kCGWindowLayer as String] as? Int) == 0,
+                      let bounds = info[kCGWindowBounds as String] as? NSDictionary,
+                      let rect = CGRect(dictionaryRepresentation: bounds as CFDictionary)
+                else { return false }
+                return rect.size == screen.frame.size && rect.minX == screen.frame.minX
+            }
+        }
+        guard active != fullScreenAppActive else { return }
+        fullScreenAppActive = active
+        updateVisibility()
     }
 
     /// The visible island in screen coordinates.
     private var islandRect: NSRect {
         guard let screen else { return .zero }
+        let event = state.isExpanded ? nil : model.event?.style
         let size = state.islandSize == .zero
-            ? CGSize(width: state.compactWidth, height: state.barHeight)
+            ? CGSize(width: state.compactWidth(for: event), height: state.barHeight)
             : state.islandSize
-        return NSRect(x: screen.frame.midX - size.width / 2, y: screen.frame.maxY - size.height, width: size.width, height: size.height)
+        let top = panel.frame.maxY
+        let midX = screen.frame.midX + (state.isExpanded ? 0 : state.xOffset(for: event))
+        return NSRect(x: midX - size.width / 2, y: top - size.height, width: size.width, height: size.height)
     }
 
     private func trackMouse() {
@@ -156,12 +265,13 @@ final class IslandController {
         if inside {
             collapseTask?.cancel()
             collapseTask = nil
-            if !state.isExpanded, settings.expandOnHover, expandTask == nil {
+            if !state.isExpanded, !state.expansionLocked, settings.expandOnHover, expandTask == nil {
                 expandTask = Task { [weak self] in
                     try? await Task.sleep(nanoseconds: 120_000_000)
                     guard let self, !Task.isCancelled else { return }
-                    self.state.isExpanded = true
                     self.expandTask = nil
+                    guard !self.state.expansionLocked else { return }
+                    self.state.isExpanded = true
                 }
             }
         } else {

@@ -125,6 +125,12 @@ struct SettingsView: View {
     private var islandSection: some View {
         Section("Island") {
             Toggle("Show the island at the top of the screen", isOn: $settings.showIsland)
+            Picker("Notch area", selection: $settings.placement) {
+                ForEach(IslandPlacement.allCases) { placement in
+                    Text(placement.title).tag(placement)
+                }
+            }
+            Toggle("Hide in full-screen apps", isOn: $settings.hideInFullScreen)
             Toggle("Expand when the pointer is over it", isOn: $settings.expandOnHover)
             Toggle("Show usage in the menu bar", isOn: $settings.showInMenuBar)
             Toggle("Playful animations (confetti, bouncing icons)", isOn: $settings.playful)

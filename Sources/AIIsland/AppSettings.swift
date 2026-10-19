@@ -17,6 +17,24 @@ enum CompactMetric: String, CaseIterable, Identifiable {
     }
 }
 
+/// Where the island goes: around the notch, below the menu bar (when another notch app or
+/// crowded status icons need that space), or nowhere (menu bar item only).
+enum IslandPlacement: String, CaseIterable, Identifiable {
+    case wrapNotch
+    case belowMenuBar
+    case menuBarOnly
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .wrapNotch: return "Around the notch"
+        case .belowMenuBar: return "Below the menu bar"
+        case .menuBarOnly: return "Menu bar only (no island)"
+        }
+    }
+}
+
 /// User preferences (UserDefaults) and the connections file shared with the `ai-island` command.
 @MainActor
 final class AppSettings: ObservableObject {
@@ -31,6 +49,14 @@ final class AppSettings: ObservableObject {
 
     @Published var showIsland: Bool {
         didSet { defaults.set(showIsland, forKey: "showIsland") }
+    }
+
+    @Published var placement: IslandPlacement {
+        didSet { defaults.set(placement.rawValue, forKey: "placement") }
+    }
+
+    @Published var hideInFullScreen: Bool {
+        didSet { defaults.set(hideInFullScreen, forKey: "hideInFullScreen") }
     }
 
     @Published var showInMenuBar: Bool {
@@ -63,6 +89,8 @@ final class AppSettings: ObservableObject {
         let file = store.load()
         connections = file.connections
         showIsland = defaults.object(forKey: "showIsland") as? Bool ?? true
+        placement = defaults.string(forKey: "placement").flatMap(IslandPlacement.init(rawValue:)) ?? .wrapNotch
+        hideInFullScreen = defaults.object(forKey: "hideInFullScreen") as? Bool ?? true
         showInMenuBar = defaults.object(forKey: "showInMenuBar") as? Bool ?? true
         compactMetric = defaults.string(forKey: "compactMetric").flatMap(CompactMetric.init(rawValue:)) ?? .auto
         expandOnHover = defaults.object(forKey: "expandOnHover") as? Bool ?? true

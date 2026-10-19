@@ -1,0 +1,47 @@
+import AppKit
+import SwiftUI
+
+/// Owns the one setup window. Asking for a different kind replaces what the open window shows,
+/// so two setup screens never edit the connections at the same time. The island stays compact
+/// while it is open (see `IslandController`).
+@MainActor
+final class SetupWindows: NSObject, ObservableObject, NSWindowDelegate {
+    enum Kind: Equatable {
+        case settings
+    }
+
+    @Published private(set) var open: Kind?
+    private var window: NSWindow?
+    private var shown: Kind?
+
+    func show<Content: View>(_ kind: Kind, title: String, size: NSSize, @ViewBuilder content: () -> Content) {
+        let window = self.window ?? makeWindow()
+        if shown != kind {
+            window.contentViewController = NSHostingController(rootView: content())
+            window.title = title
+            window.setContentSize(size)
+            if self.window == nil { window.center() }
+            shown = kind
+        }
+        self.window = window
+        open = kind
+        NSApp.activate(ignoringOtherApps: true)
+        window.makeKeyAndOrderFront(nil)
+    }
+
+    func close() {
+        window?.close()
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        open = nil
+    }
+
+    private func makeWindow() -> NSWindow {
+        let window = NSWindow(contentRect: .zero, styleMask: [.titled, .closable, .miniaturizable, .resizable],
+                              backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.delegate = self
+        return window
+    }
+}
