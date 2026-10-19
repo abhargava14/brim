@@ -25,6 +25,15 @@ public final class UsageEngine: @unchecked Sendable {
         var requests = 0
         var sessions = Set<String>()
         var modelTokens: [String: TokenCounts] = [:]
+        var sessionUsage: [String: SessionAggregate] = [:]
+    }
+
+    private struct SessionAggregate {
+        var project: String?
+        var model: String?
+        var latest = Date.distantPast
+        var tokens = TokenCounts.zero
+        var requests = 0
     }
 
     private struct RecentEvent {
@@ -39,6 +48,8 @@ public final class UsageEngine: @unchecked Sendable {
         var days: [Int: DayAggregate] = [:]
         var recent: [RecentEvent] = []
         var lastActivity: Date?
+        /// When each session's transcript was last written, which also covers tool runs and prompts.
+        var transcriptWrites: [String: Date] = [:]
         var codexPrimary: (window: PlanWindow, observedAt: Date)?
         var codexSecondary: (window: PlanWindow, observedAt: Date)?
     }
@@ -93,6 +104,7 @@ public final class UsageEngine: @unchecked Sendable {
         for id in order {
             guard let source = sources[id] else { continue }
             var count = 0
+            var writes: [String: Date] = [:]
             for root in source.roots {
                 for (url, size, modified) in Self.jsonlFiles(under: root) {
                     count += 1
@@ -106,6 +118,9 @@ public final class UsageEngine: @unchecked Sendable {
                         cursor = FileCursor(connectionID: id, format: source.format)
                         cursors[key] = cursor
                     }
+                    if source.format == .claude, let session = Self.claudeSessionID(of: url) {
+                        writes[session] = max(writes[session] ?? .distantPast, modified)
+                    }
                     if size < cursor.offset {
                         // Truncated or replaced: read again; duplicate keys are dropped anyway.
                         cursor.offset = 0
@@ -118,6 +133,7 @@ public final class UsageEngine: @unchecked Sendable {
                 }
             }
             states[id, default: ConnectionState()].fileCount = count
+            states[id, default: ConnectionState()].transcriptWrites = writes
         }
     }
 
@@ -177,7 +193,18 @@ public final class UsageEngine: @unchecked Sendable {
         var day = state.days[key] ?? DayAggregate()
         day.tokens += event.tokens
         day.requests += 1
-        if let session = event.sessionID { day.sessions.insert(session) }
+        if let session = event.sessionID {
+            day.sessions.insert(session)
+            var usage = day.sessionUsage[session] ?? SessionAggregate()
+            usage.tokens += event.tokens
+            usage.requests += 1
+            if event.project != nil { usage.project = event.project }
+            if event.timestamp >= usage.latest {
+                usage.latest = event.timestamp
+                usage.model = event.model
+            }
+            day.sessionUsage[session] = usage
+        }
         day.modelTokens[event.model, default: .zero] += event.tokens
         state.days[key] = day
 
@@ -220,6 +247,7 @@ public final class UsageEngine: @unchecked Sendable {
             snapshot.todayRequests = today.requests
             snapshot.topModel = today.modelTokens.max { $0.value.total < $1.value.total }?.key
             snapshot.models = modelUsage(today: today, startOfToday: startOfToday, state: state)
+            if source.format == .claude { snapshot.sessions = sessions(today: today, state: state) }
             snapshot.last5Hours = last5h.reduce(.zero) { $0 + $1.tokens }
             snapshot.week = week.reduce(.zero) { $0 + $1.tokens }
             snapshot.month = daily.reduce(.zero) { $0 + $1.tokens }
@@ -242,6 +270,15 @@ public final class UsageEngine: @unchecked Sendable {
             .sorted { ($0.week.total, $1.model) > ($1.week.total, $0.model) }
     }
 
+    private func sessions(today: DayAggregate, state: ConnectionState) -> [SessionUsage] {
+        today.sessionUsage
+            .map { id, usage in
+                SessionUsage(id: id, project: usage.project, model: usage.model, today: usage.tokens, requests: usage.requests,
+                             lastActivity: max(usage.latest, state.transcriptWrites[id] ?? .distantPast))
+            }
+            .sorted { ($0.lastActivity, $1.id) > ($1.lastActivity, $0.id) }
+    }
+
     /// Windows that have already reset are dropped: their old percentage no longer holds.
     private func planWindows(for id: String, state: ConnectionState, format: LogFormat, now: Date) -> [PlanWindow] {
         let windows: [PlanWindow]
@@ -258,6 +295,14 @@ public final class UsageEngine: @unchecked Sendable {
     }
 
     // MARK: - Files
+
+    /// `<project>/<session>.jsonl`, or `<project>/<session>/subagents/agent-*.jsonl` for its helpers.
+    static func claudeSessionID(of url: URL) -> String? {
+        let parts = url.pathComponents
+        if let index = parts.lastIndex(of: "subagents"), index > 0 { return parts[index - 1] }
+        let name = url.deletingPathExtension().lastPathComponent
+        return name.isEmpty ? nil : name
+    }
 
     static func jsonlFiles(under root: URL) -> [(url: URL, size: UInt64, modified: Date)] {
         let keys: [URLResourceKey] = [.isRegularFileKey, .fileSizeKey, .contentModificationDateKey]

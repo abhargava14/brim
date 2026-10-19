@@ -6,7 +6,7 @@ import SwiftUI
 // Claude cards: the full view (what Claude Code's /usage shows, per account) and the pieces the
 // short card adds. Percentages are always used, never left.
 
-/// The full view: plan limits with resets, tokens by kind, and tokens per model.
+/// The full view: plan limits with resets, tokens by kind, tokens per model, and today's sessions.
 struct ClaudeDetailView: View {
     let tool: ToolSnapshot
     @ObservedObject var model: UsageModel
@@ -20,7 +20,9 @@ struct ClaudeDetailView: View {
                     .font(.system(size: 12, weight: .bold, design: .rounded))
                     .foregroundStyle(.white.opacity(0.6))
                 Spacer()
-                Text("\(tool.todaySessions) sessions · \(tool.todayRequests) req")
+                Text(tool.sessions.isEmpty
+                      ? "\(tool.todaySessions) sessions · \(tool.todayRequests) req"
+                      : tool.sessionSummary())
                     .font(.system(size: 11, weight: .bold, design: .rounded))
                     .foregroundStyle(.white.opacity(0.35))
             }
@@ -47,6 +49,15 @@ struct ClaudeDetailView: View {
                 VStack(spacing: 6) {
                     ForEach(tool.models.prefix(6)) { usage in
                         ClaudeModelRow(usage: usage, peak: tool.models.first?.week.total ?? 1, tint: tool.kind.tint)
+                    }
+                }
+            }
+
+            if !tool.sessions.isEmpty {
+                ClaudeSectionTitle(text: "Sessions today")
+                VStack(spacing: 6) {
+                    ForEach(tool.sessions.prefix(8)) { session in
+                        ClaudeSessionRow(session: session, peak: tool.sessions.first?.today.total ?? 1, tint: tool.kind.tint)
                     }
                 }
             }
@@ -91,11 +102,15 @@ struct ClaudeLimitRow: View {
             Text(Format.used(window))
                 .foregroundStyle(window.usedPercent >= 80 ? PlanBar.color(for: window.usedPercent) : .white.opacity(0.6))
                 .lineLimit(1)
+                .fixedSize()
                 .frame(minWidth: 62, alignment: .trailing)
+                .layoutPriority(1)
             Text(window.resetsAt.map { Format.reset($0) } ?? "")
                 .foregroundStyle(.white.opacity(0.35))
                 .lineLimit(1)
-                .frame(width: 84, alignment: .trailing)
+                .fixedSize()
+                .frame(minWidth: 84, alignment: .trailing)
+                .layoutPriority(1)
         }
         .font(.system(size: 11.5, weight: .bold, design: .rounded))
         .monospacedDigit()
@@ -180,10 +195,14 @@ struct ClaudeModelRow: View {
             .frame(height: 6)
             Text(Format.tokens(usage.week.total))
                 .foregroundStyle(.white)
-                .frame(width: 44, alignment: .trailing)
+                .lineLimit(1)
+                .fixedSize()
+                .frame(minWidth: 48, alignment: .trailing)
             Text(usage.today.isZero ? "–" : Format.tokens(usage.today.total))
                 .foregroundStyle(.white.opacity(0.35))
-                .frame(width: 44, alignment: .trailing)
+                .lineLimit(1)
+                .fixedSize()
+                .frame(minWidth: 44, alignment: .trailing)
                 .help("today")
         }
         .font(.system(size: 11, weight: .bold, design: .rounded))
@@ -193,6 +212,76 @@ struct ClaudeModelRow: View {
     private var parts: [(Int64, Color)] {
         [(usage.week.input, Color.white.opacity(0.9)), (usage.week.output, tint),
          (usage.week.cacheWrite, tint.opacity(0.55)), (usage.week.cacheRead, tint.opacity(0.28))]
+    }
+}
+
+/// One Claude session: project, model, today's tokens (cache split), last activity, working dot.
+struct ClaudeSessionRow: View {
+    let session: SessionUsage
+    let peak: Int64
+    let tint: Color
+    @State private var pulse = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Circle()
+                .fill(session.isActive() ? tint : Color.white.opacity(0.15))
+                .frame(width: 6, height: 6)
+                .opacity(session.isActive() && pulse ? 0.35 : 1)
+            Text(session.project ?? "—")
+                .foregroundStyle(.white)
+                .lineLimit(1)
+                .frame(width: 72, alignment: .leading)
+            Text(session.model.map(Format.modelName) ?? "—")
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundStyle(.white.opacity(0.6))
+                .lineLimit(1)
+                .frame(width: 72, alignment: .leading)
+            GeometryReader { geometry in
+                let width = geometry.size.width * CGFloat(Double(session.today.total) / Double(max(peak, 1)))
+                HStack(spacing: 1) {
+                    ForEach(Array(parts.enumerated()), id: \.offset) { _, part in
+                        Rectangle().fill(part.1)
+                            .frame(width: max(part.0 > 0 ? 1.5 : 0, width * CGFloat(Double(part.0) / Double(max(session.today.total, 1)))))
+                    }
+                }
+                .clipShape(Capsule())
+            }
+            .frame(height: 6)
+            Text(Format.tokens(session.today.total))
+                .foregroundStyle(.white)
+                .lineLimit(1)
+                .fixedSize()
+                .frame(minWidth: 40, alignment: .trailing)
+            Text(Format.ago(session.lastActivity))
+                .foregroundStyle(.white.opacity(0.35))
+                .lineLimit(1)
+                .fixedSize()
+                .frame(minWidth: 52, alignment: .trailing)
+        }
+        .font(.system(size: 11, weight: .bold, design: .rounded))
+        .monospacedDigit()
+        .help(sessionHelp)
+        .onAppear {
+            guard session.isActive(), !reduceMotion else { return }
+            withAnimation(.easeInOut(duration: 0.7).repeatForever(autoreverses: true)) { pulse = true }
+        }
+    }
+
+    private var parts: [(Int64, Color)] {
+        [(session.today.input, Color.white.opacity(0.9)), (session.today.output, tint),
+         (session.today.cacheWrite, tint.opacity(0.55)), (session.today.cacheRead, tint.opacity(0.28))]
+    }
+
+    private var sessionHelp: String {
+        let kinds = [
+            "in \(Format.tokens(session.today.input))",
+            "out \(Format.tokens(session.today.output))",
+            "cache↑ \(Format.tokens(session.today.cacheWrite))",
+            "cache↓ \(Format.tokens(session.today.cacheRead))",
+        ].joined(separator: " · ")
+        return "\(session.requests) replies · \(kinds)"
     }
 }
 

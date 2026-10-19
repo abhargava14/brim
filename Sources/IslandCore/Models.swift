@@ -181,6 +181,35 @@ public struct ModelUsage: Equatable, Sendable, Identifiable {
     }
 }
 
+/// One Claude Code session (one transcript's `sessionId`) that used tokens today. Metadata only.
+public struct SessionUsage: Equatable, Sendable, Identifiable {
+    public let id: String
+    /// The working folder's name, e.g. "brim".
+    public let project: String?
+    /// The model of the session's latest response.
+    public let model: String?
+    public let today: TokenCounts
+    public let requests: Int
+    /// The later of its latest response and its transcript's last write.
+    public let lastActivity: Date
+
+    /// A transcript written this recently counts as a session that's working now.
+    public static let activeWindow: TimeInterval = 120
+
+    public init(id: String, project: String?, model: String?, today: TokenCounts, requests: Int, lastActivity: Date) {
+        self.id = id
+        self.project = project
+        self.model = model
+        self.today = today
+        self.requests = requests
+        self.lastActivity = lastActivity
+    }
+
+    public func isActive(at now: Date = Date()) -> Bool {
+        now.timeIntervalSince(lastActivity) <= Self.activeWindow
+    }
+}
+
 /// One day of usage for the history graph.
 public struct DailyPoint: Equatable, Sendable, Identifiable {
     public let date: Date
@@ -227,6 +256,8 @@ public struct ToolSnapshot: Equatable, Sendable, Identifiable {
     public var accountLabel: String?
     /// Per-model tokens over the last 7 days, most used first (log-based connections).
     public var models: [ModelUsage] = []
+    /// Today's sessions, most recently active first (Claude Code connections).
+    public var sessions: [SessionUsage] = []
     /// Set when `planWindows` is an older reading, e.g. an idle Claude account's.
     public var limitsAsOf: Date?
     /// Why limits are old or missing, e.g. "Open Claude Code to refresh".
@@ -250,6 +281,15 @@ public struct ToolSnapshot: Equatable, Sendable, Identifiable {
 
     public var isFound: Bool { hasData }
     public var hasTokenData: Bool { kind.source == .localLogs }
+
+    public func activeSessionCount(at now: Date = Date()) -> Int {
+        sessions.filter { $0.isActive(at: now) }.count
+    }
+
+    /// Short Claude line: `3 sessions · 1 active`.
+    public func sessionSummary(at now: Date = Date()) -> String {
+        "\(sessions.count) sessions · \(activeSessionCount(at: now)) active"
+    }
 
     /// The fullest plan window, which is the one most worth warning about.
     public var tightestWindow: PlanWindow? {

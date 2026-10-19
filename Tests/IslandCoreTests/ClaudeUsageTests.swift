@@ -219,4 +219,43 @@ final class ModelBreakdownTests: XCTestCase {
         XCTAssertEqual(models[1].today, .zero)
         XCTAssertEqual(engine.snapshot()[0].topModel, "claude-opus-5")
     }
+
+    func testSessionsTodayAndWhichAreActive() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("brim-sessions-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let iso = ISO8601DateFormatter()
+        func write(_ path: String, session: String, cwd: String, model: String, ago: TimeInterval, written: TimeInterval, tokens: Int) throws {
+            let url = root.appendingPathComponent(path)
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            let line = """
+            {"type":"assistant","sessionId":"\(session)","requestId":"r-\(path)","cwd":"\(cwd)","timestamp":"\(iso.string(from: now.addingTimeInterval(-ago)))","message":{"id":"m-\(path)","model":"\(model)","usage":{"input_tokens":\(tokens),"output_tokens":2,"cache_creation_input_tokens":30,"cache_read_input_tokens":400}}}
+
+            """
+            try Data(line.utf8).write(to: url)
+            try FileManager.default.setAttributes([.modificationDate: now.addingTimeInterval(-written)], ofItemAtPath: url.path)
+        }
+        try write("-Users-me-brim/a.jsonl", session: "a", cwd: "/Users/me/brim", model: "claude-opus-5", ago: 3_600, written: 30, tokens: 1)
+        try write("-Users-me-brim/a/subagents/agent-1.jsonl", session: "a", cwd: "/Users/me/brim", model: "claude-haiku-4-5", ago: 4_000, written: 4_000, tokens: 5)
+        try write("-Users-me-site/b.jsonl", session: "b", cwd: "/Users/me/site", model: "claude-sonnet-5", ago: 600, written: 600, tokens: 7)
+        try write("-Users-me-old/c.jsonl", session: "c", cwd: "/Users/me/old", model: "claude-opus-5", ago: 86_400, written: 86_400, tokens: 9)
+
+        let engine = UsageEngine(historyDays: 30, calendar: calendar, now: { now })
+        engine.configure([(id: "c", source: LogSource(format: .claude, roots: [root]))])
+        engine.scan()
+        let tool = engine.snapshot()[0]
+
+        XCTAssertEqual(tool.sessions.map(\.id), ["a", "b"], "yesterday's session is left out; most recent first")
+        XCTAssertEqual(tool.sessions[0].project, "brim")
+        XCTAssertEqual(tool.sessions[0].model, "claude-opus-5", "the latest response's model")
+        XCTAssertEqual(tool.sessions[0].today, TokenCounts(input: 6, output: 4, cacheWrite: 60, cacheRead: 800), "helpers count toward their session")
+        XCTAssertEqual(tool.sessions[0].requests, 2)
+        XCTAssertEqual(tool.sessions[0].lastActivity, now.addingTimeInterval(-30), "a transcript write counts as activity")
+        XCTAssertTrue(tool.sessions[0].isActive(at: now))
+        XCTAssertFalse(tool.sessions[1].isActive(at: now))
+        XCTAssertEqual(tool.activeSessionCount(at: now), 1)
+        XCTAssertEqual(tool.sessionSummary(at: now), "2 sessions · 1 active")
+    }
 }

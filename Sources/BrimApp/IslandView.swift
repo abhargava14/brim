@@ -754,7 +754,9 @@ struct ToolCard: View {
                 .font(.system(size: 12, weight: .bold, design: .rounded))
                 .foregroundStyle(.white.opacity(0.6))
             Spacer()
-            Text("\(tool.todaySessions) sessions · \(tool.todayRequests) req")
+            Text(tool.kind == .claude && !tool.sessions.isEmpty
+                  ? tool.sessionSummary()
+                  : "\(tool.todaySessions) sessions · \(tool.todayRequests) req")
                 .font(.system(size: 11, weight: .bold, design: .rounded))
                 .foregroundStyle(.white.opacity(0.35))
         }

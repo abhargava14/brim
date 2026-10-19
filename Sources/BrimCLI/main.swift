@@ -150,6 +150,9 @@ struct ToolReport: Encodable {
     var limitsNote: String? = nil
     var tokens: Tokens? = nil
     var models: [Model]? = nil
+    /// Today's Claude sessions (metadata only). Printed on `--full`.
+    var sessions: [Session]? = nil
+    var activeSessions: Int? = nil
 
     struct Window: Encodable {
         let label: String
@@ -171,6 +174,16 @@ struct ToolReport: Encodable {
     struct Model: Encodable {
         let model: String
         let today, week: Counts
+    }
+
+    struct Session: Encodable {
+        let id: String
+        let project: String?
+        let model: String?
+        let today: Counts
+        let requests: Int
+        let lastActivity: Date
+        let active: Bool
     }
 }
 
@@ -250,6 +263,14 @@ func collectReports() async -> [ToolReport] {
             report.windows = windows(tool.planWindows)
             report.tokens = .init(today: .init(tool.today), last5Hours: .init(tool.last5Hours), week: .init(tool.week), month: .init(tool.month))
             report.models = tool.models.map { .init(model: $0.model, today: .init($0.today), week: .init($0.week)) }
+            if !tool.sessions.isEmpty {
+                let now = Date()
+                report.sessions = tool.sessions.map {
+                    .init(id: $0.id, project: $0.project, model: $0.model, today: .init($0.today),
+                          requests: $0.requests, lastActivity: $0.lastActivity, active: $0.isActive(at: now))
+                }
+                report.activeSessions = tool.activeSessionCount(at: now)
+            }
             return report
         }
         switch accounts[connection.id] {
@@ -272,8 +293,11 @@ func bar(_ percent: Double, width: Int = 12) -> String {
     return percent >= 95 ? red(text) : percent >= 80 ? amber(text) : green(text)
 }
 
-/// The `/usage`-style block for one log connection: every limit, tokens by kind, tokens per model.
+/// The `/usage`-style block for one log connection: every limit, tokens by kind, per model, sessions.
 func printFullDetails(_ report: ToolReport) {
+    if let sessions = report.sessions, let active = report.activeSessions {
+        print("  " + dim("\(sessions.count) sessions · \(active) active"))
+    }
     if !report.windows.isEmpty {
         print("  " + dim("PLAN USAGE"))
         for window in report.windows {
@@ -297,6 +321,20 @@ func printFullDetails(_ report: ToolReport) {
             let cells = [w.input, w.output, w.cacheWrite, w.cacheRead].map { Format.tokens($0).leftPad(11) }.joined(separator: " ")
             let today = usage.today.total == 0 ? "–" : Format.tokens(usage.today.total)
             print("  \(Format.modelName(usage.model).padding(toLength: 18, withPad: " ", startingAt: 0))\(cells) \(bold(Format.tokens(w.total).leftPad(11))) \(dim(today.leftPad(11)))")
+        }
+    }
+    if let sessions = report.sessions, !sessions.isEmpty {
+        // "● " + project(14) + model(14) = 30 characters before the token columns.
+        print("  " + dim("SESSIONS TODAY".padding(toLength: 30, withPad: " ", startingAt: 0)
+            + ["input", "output", "cache write", "cache read", "total", "activity"].map { $0.leftPad(11) }.joined(separator: " ")))
+        for session in sessions {
+            let t = session.today
+            let cells = [t.input, t.output, t.cacheWrite, t.cacheRead].map { Format.tokens($0).leftPad(11) }.joined(separator: " ")
+            let project = (session.project ?? "—").padding(toLength: 14, withPad: " ", startingAt: 0)
+            let model = (session.model.map(Format.modelName) ?? "—").padding(toLength: 14, withPad: " ", startingAt: 0)
+            let mark = session.active ? green("●") : dim("○")
+            let ago = dim(Format.ago(session.lastActivity).leftPad(11))
+            print("  \(mark) \(project)\(model)\(cells) \(bold(Format.tokens(t.total).leftPad(11))) \(ago)")
         }
     }
 }
@@ -334,6 +372,9 @@ func printReports(_ reports: [ToolReport], full: Bool = false, emails: Bool = tr
             if !limitsNote.isEmpty { print("  " + amber(limitsNote)) }
             continue
         }
+        if let sessions = report.sessions, let active = report.activeSessions {
+            print("  " + dim("\(sessions.count) sessions · \(active) active"))
+        }
         for window in report.windows where window.model == nil {
             let reset = window.resetsAt.map { dim(Format.reset($0)) } ?? ""
             let detail = window.detail.map { dim(" (\($0) used)") } ?? ""
@@ -343,7 +384,7 @@ func printReports(_ reports: [ToolReport], full: Bool = false, emails: Bool = tr
         if !limitsNote.isEmpty { print("  " + amber(limitsNote)) }
     }
     if !full, reports.contains(where: { $0.kind == ToolKind.claude.rawValue }) {
-        print(dim("\nbrim status --full for every limit, tokens by kind and per model"))
+        print(dim("\nbrim status --full for every limit, tokens by kind, per model and sessions"))
     }
 }
 
@@ -355,7 +396,8 @@ func printHelp() {
 
     \(bold("USAGE"))
       brim [status] [--json]          Usage of every connected tool
-      brim status --full              Also every Claude limit (5h, week, per model), tokens by kind and per model
+      brim status --full              Also every Claude limit (5h, week, per model), tokens by kind,
+                                      per model and today's sessions (metadata only)
                                       [--no-emails] hides account emails
       brim claude accounts            Claude Code sign-ins on this Mac and which are connected
       brim list                       All connections and whether they're connected
