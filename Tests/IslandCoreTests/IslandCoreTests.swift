@@ -237,6 +237,24 @@ final class AccountUsageTests: XCTestCase {
         XCTAssertNotNil(usage.windows[0].resetsAt)
     }
 
+    func testCopilotFreeWithQuotaSnapshots() throws {
+        // A real Copilot Free response (2026-10-19), trimmed and with nothing identifying in it.
+        let json = #"""
+        {"login":"example-user","access_type_sku":"free_limited_copilot","copilot_plan":"individual",
+         "quota_reset_date":"2026-11-01","quota_reset_date_utc":"2026-11-01T00:00:00.000Z",
+         "quota_snapshots":{
+          "chat":{"percent_remaining":93.8,"quota_remaining":187.7,"remaining":187,"entitlement":200,"unlimited":false},
+          "completions":{"percent_remaining":100.0,"quota_remaining":2000.0,"remaining":2000,"entitlement":2000,"unlimited":false},
+          "premium_interactions":{"percent_remaining":0.0,"quota_remaining":0.0,"remaining":0,"entitlement":0,"unlimited":false,"has_quota":false}}}
+        """#
+        let usage = try XCTUnwrap(CopilotUsage.parse(Data(json.utf8)))
+        XCTAssertEqual(usage.planName, "Free")
+        XCTAssertEqual(usage.windows.map(\.label), ["Chat", "Completions"])
+        XCTAssertEqual(usage.windows.map(\.detail), ["12 / 200", "0 / 2000"])
+        XCTAssertEqual(usage.windows[0].usedPercent, 6.15, accuracy: 0.01)
+        XCTAssertNotNil(usage.windows[0].resetsAt)
+    }
+
     func testCopilotFree() throws {
         let json = #"{"copilot_plan":"free","limited_user_reset_date":"2026-11-01","monthly_quotas":{"chat":50,"completions":2000},"limited_user_quotas":{"chat":10,"completions":1500}}"#
         let usage = try XCTUnwrap(CopilotUsage.parse(Data(json.utf8)))

@@ -23,7 +23,9 @@ public struct AccountUsage: Equatable, Sendable {
 public enum CopilotUsage {
     public static func parse(_ data: Data, now: Date = Date()) -> AccountUsage? {
         guard let root = JSON.object(data) else { return nil }
-        let plan = planName(JSON.string(root, "copilot_plan") ?? JSON.string(root, "access_type_sku"))
+        // `copilot_plan` stays "individual" on Copilot Free; the SKU says "free_limited_copilot".
+        let sku = JSON.string(root, "access_type_sku")
+        let plan = planName(sku?.lowercased().contains("free") == true ? sku : JSON.string(root, "copilot_plan") ?? sku)
         var windows: [PlanWindow] = []
 
         if let snapshots = root["quota_snapshots"] as? [String: Any] {
@@ -32,7 +34,8 @@ public enum CopilotUsage {
                 guard let quota = snapshots[key] as? [String: Any], (quota["unlimited"] as? Bool) != true,
                       let entitlement = JSON.double(quota, "entitlement"), entitlement > 0
                 else { continue }
-                let remaining = JSON.double(quota, "remaining")
+                // `remaining` is rounded down; `quota_remaining` keeps the fraction GitHub shows.
+                let remaining = JSON.double(quota, "quota_remaining") ?? JSON.double(quota, "remaining")
                     ?? JSON.double(quota, "percent_remaining").map { entitlement * $0 / 100 }
                     ?? entitlement
                 let used = max(0, entitlement - remaining)
