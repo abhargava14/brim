@@ -56,14 +56,15 @@ if [[ "${1:-}" == "--install" ]]; then
     rm -rf "/Applications/$APP_NAME.app" "/Applications/AI Island.app"
     cp -R "$APP" /Applications/
     CLI="/Applications/$APP_NAME.app/Contents/Helpers/brim"
-    if [[ -w /usr/local/bin ]]; then
-        BIN=/usr/local/bin
-    else
-        BIN="$HOME/.local/bin"
-        mkdir -p "$BIN"
-    fi
+    BIN="$HOME/.local/bin"
+    mkdir -p "$BIN"
     ln -sf "$CLI" "$BIN/brim"
     ln -sf "$CLI" "$BIN/ai-island"
+    # Also link into /usr/local/bin when we can write there.
+    if [[ -w /usr/local/bin ]]; then
+        ln -sf "$CLI" /usr/local/bin/brim
+        ln -sf "$CLI" /usr/local/bin/ai-island
+    fi
     echo "Linked $BIN/brim (and the old name, ai-island). Make sure $BIN is on your PATH."
     open "/Applications/$APP_NAME.app"
     echo "Installed to /Applications/$APP_NAME.app"

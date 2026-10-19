@@ -208,8 +208,8 @@ For each one the user has:
 - [ ] Settings → Terminal → Install links `brim`, and `brim status` works in a new
       terminal.
 - [ ] Settings → General → Launch at login works (it needs the app in /Applications).
-- [ ] Once the user has a GitHub repo, replace `OWNER/brim` in `install.sh`,
-      `packaging/homebrew/brim.rb` and `README.md`.
+- [x] Once the user has a GitHub repo, replace `OWNER/brim` in `install.sh`,
+      `packaging/homebrew/brim.rb` and `README.md` (now `abhargava14/brim`).
 - [ ] CI (`.github/workflows/ci.yml`) passes on GitHub's macOS runner.
 
 ## 10. Phase 6 (optional): next features

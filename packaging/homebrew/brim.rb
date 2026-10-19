@@ -1,9 +1,9 @@
-# Homebrew formula (builds from source). Put it in a tap, e.g. OWNER/homebrew-tap, then:
-#   brew install --HEAD OWNER/tap/brim
+# Homebrew formula (builds from source). Put it in a tap, e.g. abhargava14/homebrew-tap, then:
+#   brew install --HEAD abhargava14/tap/brim
 class Brim < Formula
   desc "AI usage tracker that lives in your Mac's notch (Claude Code, Codex, Copilot, Cursor, …)"
-  homepage "https://github.com/OWNER/brim"
-  head "https://github.com/OWNER/brim.git", branch: "main"
+  homepage "https://github.com/abhargava14/brim"
+  head "https://github.com/abhargava14/brim.git", branch: "main"
   license "MIT"
 
   depends_on xcode: ["15.0", :build]

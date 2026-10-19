@@ -1,12 +1,12 @@
 #!/bin/bash
 # Brim installer: builds from source and installs the app and the `brim` command.
 #
-#   curl -fsSL https://raw.githubusercontent.com/OWNER/brim/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/abhargava14/brim/main/install.sh | bash
 #
 # Set BRIM_REPO to install from a fork, BRIM_REF for a branch or tag.
 set -euo pipefail
 
-REPO="${BRIM_REPO:-https://github.com/OWNER/brim.git}"
+REPO="${BRIM_REPO:-https://github.com/abhargava14/brim.git}"
 REF="${BRIM_REF:-main}"
 SRC="${BRIM_SRC:-$HOME/.brim/src}"
 

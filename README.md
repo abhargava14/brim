@@ -68,31 +68,43 @@ Pick **one** of these.
 Open **Terminal** and paste:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/OWNER/brim/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/abhargava14/brim/main/install.sh | bash
 ```
 
 It downloads Brim, builds it (about a minute the first time), puts **Brim** in your
-Applications folder, adds the `brim` terminal command, and starts the app.
+Applications folder, adds the `brim` terminal command to `~/.local/bin`, and starts the app
+(you'll see the first-run screen).
 
-### Option 2: From a download or a clone
+### Option 2: From a clone
 
 ```bash
-git clone https://github.com/OWNER/brim.git
+git clone https://github.com/abhargava14/brim.git
 cd brim
 ./scripts/build-app.sh --install
 ```
 
-### Option 3: Homebrew
+### Option 3: DMG
+
+Build a disk image locally (or download one when published):
 
 ```bash
-brew install --HEAD OWNER/tap/brim
+./scripts/build-dmg.sh
+open build/Brim.dmg
+```
+
+Drag **Brim** onto **Applications**, then open it from there.
+
+### Option 4: Homebrew
+
+```bash
+brew install --HEAD abhargava14/tap/brim
 ```
 
 ### First launch
 
-Brim isn't signed with an Apple developer certificate yet. If macOS says it can't be opened:
-open **Applications**, right-click **Brim**, choose **Open**, then **Open** again. You only
-need to do this once.
+Brim isn't signed with an Apple developer certificate yet. If macOS says it can't be opened
+(Gatekeeper): open **Applications**, **right-click Brim → Open**, then click **Open** again.
+You only need to do this once.
 
 You'll know it's running when you see the ✳ icon in your menu bar and a black shape around the
 notch.
