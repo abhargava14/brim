@@ -412,6 +412,7 @@ struct CompactView: View {
             } else if let tool, let window = tool.tightestWindow, model.compactValue(for: tool) != Format.percent(window.usedPercent) {
                 Text("\(window.label) \(Format.percent(window.usedPercent))")
                     .foregroundStyle(valueColor(tool))
+                Suffix(text: "used")
             }
         }
         .lineLimit(1)
@@ -851,10 +852,10 @@ struct QuotaRow: View {
             HStack(spacing: 4) {
                 Text(window.label).foregroundStyle(.white.opacity(0.6))
                 Text("·").foregroundStyle(.white.opacity(0.35))
-                Text(window.detail ?? Format.percent(window.usedPercent))
+                Text(Format.used(window))
                     .foregroundStyle(window.usedPercent >= 80 ? PlanBar.color(for: window.usedPercent) : .white)
                 if let reset = window.resetsAt {
-                    Text("· resets in \(Format.countdown(to: reset))").foregroundStyle(.white.opacity(0.35))
+                    Text("· \(Format.reset(reset))").foregroundStyle(.white.opacity(0.35))
                 }
                 Spacer(minLength: 0)
             }
@@ -957,11 +958,11 @@ struct PlanBar: View {
                 }
             }
             .frame(height: 6)
-            Text(window.detail ?? Format.percent(window.usedPercent))
+            Text(Format.used(window))
                 .foregroundStyle(window.usedPercent >= 80 ? Self.color(for: window.usedPercent) : .white.opacity(0.6))
                 .lineLimit(1)
-                .frame(minWidth: 34, alignment: .trailing)
-            Text(window.resetsAt.map { "resets \(Format.countdown(to: $0))" } ?? "")
+                .frame(minWidth: 62, alignment: .trailing)
+            Text(window.resetsAt.map { Format.reset($0) } ?? "")
                 .foregroundStyle(.white.opacity(0.35))
                 .lineLimit(1)
                 .frame(width: 84, alignment: .trailing)

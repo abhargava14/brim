@@ -85,9 +85,10 @@ public enum CursorUsage {
         var windows: [PlanWindow] = []
         if let individual = root["individualUsage"] as? [String: Any] {
             if let plan = individual["plan"] as? [String: Any] {
-                // Plans with separate Auto and API pools report their own percentages; `used` and
-                // `limit` there are spend counters that don't match what Cursor shows.
-                let reported = [("API", "apiPercentUsed"), ("Total", "totalPercentUsed")].compactMap { label, key in
+                // Plans with two included pools report each one's percentage used, as Cursor's
+                // Plan & Usage page shows them: "Cursor Models" (Auto, Composer) and "Other Models"
+                // (named API models). `used` and `limit` there are spend counters, not either pool.
+                let reported = [("Cursor models", "autoPercentUsed"), ("Other models", "apiPercentUsed")].compactMap { label, key in
                     JSON.double(plan, key).map { PlanWindow(label: label, usedPercent: $0, resetsAt: reset) }
                 }
                 if !reported.isEmpty {

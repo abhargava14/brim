@@ -274,11 +274,13 @@ final class AccountUsageTests: XCTestCase {
         """#
         let usage = try XCTUnwrap(CursorUsage.parseSummary(Data(summary.utf8)))
         XCTAssertEqual(usage.planName, "Pro+")
-        XCTAssertEqual(usage.windows.map(\.label), ["API", "Total"])
-        XCTAssertEqual(usage.windows[0].usedPercent, 63.64, accuracy: 0.01)
-        XCTAssertEqual(usage.windows[1].usedPercent, 5.24, accuracy: 0.01)
+        // Cursor's page at the same time: "Cursor Models 3% used", "Other Models 64% used".
+        XCTAssertEqual(usage.windows.map(\.label), ["Cursor models", "Other models"])
+        XCTAssertEqual(Format.used(usage.windows[0]), "3% used")
+        XCTAssertEqual(Format.used(usage.windows[1]), "64% used")
+        XCTAssertEqual(usage.windows.max(by: { $0.usedPercent < $1.usedPercent })?.label, "Other models")
         XCTAssertNotNil(usage.windows[0].resetsAt)
-        XCTAssertEqual(Format.percent(usage.windows[0].usedPercent), "64%")
+        XCTAssertEqual(Format.used(PlanWindow(label: "Premium", usedPercent: 70.7, resetsAt: nil, detail: "212 / 300")), "212 / 300 used")
     }
 
     func testWindsurfFindsNestedFields() throws {

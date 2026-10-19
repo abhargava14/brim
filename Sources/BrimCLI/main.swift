@@ -228,10 +228,10 @@ func printReports(_ reports: [ToolReport]) {
         print(header)
         if let error = report.error { print("  " + amber(error)) }
         for window in report.windows {
-            let reset = window.resetsAt.map { dim("resets in \(Format.countdown(to: $0))") } ?? ""
-            let detail = window.detail.map { dim(" (\($0))") } ?? ""
+            let reset = window.resetsAt.map { dim(Format.reset($0)) } ?? ""
+            let detail = window.detail.map { dim(" (\($0) used)") } ?? ""
             let label = window.label.padding(toLength: 12, withPad: " ", startingAt: 0)
-            print("  \(label) \(bar(window.usedPercent)) \(Format.percent(window.usedPercent))\(detail)  \(reset)")
+            print("  \(label) \(bar(window.usedPercent)) \(Format.percent(window.usedPercent)) used\(detail)  \(reset)")
         }
     }
 }
@@ -287,7 +287,7 @@ func testConnection(_ connection: Connection) async {
     }
     do {
         let usage = try await AccountFetcher.fetch(connection)
-        let summary = usage.windows.map { "\($0.label) \(Format.percent($0.usedPercent))" }.joined(separator: " · ")
+        let summary = usage.windows.map { "\($0.label) \(Format.used($0))" }.joined(separator: " · ")
         print(green("✓ ") + "Connected" + (usage.planName.map { " · \($0)" } ?? "") + (summary.isEmpty ? "" : " · \(summary)"))
     } catch {
         print(amber("! ") + error.localizedDescription)

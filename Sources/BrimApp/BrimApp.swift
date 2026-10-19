@@ -85,6 +85,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         } else {
             item.button?.image = showValue ? top.flatMap { BrimAssets.menuImage(for: $0.kind, size: 15) } ?? Self.defaultImage : Self.defaultImage
             item.button?.title = showValue ? top.map { " " + model.compactValue(for: $0) } ?? "" : ""
+            item.button?.toolTip = top.flatMap { tool in tool.tightestWindow.map { "\(tool.name): \($0.label) \(Format.used($0))" } }
         }
         item.menu = settings.enabledConnections.isEmpty ? buildEmptyMenu() : buildMenu()
     }
@@ -125,7 +126,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if tool.hasData {
                 var parts: [String] = []
                 if tool.hasTokenData { parts.append("\(Format.tokens(tool.today.total)) tokens") }
-                parts += tool.planWindows.map { "\($0.label) \(Format.percent($0.usedPercent))" }
+                parts += tool.planWindows.map { "\($0.label) \(Format.used($0))" }
                 text += parts.isEmpty ? "connected" : parts.joined(separator: " · ")
             } else {
                 text += tool.statusMessage.map { String($0.prefix(60)) } ?? "connecting…"

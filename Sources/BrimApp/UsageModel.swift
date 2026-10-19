@@ -237,7 +237,7 @@ final class UsageModel: ObservableObject {
                                         title: "\(window.label) limit", detail: countdown.map { "back in \($0)" } ?? tool.name))
                 } else {
                     enqueue(IslandEvent(connectionID: tool.id, kind: tool.kind, style: .warning,
-                                        title: "\(window.label) \(Format.percent(window.usedPercent))", detail: reset.isEmpty ? tool.name : reset))
+                                        title: "\(window.label) \(Format.percent(window.usedPercent)) used", detail: reset.isEmpty ? tool.name : reset))
                 }
             }
 
@@ -400,8 +400,11 @@ final class UsageModel: ObservableObject {
             .map(\.element)
     }
 
-    /// Tells apart two connections of the same tool in the wings ("core", "work").
+    /// "used" after a plan value; otherwise tells apart two connections of the same tool ("core", "work").
     func wingSuffix(for tool: ToolSnapshot) -> String? {
+        if tool.hasData, tool.tightestWindow != nil, !(tool.hasTokenData && compactValue(for: tool) == Format.tokens(tool.today.total)) {
+            return "used"
+        }
         guard snapshot.tools.filter({ $0.kind == tool.kind }).count > 1 else { return nil }
         var name = tool.name
         for prefix in [tool.kind.displayName, tool.kind.shortName] where name.hasPrefix(prefix) {

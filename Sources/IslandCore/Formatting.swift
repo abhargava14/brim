@@ -18,6 +18,11 @@ public enum Format {
         String(format: "%.0f%%", value)
     }
 
+    /// How much of a plan window is used, never how much is left: `57% used`, `212 / 300 used`.
+    public static func used(_ window: PlanWindow) -> String {
+        "\(window.detail ?? percent(window.usedPercent)) used"
+    }
+
     /// Time until `date`: `45m`, `2h 10m`, `3d 4h`.
     public static func countdown(to date: Date, now: Date = Date()) -> String {
         let minutes = max(0, Int((date.timeIntervalSince(now) / 60).rounded(.up)))
@@ -26,6 +31,18 @@ public enum Format {
         if hours < 24 { return minutes % 60 == 0 ? "\(hours)h" : "\(hours)h \(minutes % 60)m" }
         return hours % 24 == 0 ? "\(hours / 24)d" : "\(hours / 24)d \(hours % 24)h"
     }
+
+    /// `resets in 1h 20m` when it's soon, otherwise the day: `resets Nov 17`.
+    public static func reset(_ date: Date, now: Date = Date()) -> String {
+        guard date.timeIntervalSince(now) > 2 * 86_400 else { return "resets in \(countdown(to: date, now: now))" }
+        return "resets \(dayFormatter.string(from: date))"
+    }
+
+    private static let dayFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.setLocalizedDateFormatFromTemplate("MMM d")
+        return formatter
+    }()
 
     /// `just now`, `5m ago`, `3h ago`, `2d ago`.
     public static func ago(_ date: Date, now: Date = Date()) -> String {
