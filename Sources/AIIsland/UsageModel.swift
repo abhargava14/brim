@@ -20,31 +20,6 @@ enum ConnectionState: Equatable {
     }
 }
 
-/// A moment worth showing on the island for a few seconds.
-struct IslandEvent: Identifiable, Equatable {
-    enum Style: Equatable {
-        case connected, disconnected, warning, limit, milestone
-    }
-
-    let id = UUID()
-    let connectionID: String
-    let kind: ToolKind
-    let style: Style
-    let title: String
-    let detail: String
-
-    var duration: TimeInterval {
-        switch style {
-        case .limit: return 8
-        case .warning: return 7
-        case .milestone, .connected: return 4.5
-        case .disconnected: return 3
-        }
-    }
-
-    var celebrates: Bool { style == .connected || style == .milestone }
-}
-
 /// Runs every connection: scans logs on a background queue, fetches account usage on a slower
 /// cadence, merges both into one snapshot and raises events when something changes.
 @MainActor
@@ -72,8 +47,12 @@ final class UsageModel: ObservableObject {
     private var fetching = Set<String>()
     /// Connections the user just connected; they get a "connected" moment once data arrives.
     private var justConnected = Set<String>()
-    private var eventQueue: [IslandEvent] = []
+    private var moments = MomentQueue()
+    private var limitAlerts = LimitAlertMemory()
     private var eventTask: Task<Void, Never>?
+    private var gapTask: Task<Void, Never>?
+    /// Why moments are on hold (the island is expanded, hidden in full screen, …).
+    private var pauseReasons = Set<String>()
 
     /// Account services are polled gently; logs are cheap and read every few seconds.
     private static let accountInterval: TimeInterval = 300
@@ -239,15 +218,20 @@ final class UsageModel: ObservableObject {
                 justConnected.remove(tool.id)
                 if tool.hasData {
                     let detail = tool.planName.map { "\($0) plan" } ?? (tool.hasTokenData ? Format.tokens(tool.today.total) + " tokens today" : "Connected")
-                    enqueue(IslandEvent(connectionID: tool.id, kind: tool.kind, style: .connected, title: "\(tool.name) connected", detail: detail))
+                    enqueue(.connected(connectionID: tool.id, kind: tool.kind, name: tool.name, detail: detail))
                 }
+            }
+            for window in tool.planWindows {
+                limitAlerts.observe(connectionID: tool.id, window: window)
             }
             // Only compare against data we had before; the first load never fires events.
             guard old.generatedAt != .distantPast, let previous = old[tool.id], previous.hasData else { continue }
 
             for window in tool.planWindows {
                 let before = previous.planWindows.first { $0.label == window.label }?.usedPercent ?? window.usedPercent
-                guard let crossed = Self.thresholds.last(where: { before < $0 && window.usedPercent >= $0 }) else { continue }
+                guard let crossed = Self.thresholds.last(where: { before < $0 && window.usedPercent >= $0 }),
+                      limitAlerts.shouldAnnounce(connectionID: tool.id, window: window, threshold: crossed)
+                else { continue }
                 let reset = window.resetsAt.map { "resets in \(Format.countdown(to: $0))" } ?? ""
                 if crossed >= 100 {
                     enqueue(IslandEvent(connectionID: tool.id, kind: tool.kind, style: .limit,
@@ -267,33 +251,41 @@ final class UsageModel: ObservableObject {
     }
 
     private func enqueue(_ event: IslandEvent) {
-        eventQueue.append(event)
-        if self.event == nil { showNextEvent() }
+        moments.enqueue(event)
+        syncMoment()
     }
 
-    private func showNextEvent() {
-        guard !eventQueue.isEmpty else {
-            event = nil
-            return
-        }
-        let next = eventQueue.removeFirst()
-        event = next
+    /// Publishes the current moment and schedules the end of it.
+    private func syncMoment() {
+        if event != moments.current { event = moments.current }
         eventTask?.cancel()
+        eventTask = nil
+        guard let left = moments.timeLeft() else { return }
         eventTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: UInt64(next.duration * 1_000_000_000))
-            guard !Task.isCancelled else { return }
-            self?.event = nil
-            // A short gap so consecutive events read as separate moments.
-            try? await Task.sleep(nanoseconds: 450_000_000)
-            guard !Task.isCancelled else { return }
-            self?.showNextEvent()
+            try? await Task.sleep(nanoseconds: UInt64(left * 1_000_000_000))
+            guard !Task.isCancelled, let self else { return }
+            self.moments.finishCurrent()
+            self.event = nil
+            self.gapTask = Task { [weak self] in
+                // A short gap so consecutive events read as separate moments.
+                try? await Task.sleep(nanoseconds: 450_000_000)
+                guard let self, self.moments.current == nil else { return }
+                self.moments.showNext()
+                self.syncMoment()
+            }
         }
     }
 
     func dismissEvent() {
-        eventTask?.cancel()
-        event = nil
-        showNextEvent()
+        moments.dismiss()
+        syncMoment()
+    }
+
+    /// Holds moments while `reason` applies (the island is expanded or hidden), so none expire unseen.
+    func setMomentsPaused(_ paused: Bool, reason: String) {
+        if paused { pauseReasons.insert(reason) } else { pauseReasons.remove(reason) }
+        if pauseReasons.isEmpty { moments.resume() } else { moments.pause() }
+        syncMoment()
     }
 
     // MARK: - Connections
@@ -329,6 +321,7 @@ final class UsageModel: ObservableObject {
         accountErrors[id] = nil
         lastAccountFetch[id] = nil
         logTools[id] = nil
+        limitAlerts.forget(connectionID: id)
         settings.remove(id)
     }
 
