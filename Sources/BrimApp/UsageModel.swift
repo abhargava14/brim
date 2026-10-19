@@ -517,6 +517,10 @@ final class UsageModel: ObservableObject {
         claudeStyleOverrides[id] = claudeStyle(for: id) == .full ? .short : .full
     }
 
+    func setClaudeStyle(_ style: ClaudeCardStyle, for id: String) {
+        claudeStyleOverrides[id] = style
+    }
+
     /// Adds a connection for a Claude account that just signed in (see `AddClaudeAccountView`).
     @discardableResult
     func addClaudeConnection(for account: ClaudeAccount) -> Connection {

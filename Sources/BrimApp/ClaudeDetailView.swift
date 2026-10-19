@@ -11,29 +11,37 @@ struct ClaudeDetailView: View {
     let tool: ToolSnapshot
     @ObservedObject var model: UsageModel
 
+    /// Primary 5h / week-all-models always stay; empty per-model week rows are dropped.
+    private var visiblePlanWindows: [PlanWindow] {
+        tool.planWindows.filter { window in
+            window.model == nil || window.usedPercent > 0
+        }
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 RollingText(text: Format.tokens(tool.today.total))
-                    .font(.system(size: 24, weight: .heavy, design: .rounded))
+                    .font(.system(size: 22, weight: .heavy, design: .rounded))
                 Text("tokens today")
                     .font(.system(size: 12, weight: .bold, design: .rounded))
                     .foregroundStyle(.white.opacity(0.6))
-                Spacer()
+                Spacer(minLength: 8)
                 Text(tool.sessions.isEmpty
                       ? "\(tool.todaySessions) sessions · \(tool.todayRequests) req"
                       : tool.sessionSummary())
                     .font(.system(size: 11, weight: .bold, design: .rounded))
                     .foregroundStyle(.white.opacity(0.35))
+                    .lineLimit(1)
             }
             .monospacedDigit()
 
             ClaudeSectionTitle(text: "Plan usage")
-            if tool.planWindows.isEmpty {
+            if visiblePlanWindows.isEmpty {
                 ClaudeLimitsNote(tool: tool)
             } else {
-                VStack(spacing: 7) {
-                    ForEach(tool.planWindows, id: \.label) { window in
+                VStack(spacing: 5) {
+                    ForEach(Array(visiblePlanWindows.enumerated()), id: \.offset) { _, window in
                         ClaudeLimitRow(window: window)
                     }
                 }
@@ -41,23 +49,24 @@ struct ClaudeDetailView: View {
             }
 
             ClaudeSectionTitle(text: "Tokens")
-            TokenBreakdown(tokens: tool.today, tint: tool.kind.tint)
-            ClaudeTokenTable(rows: [("today", tool.today), ("7 days", tool.week)])
+            ClaudeTokensSummary(today: tool.today, week: tool.week, tint: tool.kind.tint)
 
             if !tool.models.isEmpty {
                 ClaudeSectionTitle(text: "By model · 7 days")
-                VStack(spacing: 6) {
+                VStack(spacing: 5) {
+                    let peak = tool.models.map(\.week.total).max() ?? 1
                     ForEach(tool.models.prefix(6)) { usage in
-                        ClaudeModelRow(usage: usage, peak: tool.models.first?.week.total ?? 1, tint: tool.kind.tint)
+                        ClaudeModelRow(usage: usage, peak: peak, tint: tool.kind.tint)
                     }
                 }
             }
 
             if !tool.sessions.isEmpty {
                 ClaudeSectionTitle(text: "Sessions today")
-                VStack(spacing: 6) {
+                VStack(spacing: 5) {
+                    let peak = tool.sessions.map(\.today.total).max() ?? 1
                     ForEach(tool.sessions.prefix(8)) { session in
-                        ClaudeSessionRow(session: session, peak: tool.sessions.first?.today.total ?? 1, tint: tool.kind.tint)
+                        ClaudeSessionRow(session: session, peak: peak, tint: tool.kind.tint)
                     }
                 }
             }
@@ -75,7 +84,7 @@ struct ClaudeSectionTitle: View {
             .font(.system(size: 10, weight: .heavy, design: .rounded))
             .tracking(0.6)
             .foregroundStyle(.white.opacity(0.35))
-            .padding(.top, 2)
+            .padding(.top, 4)
     }
 }
 
@@ -85,34 +94,35 @@ struct ClaudeLimitRow: View {
     @State private var filled = false
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 6) {
             Text(ClaudeUsageResponse.title(for: window))
                 .foregroundStyle(.white.opacity(0.6))
                 .lineLimit(1)
-                .frame(width: 118, alignment: .leading)
-            GeometryReader { geometry in
-                ZStack(alignment: .leading) {
-                    Capsule().fill(Color.white.opacity(0.12))
+                .frame(width: 108, alignment: .leading)
+                .layoutPriority(1)
+            ZStack(alignment: .leading) {
+                Capsule().fill(Color.white.opacity(0.12))
+                GeometryReader { geometry in
                     Capsule()
                         .fill(PlanBar.color(for: window.usedPercent))
                         .frame(width: max(4, geometry.size.width * (filled ? min(window.usedPercent, 100) : 0) / 100))
                 }
             }
+            .frame(minWidth: 0, maxWidth: .infinity)
             .frame(height: 6)
+            .layoutPriority(-1)
             Text(Format.used(window))
                 .foregroundStyle(window.usedPercent >= 80 ? PlanBar.color(for: window.usedPercent) : .white.opacity(0.6))
                 .lineLimit(1)
                 .fixedSize()
-                .frame(minWidth: 62, alignment: .trailing)
                 .layoutPriority(1)
             Text(window.resetsAt.map { Format.reset($0) } ?? "")
                 .foregroundStyle(.white.opacity(0.35))
                 .lineLimit(1)
                 .fixedSize()
-                .frame(minWidth: 84, alignment: .trailing)
                 .layoutPriority(1)
         }
-        .font(.system(size: 11.5, weight: .bold, design: .rounded))
+        .font(.system(size: 11, weight: .bold, design: .rounded))
         .monospacedDigit()
         .onAppear {
             withAnimation(.timingCurve(0.25, 1, 0.4, 1, duration: 0.9).delay(0.3)) { filled = true }
@@ -142,29 +152,116 @@ struct ClaudeLimitsNote: View {
     }
 }
 
-/// Input, output, cache write and cache read for a few periods.
-struct ClaudeTokenTable: View {
-    let rows: [(String, TokenCounts)]
+/// Today's token mix as a bar + legend; 7-day total as a quiet one-liner.
+struct ClaudeTokensSummary: View {
+    let today: TokenCounts
+    let week: TokenCounts
+    let tint: Color
+
+    private struct Part: Identifiable {
+        let name: String
+        let short: String
+        let value: Int64
+        let color: Color
+        var id: String { name }
+    }
+
+    private var parts: [Part] {
+        [
+            Part(name: "input", short: "in", value: today.input, color: Color.white.opacity(0.9)),
+            Part(name: "output", short: "out", value: today.output, color: tint),
+            Part(name: "cache write", short: "cache↑", value: today.cacheWrite, color: tint.opacity(0.55)),
+            Part(name: "cache read", short: "cache↓", value: today.cacheRead, color: tint.opacity(0.28)),
+        ]
+    }
 
     var body: some View {
-        Grid(alignment: .trailing, horizontalSpacing: 10, verticalSpacing: 4) {
-            GridRow {
-                Text("").gridColumnAlignment(.leading)
-                ForEach(["input", "output", "cache write", "cache read", "total"], id: \.self) { Text($0) }
-            }
-            .foregroundStyle(.white.opacity(0.35))
-            ForEach(rows, id: \.0) { name, tokens in
-                GridRow {
-                    Text(name).foregroundStyle(.white.opacity(0.6)).gridColumnAlignment(.leading)
-                    ForEach(Array([tokens.input, tokens.output, tokens.cacheWrite, tokens.cacheRead].enumerated()), id: \.offset) { _, value in
-                        Text(Format.tokens(value)).foregroundStyle(.white.opacity(0.6))
+        VStack(alignment: .leading, spacing: 5) {
+            GeometryReader { geometry in
+                HStack(spacing: 1.5) {
+                    ForEach(parts.filter { $0.value > 0 }) { part in
+                        Rectangle()
+                            .fill(part.color)
+                            .frame(width: max(2, geometry.size.width * CGFloat(part.value) / CGFloat(max(today.total, 1))))
                     }
-                    Text(Format.tokens(tokens.total)).foregroundStyle(.white)
                 }
             }
+            .frame(height: 6)
+            .clipShape(Capsule())
+
+            HStack(spacing: 0) {
+                ForEach(Array(parts.enumerated()), id: \.element.id) { index, part in
+                    if index > 0 { Spacer(minLength: 4) }
+                    HStack(spacing: 3) {
+                        Circle().fill(part.color).frame(width: 5, height: 5)
+                        Text("\(part.short) \(Format.tokens(part.value))")
+                            .foregroundStyle(.white.opacity(0.55))
+                    }
+                }
+            }
+            .font(.system(size: 10, weight: .bold, design: .rounded))
+            .lineLimit(1)
+            .minimumScaleFactor(0.85)
+            .monospacedDigit()
+
+            Text("7 days · \(Format.tokens(week.total))")
+                .font(.system(size: 10.5, weight: .bold, design: .rounded))
+                .foregroundStyle(.white.opacity(0.35))
+                .monospacedDigit()
         }
-        .font(.system(size: 10.5, weight: .bold, design: .rounded))
-        .monospacedDigit()
+    }
+}
+
+/// Segmented token bar drawn inside a measured width (never under trailing labels).
+struct ClaudeTokenBar: View {
+    let parts: [(Int64, Color)]
+    let total: Int64
+    let fraction: Double
+    var width: CGFloat
+
+    var body: some View {
+        Canvas { context, size in
+            let full = size.width * CGFloat(min(1, max(0, fraction)))
+            guard full > 0, total > 0 else { return }
+            var x: CGFloat = 0
+            for part in parts where part.0 > 0 {
+                let share = full * CGFloat(Double(part.0) / Double(total))
+                let segment = max(1.5, share)
+                let rect = CGRect(x: x, y: 0, width: min(segment, max(0, full - x)), height: size.height)
+                context.fill(Path(rect), with: .color(part.1))
+                x += segment + 1
+                if x >= full { break }
+            }
+        }
+        .frame(width: max(0, width), height: 6, alignment: .leading)
+        .clipShape(Capsule())
+        .accessibilityHidden(true)
+    }
+}
+
+/// Leading labels + flexible middle bar + fixed trailing values (Spacer reserves the gap).
+private struct ClaudeBarRow<Leading: View, Trailing: View>: View {
+    let parts: [(Int64, Color)]
+    let total: Int64
+    let fraction: Double
+    @ViewBuilder var leading: () -> Leading
+    @ViewBuilder var trailing: () -> Trailing
+
+    var body: some View {
+        HStack(spacing: 6) {
+            leading()
+                .fixedSize(horizontal: true, vertical: false)
+            Spacer(minLength: 8)
+                .frame(height: 6)
+                .overlay(alignment: .leading) {
+                    GeometryReader { geometry in
+                        ClaudeTokenBar(parts: parts, total: total, fraction: fraction, width: geometry.size.width)
+                    }
+                }
+                .clipped()
+            trailing()
+                .fixedSize()
+        }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
@@ -176,34 +273,21 @@ struct ClaudeModelRow: View {
     let tint: Color
 
     var body: some View {
-        HStack(spacing: 8) {
+        let fraction = min(1, Double(usage.week.total) / Double(max(peak, 1)))
+        ClaudeBarRow(parts: parts, total: usage.week.total, fraction: fraction) {
             Text(Format.modelName(usage.model))
                 .font(.system(size: 11, design: .monospaced))
                 .foregroundStyle(.white.opacity(0.6))
                 .lineLimit(1)
-                .frame(width: 96, alignment: .leading)
-            GeometryReader { geometry in
-                let width = geometry.size.width * CGFloat(Double(usage.week.total) / Double(max(peak, 1)))
-                HStack(spacing: 1) {
-                    ForEach(Array(parts.enumerated()), id: \.offset) { _, part in
-                        Rectangle().fill(part.1)
-                            .frame(width: max(part.0 > 0 ? 1.5 : 0, width * CGFloat(Double(part.0) / Double(max(usage.week.total, 1)))))
-                    }
-                }
-                .clipShape(Capsule())
+                .frame(width: 78, alignment: .leading)
+        } trailing: {
+            HStack(spacing: 6) {
+                Text(Format.tokens(usage.week.total)).foregroundStyle(.white)
+                Text(usage.today.isZero ? "–" : Format.tokens(usage.today.total))
+                    .foregroundStyle(.white.opacity(0.35))
+                    .help("today")
             }
-            .frame(height: 6)
-            Text(Format.tokens(usage.week.total))
-                .foregroundStyle(.white)
-                .lineLimit(1)
-                .fixedSize()
-                .frame(minWidth: 48, alignment: .trailing)
-            Text(usage.today.isZero ? "–" : Format.tokens(usage.today.total))
-                .foregroundStyle(.white.opacity(0.35))
-                .lineLimit(1)
-                .fixedSize()
-                .frame(minWidth: 44, alignment: .trailing)
-                .help("today")
+            .lineLimit(1)
         }
         .font(.system(size: 11, weight: .bold, design: .rounded))
         .monospacedDigit()
@@ -224,41 +308,29 @@ struct ClaudeSessionRow: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        HStack(spacing: 8) {
-            Circle()
-                .fill(session.isActive() ? tint : Color.white.opacity(0.15))
-                .frame(width: 6, height: 6)
-                .opacity(session.isActive() && pulse ? 0.35 : 1)
-            Text(session.project ?? "—")
-                .foregroundStyle(.white)
-                .lineLimit(1)
-                .frame(width: 72, alignment: .leading)
-            Text(session.model.map(Format.modelName) ?? "—")
-                .font(.system(size: 11, design: .monospaced))
-                .foregroundStyle(.white.opacity(0.6))
-                .lineLimit(1)
-                .frame(width: 72, alignment: .leading)
-            GeometryReader { geometry in
-                let width = geometry.size.width * CGFloat(Double(session.today.total) / Double(max(peak, 1)))
-                HStack(spacing: 1) {
-                    ForEach(Array(parts.enumerated()), id: \.offset) { _, part in
-                        Rectangle().fill(part.1)
-                            .frame(width: max(part.0 > 0 ? 1.5 : 0, width * CGFloat(Double(part.0) / Double(max(session.today.total, 1)))))
-                    }
-                }
-                .clipShape(Capsule())
+        let fraction = min(1, Double(session.today.total) / Double(max(peak, 1)))
+        ClaudeBarRow(parts: parts, total: session.today.total, fraction: fraction) {
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(session.isActive() ? tint : Color.white.opacity(0.15))
+                    .frame(width: 6, height: 6)
+                    .opacity(session.isActive() && pulse ? 0.35 : 1)
+                Text(session.project ?? "—")
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                    .frame(width: 56, alignment: .leading)
+                Text(session.model.map(Format.modelName) ?? "—")
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.6))
+                    .lineLimit(1)
+                    .frame(width: 64, alignment: .leading)
             }
-            .frame(height: 6)
-            Text(Format.tokens(session.today.total))
-                .foregroundStyle(.white)
-                .lineLimit(1)
-                .fixedSize()
-                .frame(minWidth: 40, alignment: .trailing)
-            Text(Format.ago(session.lastActivity))
-                .foregroundStyle(.white.opacity(0.35))
-                .lineLimit(1)
-                .fixedSize()
-                .frame(minWidth: 52, alignment: .trailing)
+        } trailing: {
+            HStack(spacing: 6) {
+                Text(Format.tokens(session.today.total)).foregroundStyle(.white)
+                Text(Format.ago(session.lastActivity)).foregroundStyle(.white.opacity(0.35))
+            }
+            .lineLimit(1)
         }
         .font(.system(size: 11, weight: .bold, design: .rounded))
         .monospacedDigit()

@@ -35,20 +35,20 @@ final class IslandState: ObservableObject {
     @Published var steppedAside = false
 
     /// Idle wing beside the notch. Kept tight so the island stays near the notch.
-    static let wingWidth: CGFloat = 64
+    static let wingWidth: CGFloat = 60
     static let emptyWingWidth: CGFloat = 28
     /// Wings grow to this while an event (connected, near a limit, …) is showing.
     static let eventWingWidth: CGFloat = 112
     static let quietEventWingWidth: CGFloat = 88
-    /// Below this, a wing shows only the glyph (icon + number needs more room).
-    static let glyphOnlyWidth: CGFloat = 42
+    /// Below this, a wing shows only the glyph (avoids truncated "10…" numbers).
+    static let glyphOnlyWidth: CGFloat = 54
     /// At or above this, a wing can show glyph + number + suffix.
-    static let fullDensityWidth: CGFloat = 70
+    static let fullDensityWidth: CGFloat = 76
     /// Narrower than this next to the notch → fall back to below the menu bar.
     static let minimumNotchWing: CGFloat = 24
 
     var compactWidth: CGFloat { compactWidth(for: nil) }
-    var expandedWidth: CGFloat { isEmpty ? 320 : 440 }
+    var expandedWidth: CGFloat { isEmpty ? 300 : 370 }
 
     func idealWingWidth(for event: IslandEvent.Style?) -> CGFloat {
         switch event {
@@ -206,6 +206,21 @@ final class IslandController {
             return event
         }) {
             monitors.append(local)
+        }
+
+        // `BRIM_SCREENSHOT=1` locks the expanded island open for capture scripts.
+        if ProcessInfo.processInfo.environment["BRIM_SCREENSHOT"] == "1" {
+            state.isExpanded = true
+            state.expansionLocked = true
+            let apply: (UsageSnapshot) -> Void = { [weak model] snap in
+                for tool in snap.tools where tool.kind == .claude {
+                    model?.setClaudeStyle(.full, for: tool.id)
+                }
+            }
+            apply(model.snapshot)
+            model.$snapshot
+                .sink { apply($0) }
+                .store(in: &cancellables)
         }
     }
 
@@ -495,10 +510,10 @@ final class IslandController {
         } else {
             expandTask?.cancel()
             expandTask = nil
-            if state.isExpanded, collapseTask == nil {
+            if state.isExpanded, !state.expansionLocked, collapseTask == nil {
                 collapseTask = Task { [weak self] in
                     try? await Task.sleep(nanoseconds: Self.collapseDelay)
-                    guard let self, !Task.isCancelled else { return }
+                    guard let self, !Task.isCancelled, !self.state.expansionLocked else { return }
                     self.state.isExpanded = false
                     self.collapseTask = nil
                 }

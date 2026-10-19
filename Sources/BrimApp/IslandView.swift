@@ -402,7 +402,7 @@ struct CompactView: View {
                 detailWing(pair.first)
             }
         }
-        .padding(.horizontal, 8)
+        .padding(.horizontal, 6)
         .font(.system(size: 12.5, weight: .bold, design: .rounded))
         .monospacedDigit()
         .foregroundStyle(.white)
@@ -428,6 +428,8 @@ struct CompactView: View {
                     RollingText(text: model.compactValue(for: tool))
                         .foregroundStyle(valueColor(tool))
                         .lineLimit(1)
+                        .minimumScaleFactor(0.75)
+                        .layoutPriority(1)
                     if density == .full, let suffix = model.wingSuffix(for: tool) { Suffix(text: suffix) }
                 }
                 if alignment == .leading { Spacer(minLength: 0) }
@@ -451,7 +453,8 @@ struct CompactView: View {
     private func wingWidth(_ alignment: HorizontalAlignment) -> CGFloat {
         guard state.hasNotch else { return .infinity }
         let wing = alignment == .leading ? state.leftWingWidth(for: nil) : state.rightWingWidth(for: nil)
-        return max(0, wing - 8)
+        // Keep nearly the full wing for glyph + number; only a small inset for the outer pad.
+        return max(0, wing - 4)
     }
 
     /// With a single tool, the right wing shows today's tokens (or, for account tools, the
@@ -714,8 +717,8 @@ struct ExpandedView: View {
                 }
             )
         }
-        .padding(.horizontal, 12)
-        .padding(.bottom, 12)
+        .padding(.horizontal, 10)
+        .padding(.bottom, 10)
         .foregroundStyle(.white)
         .onAppear { appeared = true }
     }
@@ -748,8 +751,8 @@ struct ToolCard: View {
                 accountDetails
             }
         }
-        .padding(.vertical, 12)
-        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .padding(.horizontal, 10)
         .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Color.white.opacity(0.07)))
         .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         .onTapGesture {
