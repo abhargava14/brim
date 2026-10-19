@@ -459,7 +459,7 @@ private struct LogFolderEntry: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            if kind == .claude, ClaudeAccounts.canSignIn {
+            if kind == .claude, ClaudeAccountHook.canSignIn {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Sign in to another Claude account").font(.headline)
                     HStack {
@@ -522,13 +522,14 @@ private struct LogFolderEntry: View {
     }
 
     private func signInClaude() {
-        guard let add = ClaudeAccounts.addAccount else { return }
+        guard let add = ClaudeAccountHook.addAccount else { return }
         signingIn = true
         problem = nil
         let label = label.trimmingCharacters(in: .whitespaces)
         Task {
             do {
-                _ = try await add(label.isEmpty ? "Claude" : label)
+                let account = try await add(label.isEmpty ? "Claude" : label)
+                _ = model.addClaudeConnection(for: account)
                 done()
             } catch {
                 problem = error.localizedDescription

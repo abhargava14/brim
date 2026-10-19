@@ -1,16 +1,22 @@
+import AppKit
 import Foundation
 import IslandCore
+import IslandServices
 
-/// Where adding a second Claude account plugs in. `ClaudeAccountSetup.addAccount(label:)` (being
-/// built on the `claude-usage` branch) signs in a separate Claude Code profile and returns the
-/// connection that tracks it; wire it once at launch:
-///
-///     ClaudeAccounts.addAccount = { label in try await ClaudeAccountSetup.addAccount(label: label) }
-///
-/// Until it is set, the Add Account window offers choosing that profile's log folder instead.
+/// Hook that lets the Add Account window call `ClaudeAccountSetup` without IslandCore knowing
+/// about AppKit. Wired once at launch; until then, Add Account falls back to choosing a log folder.
 @MainActor
-enum ClaudeAccounts {
-    static var addAccount: ((_ label: String) async throws -> Connection)?
+enum ClaudeAccountHook {
+    static var addAccount: ((_ label: String) async throws -> ClaudeAccount)?
 
     static var canSignIn: Bool { addAccount != nil }
+
+    /// Points the hook at `ClaudeAccountSetup` so a second Claude account can be signed in from the app.
+    static func install() {
+        addAccount = { label in
+            try await ClaudeAccountSetup.addAccount(label: label) { url in
+                Task { @MainActor in NSWorkspace.shared.open(url) }
+            }
+        }
+    }
 }

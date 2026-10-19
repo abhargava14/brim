@@ -29,6 +29,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var cancellables = Set<AnyCancellable>()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        ClaudeAccountHook.install()
         setUpStatusItem()
         island = IslandController(
             model: model, settings: settings, setup: setup,
