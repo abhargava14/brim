@@ -24,7 +24,7 @@ public final class UsageEngine: @unchecked Sendable {
         var tokens = TokenCounts.zero
         var requests = 0
         var sessions = Set<String>()
-        var modelTokens: [String: Int64] = [:]
+        var modelTokens: [String: TokenCounts] = [:]
     }
 
     private struct RecentEvent {
@@ -178,7 +178,7 @@ public final class UsageEngine: @unchecked Sendable {
         day.tokens += event.tokens
         day.requests += 1
         if let session = event.sessionID { day.sessions.insert(session) }
-        day.modelTokens[event.model, default: 0] += event.tokens.total
+        day.modelTokens[event.model, default: .zero] += event.tokens
         state.days[key] = day
 
         if event.timestamp > now().addingTimeInterval(-24 * 3_600) {
@@ -218,7 +218,8 @@ public final class UsageEngine: @unchecked Sendable {
             snapshot.today = today.tokens
             snapshot.todaySessions = today.sessions.count
             snapshot.todayRequests = today.requests
-            snapshot.topModel = today.modelTokens.max { $0.value < $1.value }?.key
+            snapshot.topModel = today.modelTokens.max { $0.value.total < $1.value.total }?.key
+            snapshot.models = modelUsage(today: today, startOfToday: startOfToday, state: state)
             snapshot.last5Hours = last5h.reduce(.zero) { $0 + $1.tokens }
             snapshot.week = week.reduce(.zero) { $0 + $1.tokens }
             snapshot.month = daily.reduce(.zero) { $0 + $1.tokens }
@@ -227,6 +228,18 @@ public final class UsageEngine: @unchecked Sendable {
             snapshot.planWindows = planWindows(for: id, state: state, format: source.format, now: now)
             return snapshot
         }
+    }
+
+    /// Tokens per model for today and the last 7 days (today included), most used this week first.
+    private func modelUsage(today: DayAggregate, startOfToday: Date, state: ConnectionState) -> [ModelUsage] {
+        var week: [String: TokenCounts] = [:]
+        for offset in 0..<min(7, historyDays) {
+            let date = calendar.date(byAdding: .day, value: -offset, to: startOfToday) ?? startOfToday
+            for (model, tokens) in state.days[dayKey(date)]?.modelTokens ?? [:] { week[model, default: .zero] += tokens }
+        }
+        return week
+            .map { ModelUsage(model: $0.key, today: today.modelTokens[$0.key] ?? .zero, week: $0.value) }
+            .sorted { ($0.week.total, $1.model) > ($1.week.total, $0.model) }
     }
 
     /// Windows that have already reset are dropped: their old percentage no longer holds.

@@ -147,19 +147,37 @@ public struct UsageEvent: Equatable, Sendable {
 }
 
 /// A plan, quota or rate-limit window as reported by the tool itself (never computed from tokens).
-public struct PlanWindow: Equatable, Sendable {
+public struct PlanWindow: Equatable, Sendable, Codable {
     public let label: String
     /// 0 to 100.
     public let usedPercent: Double
     public let resetsAt: Date?
     /// Optional absolute numbers, e.g. "212 / 300".
     public let detail: String?
+    /// Set when the window covers one model only, e.g. Claude's weekly "Opus" limit.
+    public let model: String?
 
-    public init(label: String, usedPercent: Double, resetsAt: Date?, detail: String? = nil) {
+    public init(label: String, usedPercent: Double, resetsAt: Date?, detail: String? = nil, model: String? = nil) {
         self.label = label
         self.usedPercent = min(max(usedPercent.isFinite ? usedPercent : 0, 0), 100)
         self.resetsAt = resetsAt
         self.detail = detail
+        self.model = model
+    }
+}
+
+/// Tokens one model used, split by kind.
+public struct ModelUsage: Equatable, Sendable, Identifiable {
+    public let model: String
+    public let today: TokenCounts
+    public let week: TokenCounts
+
+    public var id: String { model }
+
+    public init(model: String, today: TokenCounts, week: TokenCounts) {
+        self.model = model
+        self.today = today
+        self.week = week
     }
 }
 
@@ -207,6 +225,12 @@ public struct ToolSnapshot: Equatable, Sendable, Identifiable {
     /// services fill it from their own response or local sign-in, log tools from their own config.
     /// Read fresh each time; never saved to the connections file.
     public var accountLabel: String?
+    /// Per-model tokens over the last 7 days, most used first (log-based connections).
+    public var models: [ModelUsage] = []
+    /// Set when `planWindows` is an older reading, e.g. an idle Claude account's.
+    public var limitsAsOf: Date?
+    /// Why limits are old or missing, e.g. "Open Claude Code to refresh".
+    public var limitsNote: String?
 
     public init(id: String, kind: ToolKind, name: String) {
         self.id = id

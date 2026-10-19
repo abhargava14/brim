@@ -19,6 +19,8 @@ public struct Connection: Codable, Equatable, Identifiable, Sendable {
     public enum Option {
         /// Log folder override (log-based kinds).
         public static let path = "path"
+        /// A Claude Code config folder (`CLAUDE_CONFIG_DIR`), e.g. `~/.claude-personal` (Claude).
+        public static let configDir = "configDir"
         /// `claude` or `codex` (custom log folders).
         public static let format = "format"
         /// Endpoint URL (custom endpoints).
@@ -90,12 +92,32 @@ public struct Connection: Codable, Equatable, Identifiable, Sendable {
             return LogSource(format: format, roots: [URL(fileURLWithPath: expanded)])
         }
         if kind == .customLogs { return LogSource(format: format, roots: []) }
+        let configDir = option(Option.configDir)
+        if kind == .claude, !configDir.isEmpty {
+            return LogSource(format: format, roots: [ClaudeAccounts.expand(configDir, home: home).appendingPathComponent("projects")])
+        }
         return LogSource(format: format, roots: DefaultLogLocations.roots(for: format, home: home, environment: environment))
+    }
+
+    /// The Claude Code config folder whose sign-in this connection shows: the `configDir` option,
+    /// the folder holding the `projects` folder a custom path is in, or `~/.claude`.
+    public func claudeConfigDir(home: URL = FileManager.default.homeDirectoryForCurrentUser) -> URL? {
+        guard kind == .claude else { return nil }
+        let configDir = option(Option.configDir)
+        if !configDir.isEmpty { return ClaudeAccounts.expand(configDir, home: home) }
+        let custom = option(Option.path)
+        guard !custom.isEmpty else { return home.appendingPathComponent(".claude") }
+        var url = ClaudeAccounts.expand(custom, home: home).standardizedFileURL
+        while url.pathComponents.count > 1 {
+            if url.lastPathComponent == "projects" { return url.deletingLastPathComponent() }
+            url = url.deletingLastPathComponent()
+        }
+        return nil
     }
 
     /// Whether this connection reads the tool's default folder (and so Claude Code's own status line applies).
     public var usesDefaultLocation: Bool {
-        option(Option.path).isEmpty && kind != .customLogs
+        option(Option.path).isEmpty && option(Option.configDir).isEmpty && kind != .customLogs
     }
 }
 
