@@ -411,7 +411,7 @@ struct EventView: View {
         switch event.style {
         case .connected: return "checkmark.circle.fill"
         case .milestone: return "party.popper.fill"
-        case .warning: return "gauge.with.dots.needle.67percent"
+        case .warning: return "gauge.high"
         case .limit: return "hand.raised.fill"
         case .disconnected: return "bolt.horizontal.circle"
         }
