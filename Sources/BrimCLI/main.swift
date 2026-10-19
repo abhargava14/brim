@@ -230,7 +230,7 @@ func printReports(_ reports: [ToolReport]) {
         for window in report.windows {
             let reset = window.resetsAt.map { dim(Format.reset($0)) } ?? ""
             let detail = window.detail.map { dim(" (\($0) used)") } ?? ""
-            let label = window.label.padding(toLength: 12, withPad: " ", startingAt: 0)
+            let label = window.label.padding(toLength: max(12, window.label.count), withPad: " ", startingAt: 0)
             print("  \(label) \(bar(window.usedPercent)) \(Format.percent(window.usedPercent)) used\(detail)  \(reset)")
         }
     }
