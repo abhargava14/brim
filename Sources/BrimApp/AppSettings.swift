@@ -67,8 +67,23 @@ final class AppSettings: ObservableObject {
     }
 
     @Published var placement: IslandPlacement {
-        didSet { defaults.set(placement.rawValue, forKey: "placement") }
+        didSet {
+            defaults.set(placement.rawValue, forKey: "placement")
+            // A manual change clears the auto-move hint; crowding may set the flag again.
+            if isReady, !isApplyingCrowdingMove { placementMovedForCrowding = false }
+        }
     }
+
+    /// True when Brim itself switched to "Below the menu bar" because status icons left no room
+    /// next to the notch. Shown as a hint in Settings.
+    @Published var placementMovedForCrowding: Bool {
+        didSet { defaults.set(placementMovedForCrowding, forKey: "placementMovedForCrowding") }
+    }
+
+    /// Suppresses clearing `placementMovedForCrowding` while an automatic move writes `placement`.
+    var isApplyingCrowdingMove = false
+    /// False during `init` so loading preferences doesn't wipe the crowding flag.
+    private var isReady = false
 
     @Published var hideInFullScreen: Bool {
         didSet { defaults.set(hideInFullScreen, forKey: "hideInFullScreen") }
@@ -111,7 +126,7 @@ final class AppSettings: ObservableObject {
 
     private static let keys = ["showIsland", "placement", "hideInFullScreen", "showInMenuBar", "compactMetric",
                                "expandOnHover", "playful", "pinnedID", "refreshSeconds", "didOnboard",
-                               "emptyIsland", "showAccountEmails"]
+                               "emptyIsland", "showAccountEmails", "placementMovedForCrowding"]
 
     init() {
         Self.copyLegacyDefaults(into: defaults)
@@ -119,6 +134,7 @@ final class AppSettings: ObservableObject {
         connections = file.connections
         showIsland = defaults.object(forKey: "showIsland") as? Bool ?? true
         placement = defaults.string(forKey: "placement").flatMap(IslandPlacement.init(rawValue:)) ?? .wrapNotch
+        placementMovedForCrowding = defaults.bool(forKey: "placementMovedForCrowding")
         hideInFullScreen = defaults.object(forKey: "hideInFullScreen") as? Bool ?? true
         showInMenuBar = defaults.object(forKey: "showInMenuBar") as? Bool ?? true
         compactMetric = defaults.string(forKey: "compactMetric").flatMap(CompactMetric.init(rawValue:)) ?? .auto
@@ -129,6 +145,7 @@ final class AppSettings: ObservableObject {
         refreshSeconds = refresh > 0 ? refresh : 10
         emptyIsland = defaults.string(forKey: "emptyIsland").flatMap(EmptyIsland.init(rawValue:)) ?? .small
         showAccountEmails = defaults.object(forKey: "showAccountEmails") as? Bool ?? true
+        isReady = true
         save()
     }
 

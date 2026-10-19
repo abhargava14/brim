@@ -368,30 +368,35 @@ struct CompactView: View {
         return model.isWorking(tool) ? .working : .idle
     }
 
-    @ViewBuilder
     private func wing(_ tool: ToolSnapshot?, alignment: HorizontalAlignment) -> some View {
-        HStack(spacing: 6) {
+        let density = wingDensity(alignment)
+        return HStack(spacing: 6) {
             if let tool {
                 if alignment == .trailing { Spacer(minLength: 0) }
                 ToolGlyph(kind: tool.kind, mood: mood(tool), size: 14, playful: model.settings.playful, name: tool.name)
-                if alignment == .leading || !glyphOnly {
+                if density != .iconOnly {
                     RollingText(text: model.compactValue(for: tool))
                         .foregroundStyle(valueColor(tool))
                         .lineLimit(1)
-                    if let suffix = model.wingSuffix(for: tool) { Suffix(text: suffix) }
+                    if density == .full, let suffix = model.wingSuffix(for: tool) { Suffix(text: suffix) }
                 }
                 if alignment == .leading { Spacer(minLength: 0) }
             } else {
                 Image(systemName: "plus.circle")
                     .foregroundStyle(.secondary)
-                Text("Connect").foregroundStyle(.secondary)
+                if density != .iconOnly {
+                    Text("Connect").foregroundStyle(.secondary)
+                }
                 Spacer(minLength: 0)
             }
         }
         .frame(maxWidth: wingWidth(alignment))
     }
 
-    private var glyphOnly: Bool { state.rightWingWidth(for: nil) < IslandState.glyphOnlyWidth }
+    private func wingDensity(_ alignment: HorizontalAlignment) -> WingDensity {
+        let width = alignment == .leading ? state.leftWingWidth(for: nil) : state.rightWingWidth(for: nil)
+        return state.density(for: width)
+    }
 
     private func wingWidth(_ alignment: HorizontalAlignment) -> CGFloat {
         guard state.hasNotch else { return .infinity }
@@ -401,19 +406,19 @@ struct CompactView: View {
 
     /// With a single tool, the right wing shows today's tokens (or, for account tools, the
     /// tightest window when the left wing doesn't already show it).
-    @ViewBuilder
     private func detailWing(_ tool: ToolSnapshot?) -> some View {
-        HStack(spacing: 4) {
+        let density = wingDensity(.trailing)
+        return HStack(spacing: 4) {
             Spacer(minLength: 0)
-            if glyphOnly {
+            if density == .iconOnly {
                 EmptyView()
             } else if let tool, tool.hasTokenData {
                 RollingText(text: Format.tokens(tool.today.total))
-                Suffix(text: "today")
+                if density == .full { Suffix(text: "today") }
             } else if let tool, let window = tool.tightestWindow, model.compactValue(for: tool) != Format.percent(window.usedPercent) {
                 Text("\(window.label) \(Format.percent(window.usedPercent))")
                     .foregroundStyle(valueColor(tool))
-                Suffix(text: "used")
+                if density == .full { Suffix(text: "used") }
             }
         }
         .lineLimit(1)
@@ -422,11 +427,12 @@ struct CompactView: View {
 
     /// The odd last page of the carousel: today's total across every connection.
     private var totalWing: some View {
-        HStack(spacing: 4) {
+        let density = wingDensity(.trailing)
+        return HStack(spacing: 4) {
             Spacer(minLength: 0)
-            if !glyphOnly {
+            if density != .iconOnly {
                 RollingText(text: Format.tokens(model.snapshot.todayTokens)).foregroundStyle(.white.opacity(0.6))
-                Suffix(text: "today")
+                if density == .full { Suffix(text: "today") }
             }
         }
         .lineLimit(1)
@@ -512,7 +518,7 @@ struct EventView: View {
             if state.hasNotch { Spacer().frame(width: state.notchWidth) } else { Spacer(minLength: 16) }
             HStack(spacing: 5) {
                 Spacer(minLength: 0)
-                if state.rightWingWidth(for: event.style) >= IslandState.glyphOnlyWidth {
+                if state.density(for: state.rightWingWidth(for: event.style)) != .iconOnly {
                     detail.lineLimit(1)
                 }
                 if event.style == .connected {

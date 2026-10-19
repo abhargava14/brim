@@ -126,6 +126,12 @@ struct SettingsView: View {
                     Text(placement.title).tag(placement)
                 }
             }
+            if settings.placementMovedForCrowding {
+                Text("Moved below the menu bar — other status icons left too little room next to the notch. Choose “Around the notch” to try again.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             Toggle("Hide in full-screen apps", isOn: $settings.hideInFullScreen)
             Toggle("Expand when the pointer is over it", isOn: $settings.expandOnHover)
             Toggle("Show usage in the menu bar", isOn: $settings.showInMenuBar)

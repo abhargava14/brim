@@ -3,6 +3,16 @@ import Combine
 import IslandCore
 import SwiftUI
 
+/// How much of a wing still fits next to the notch after status icons (and menus) are cleared.
+enum WingDensity {
+    /// Glyph, number and unit suffix.
+    case full
+    /// Glyph and number only.
+    case iconNumber
+    /// Glyph only.
+    case iconOnly
+}
+
 /// Geometry and expansion state shared by the island window and its SwiftUI content.
 @MainActor
 final class IslandState: ObservableObject {
@@ -13,7 +23,9 @@ final class IslandState: ObservableObject {
     @Published var barHeight: CGFloat = 32
     /// Size of the visible island, measured by the view; used for hover hit-testing.
     @Published var islandSize: CGSize = .zero
-    /// Room between the notch and the app's own menu bar item; the right wing never grows past it.
+    /// Room left of the notch before menu titles / other items; the left wing never grows past it.
+    @Published var leftWingLimit: CGFloat = .infinity
+    /// Room right of the notch before status icons; the right wing never grows past it.
     @Published var rightWingLimit: CGFloat = .infinity
     /// A setup window is open: the island stays compact.
     @Published var expansionLocked = false
@@ -25,13 +37,17 @@ final class IslandState: ObservableObject {
     /// Wings grow to this while an event (connected, near a limit, …) is showing.
     static let eventWingWidth: CGFloat = 140
     static let quietEventWingWidth: CGFloat = 112
-    /// A right wing narrower than this shows only the glyph.
-    static let glyphOnlyWidth: CGFloat = 40
+    /// Below this, a wing shows only the glyph (icon + number needs more room).
+    static let glyphOnlyWidth: CGFloat = 56
+    /// At or above this, a wing can show glyph + number + suffix.
+    static let fullDensityWidth: CGFloat = 78
+    /// Narrower than this next to the notch → fall back to below the menu bar.
+    static let minimumNotchWing: CGFloat = 28
 
     var compactWidth: CGFloat { compactWidth(for: nil) }
     var expandedWidth: CGFloat { isEmpty ? 320 : 440 }
 
-    func leftWingWidth(for event: IslandEvent.Style?) -> CGFloat {
+    func idealWingWidth(for event: IslandEvent.Style?) -> CGFloat {
         switch event {
         case .none: return isEmpty ? Self.emptyWingWidth : Self.wingWidth
         case .disconnected: return Self.quietEventWingWidth
@@ -39,8 +55,18 @@ final class IslandState: ObservableObject {
         }
     }
 
+    func leftWingWidth(for event: IslandEvent.Style?) -> CGFloat {
+        max(0, min(idealWingWidth(for: event), leftWingLimit))
+    }
+
     func rightWingWidth(for event: IslandEvent.Style?) -> CGFloat {
-        max(0, min(leftWingWidth(for: event), rightWingLimit))
+        max(0, min(idealWingWidth(for: event), rightWingLimit))
+    }
+
+    func density(for width: CGFloat) -> WingDensity {
+        if width >= Self.fullDensityWidth { return .full }
+        if width >= Self.glyphOnlyWidth { return .iconNumber }
+        return .iconOnly
     }
 
     func compactWidth(for event: IslandEvent.Style?) -> CGFloat {
@@ -49,7 +75,7 @@ final class IslandState: ObservableObject {
         return isEmpty ? 96 : 230
     }
 
-    /// Shift that keeps the gap between the wings over the notch when the right wing is capped.
+    /// Shift that keeps the gap between the wings over the notch when one wing is capped.
     func xOffset(for event: IslandEvent.Style?) -> CGFloat {
         hasNotch ? (rightWingWidth(for: event) - leftWingWidth(for: event)) / 2 : 0
     }
@@ -107,6 +133,8 @@ final class IslandController {
     private var expandTask: Task<Void, Never>?
     private var cancellables = Set<AnyCancellable>()
     private var fullScreenAppActive = false
+    /// Status icons come and go; re-measure clearance a few times a minute.
+    private var clearanceTimer: Timer?
 
     init(model: UsageModel, settings: AppSettings, setup: SetupWindows,
          statusItemFrame: @escaping () -> NSRect?, openSettings: @escaping () -> Void,
@@ -121,6 +149,10 @@ final class IslandController {
         NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)
             .sink { [weak self] _ in Task { @MainActor in self?.position() } }
             .store(in: &cancellables)
+
+        clearanceTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.position() }
+        }
 
         settings.$showIsland.combineLatest(settings.$placement, settings.$hideInFullScreen, settings.$emptyIsland)
             .sink { [weak self] _, _, _, _ in Task { @MainActor in self?.updateVisibility() } }
@@ -210,40 +242,131 @@ final class IslandController {
     }
 
     /// Lays the island out for the current screen, placement and menu bar. Call again when the
-    /// app's menu bar item changes size.
+    /// app's menu bar item changes size or other status icons move.
     func position() {
         guard let screen else { return }
         let frame = screen.frame
         let menuBarHeight = max(frame.maxY - screen.visibleFrame.maxY, screen.safeAreaInsets.top, 24)
         var top = frame.maxY
-        if settings.placement == .belowMenuBar {
+        let wantsNotch = settings.placement == .wrapNotch
+            || (settings.placement == .belowMenuBar && settings.placementMovedForCrowding)
+
+        if settings.placement == .belowMenuBar && !settings.placementMovedForCrowding {
             state.hasNotch = false
             state.notchWidth = 0
             state.barHeight = Self.belowMenuBarHeight
+            state.leftWingLimit = .infinity
             state.rightWingLimit = .infinity
             top = frame.maxY - menuBarHeight
         } else if screen.safeAreaInsets.top > 0,
                   let left = screen.auxiliaryTopLeftArea, let right = screen.auxiliaryTopRightArea {
-            state.hasNotch = true
-            state.notchWidth = frame.width - left.width - right.width
-            state.barHeight = screen.safeAreaInsets.top
+            let notchMinX = frame.minX + left.width
             let notchMaxX = frame.maxX - right.width
-            if let item = statusItemFrame(), item.width > 0, frame.intersects(item), item.minX > notchMaxX {
-                state.rightWingLimit = item.minX - notchMaxX - 6
-            } else {
+            let clearance = Self.menuBarClearance(
+                on: screen, notchMinX: notchMinX, notchMaxX: notchMaxX,
+                ownStatusItem: statusItemFrame(), ownPID: ProcessInfo.processInfo.processIdentifier
+            )
+            // Not enough room for even a glyph on each side → hang below the menu bar instead.
+            let tooCrowded = clearance.left < IslandState.minimumNotchWing
+                || clearance.right < IslandState.minimumNotchWing
+            if wantsNotch && tooCrowded {
+                if settings.placement != .belowMenuBar {
+                    settings.isApplyingCrowdingMove = true
+                    settings.placementMovedForCrowding = true
+                    settings.placement = .belowMenuBar
+                    settings.isApplyingCrowdingMove = false
+                }
+                state.hasNotch = false
+                state.notchWidth = 0
+                state.barHeight = Self.belowMenuBarHeight
+                state.leftWingLimit = .infinity
                 state.rightWingLimit = .infinity
+                top = frame.maxY - menuBarHeight
+            } else {
+                if settings.placementMovedForCrowding, settings.placement == .belowMenuBar, !tooCrowded {
+                    // Room opened up again; only return if we were the ones who moved it.
+                    settings.isApplyingCrowdingMove = true
+                    settings.placementMovedForCrowding = false
+                    settings.placement = .wrapNotch
+                    settings.isApplyingCrowdingMove = false
+                }
+                state.hasNotch = true
+                state.notchWidth = frame.width - left.width - right.width
+                state.barHeight = screen.safeAreaInsets.top
+                state.leftWingLimit = clearance.left
+                state.rightWingLimit = clearance.right
             }
         } else {
             state.hasNotch = false
             state.notchWidth = 0
             state.barHeight = max(menuBarHeight, 32)
+            state.leftWingLimit = .infinity
             state.rightWingLimit = .infinity
+            if settings.placement == .belowMenuBar {
+                top = frame.maxY - menuBarHeight
+            }
         }
         let canvas = Self.canvas
         panel.setFrame(
             NSRect(x: frame.midX - canvas.width / 2, y: top - canvas.height, width: canvas.width, height: canvas.height),
             display: true
         )
+    }
+
+    /// Free space on each side of the notch before other menu-bar items.
+    ///
+    /// Uses `CGWindowListCopyWindowInfo` bounds only (layer + frame). Screen Recording is not
+    /// required for that; window names may be blank without it and are ignored.
+    private static func menuBarClearance(
+        on screen: NSScreen, notchMinX: CGFloat, notchMaxX: CGFloat,
+        ownStatusItem: NSRect?, ownPID: pid_t
+    ) -> (left: CGFloat, right: CGFloat) {
+        var leftLimit = CGFloat.infinity
+        var rightLimit = CGFloat.infinity
+
+        if let item = ownStatusItem, item.width > 0, screen.frame.intersects(item) {
+            if item.minX >= notchMaxX - 2 {
+                rightLimit = min(rightLimit, item.minX - notchMaxX - 6)
+            }
+            if item.maxX <= notchMinX + 2 {
+                leftLimit = min(leftLimit, notchMinX - item.maxX - 6)
+            }
+        }
+
+        let statusLevel = Int(CGWindowLevelForKey(.statusWindow))
+        guard let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
+                as? [[String: Any]] else {
+            return (leftLimit, rightLimit)
+        }
+
+        // CGWindowBounds: origin at the top-left of the main display, Y growing downward.
+        let main = NSScreen.screens.first { $0.frame.origin == .zero } ?? NSScreen.main ?? screen
+        let frame = screen.frame
+        let bandTop = main.frame.maxY - frame.maxY
+        let bandBottom = bandTop + max(screen.safeAreaInsets.top, 24) + 4
+
+        for info in windows {
+            let layer = info[kCGWindowLayer as String] as? Int ?? -1
+            guard layer == statusLevel else { continue }
+            guard let bounds = info[kCGWindowBounds as String] as? NSDictionary,
+                  let rect = CGRect(dictionaryRepresentation: bounds as CFDictionary) else { continue }
+            // Status items are short; skip our island panel and ordinary app windows.
+            guard rect.height >= 20, rect.height <= 50, rect.width >= 8, rect.width <= 400 else { continue }
+            guard rect.maxY > bandTop, rect.minY < bandBottom else { continue }
+            guard rect.maxX > frame.minX, rect.minX < frame.maxX else { continue }
+            if let pid = info[kCGWindowOwnerPID as String] as? pid_t, pid == ownPID, rect.width > 200 {
+                continue
+            }
+
+            if rect.minX >= notchMaxX - 2 {
+                rightLimit = min(rightLimit, rect.minX - notchMaxX - 6)
+            }
+            if rect.maxX <= notchMinX + 2 {
+                leftLimit = min(leftLimit, notchMinX - rect.maxX - 6)
+            }
+        }
+
+        return (max(0, leftLimit), max(0, rightLimit))
     }
 
     /// Whether the frontmost app has a window covering the island's whole screen. Only window
