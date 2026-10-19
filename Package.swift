@@ -19,7 +19,7 @@ let package = Package(
             linkerSettings: [.linkedLibrary("sqlite3")]
         ),
         // The notch island, menu bar item and settings window.
-        .executableTarget(name: "BrimApp", dependencies: ["IslandCore", "IslandServices"]),
+        .executableTarget(name: "BrimApp", dependencies: ["IslandCore", "IslandServices"], resources: [.copy("Resources/Logos")]),
         // `brim`: connect tools and check usage from the terminal.
         .executableTarget(name: "BrimCLI", dependencies: ["IslandCore", "IslandServices"]),
         .testTarget(name: "IslandCoreTests", dependencies: ["IslandCore"]),

@@ -20,6 +20,8 @@ cp "$BIN_DIR/BrimApp" "$APP/Contents/MacOS/Brim"
 cp "$BIN_DIR/brim" "$APP/Contents/Helpers/brim"
 # The old command name, kept while people move over.
 ln -sf brim "$APP/Contents/Helpers/ai-island"
+# Tool logos and other images (SwiftPM resource bundle, found by BrimAssets).
+cp -R "$BIN_DIR/Brim_BrimApp.bundle" "$APP/Contents/Resources/"
 
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>

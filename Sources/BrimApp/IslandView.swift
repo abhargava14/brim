@@ -100,8 +100,7 @@ extension ToolKind {
         case .windsurf: return Color(red: 0.2, green: 0.88, blue: 0.7)
         case .copilot: return Color(red: 0.64, green: 0.44, blue: 0.97)
         case .openrouter: return Color(red: 0.42, green: 0.55, blue: 1.0)
-        case .customLogs: return Color(red: 0.95, green: 0.78, blue: 0.3)
-        case .customEndpoint: return Color(red: 0.98, green: 0.5, blue: 0.66)
+        case .customLogs, .customEndpoint: return Color.white.opacity(0.85)
         }
     }
 
@@ -120,7 +119,14 @@ extension ToolKind {
 }
 
 enum GlyphMood: Equatable {
-    case idle, working, attention, celebrate
+    case idle, working, attention, celebrate, dim
+}
+
+/// The design's semantic colours. Amber and red only ever mean "attention" and "limit".
+enum Brand {
+    static let good = Color(red: 0x34 / 255, green: 0xC7 / 255, blue: 0x59 / 255)
+    static let attention = Color(red: 1, green: 0x9F / 255, blue: 0x0A / 255)
+    static let limit = Color(red: 1, green: 0x45 / 255, blue: 0x3A / 255)
 }
 
 /// The tool's icon, with a little personality: it turns while working, bounces when it needs
@@ -130,6 +136,8 @@ struct ToolGlyph: View {
     var mood: GlyphMood = .idle
     var size: CGFloat = 11
     var playful = true
+    /// Custom connections show the first letter of this name instead of a logo.
+    var name: String?
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var phase = false
@@ -137,15 +145,34 @@ struct ToolGlyph: View {
     private var animated: Bool { playful && !reduceMotion }
 
     var body: some View {
-        Image(systemName: kind.symbol)
-            .font(.system(size: size, weight: .bold))
-            .foregroundStyle(mood == .attention ? Color.orange : kind.tint)
+        mark
+            .foregroundStyle(mood == .attention ? Brand.attention : kind.tint)
+            .opacity(mood == .dim ? 0.35 : 1)
             .rotationEffect(.degrees(rotation))
             .scaleEffect(scale)
             .offset(y: offsetY)
             .opacity(mood == .working && kind != .claude && animated && phase ? 0.45 : 1)
             .onAppear { start() }
             .onChange(of: mood) { _ in phase = false; start() }
+    }
+
+    @ViewBuilder
+    private var mark: some View {
+        if let logo = BrimAssets.logo(for: kind) {
+            Image(nsImage: logo)
+                .renderingMode(.template)
+                .resizable()
+                .interpolation(.high)
+                .scaledToFit()
+                .frame(width: size, height: size)
+        } else if let letter = name?.trimmingCharacters(in: .whitespaces).first {
+            Text(String(letter).uppercased())
+                .font(.system(size: size * 0.95, weight: .heavy, design: .rounded))
+                .frame(width: size, height: size)
+        } else {
+            Image(systemName: kind.symbol)
+                .font(.system(size: size, weight: .bold))
+        }
     }
 
     private var rotation: Double {
@@ -170,7 +197,7 @@ struct ToolGlyph: View {
     private func start() {
         guard animated else { return }
         switch mood {
-        case .idle:
+        case .idle, .dim:
             break
         case .working:
             let animation: Animation = kind == .claude
@@ -325,7 +352,7 @@ struct CompactView: View {
         HStack(spacing: 5) {
             if let tool {
                 if alignment == .trailing { Spacer(minLength: 0) }
-                ToolGlyph(kind: tool.kind, mood: mood(tool), playful: model.settings.playful)
+                ToolGlyph(kind: tool.kind, mood: mood(tool), size: 14, playful: model.settings.playful, name: tool.name)
                 if alignment == .leading || !glyphOnly {
                     RollingText(text: model.compactValue(for: tool))
                         .foregroundStyle(valueColor(tool))
@@ -545,7 +572,7 @@ struct ToolCard: View {
 
     private var header: some View {
         HStack(spacing: 6) {
-            ToolGlyph(kind: tool.kind, mood: model.isWorking(tool) ? .working : .idle, size: 12, playful: model.settings.playful)
+            ToolGlyph(kind: tool.kind, mood: model.isWorking(tool) ? .working : .idle, size: 15, playful: model.settings.playful, name: tool.name)
             Text(tool.name)
                 .font(.system(size: 13, weight: .semibold))
                 .lineLimit(1)

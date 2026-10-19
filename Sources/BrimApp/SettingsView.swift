@@ -216,7 +216,7 @@ struct ConnectionRow: View {
             details.padding(.top, 6)
         } label: {
             HStack(spacing: 8) {
-                ToolGlyph(kind: connection.kind, mood: justConnected ? .celebrate : .idle, size: 13, playful: model.settings.playful)
+                ToolGlyph(kind: connection.kind, mood: justConnected ? .celebrate : .idle, size: 13, playful: model.settings.playful, name: connection.name)
                     .frame(width: 18)
                 VStack(alignment: .leading, spacing: 1) {
                     HStack(spacing: 6) {

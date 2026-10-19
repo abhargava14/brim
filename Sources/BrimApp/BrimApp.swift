@@ -68,13 +68,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    private static var defaultImage: NSImage? { NSImage(systemSymbolName: "sparkle", accessibilityDescription: "Brim") }
+
     private func updateStatusItem() {
         guard let item = statusItem else { return }
         // One glyph and one value, for the most urgent tool; the menu lists all of them.
         let showValue = settings.showInMenuBar || settings.placement == .menuBarOnly
         let top = model.featuredTools.first(where: \.hasData)
-        let symbol = showValue ? top?.kind.symbol ?? "sparkle" : "sparkle"
-        item.button?.image = NSImage(systemSymbolName: symbol, accessibilityDescription: "Brim")
+        item.button?.image = showValue ? top.flatMap { BrimAssets.menuImage(for: $0.kind, size: 15) } ?? Self.defaultImage : Self.defaultImage
         item.button?.title = showValue ? top.map { " " + model.compactValue(for: $0) } ?? "" : ""
         item.menu = buildMenu()
     }
@@ -98,7 +99,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             let row = NSMenuItem(title: text, action: nil, keyEquivalent: "")
             row.isEnabled = false
-            row.image = NSImage(systemSymbolName: tool.kind.symbol, accessibilityDescription: nil)
+            row.image = BrimAssets.menuImage(for: tool.kind)
             menu.addItem(row)
         }
         menu.addItem(.separator())
