@@ -1,0 +1,23 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test core
+        run: swift test
+      - name: Build app bundle and CLI
+        run: ./scripts/build-app.sh
+      - name: Smoke-test the CLI
+        run: '"build/AI Island.app/Contents/Helpers/ai-island" help'
+      - name: Zip app
+        run: cd build && ditto -c -k --keepParent "AI Island.app" AI-Island.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AI-Island
+          path: build/AI-Island.zip

@@ -1,0 +1,129 @@
+import Foundation
+import IslandCore
+
+enum CompactMetric: String, CaseIterable, Identifiable {
+    case auto
+    case tokens
+    case plan
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .auto: return "Automatic (by plan)"
+        case .tokens: return "Tokens"
+        case .plan: return "Plan usage (%)"
+        }
+    }
+}
+
+/// User preferences (UserDefaults) and the connections file shared with the `ai-island` command.
+@MainActor
+final class AppSettings: ObservableObject {
+    private let defaults = UserDefaults.standard
+    let store = ConnectionStore()
+    private var lastSeenFileDate: Date?
+
+    /// Every connection the user added, in display order. Saved to the shared connections file.
+    @Published var connections: [Connection] {
+        didSet { save() }
+    }
+
+    @Published var showIsland: Bool {
+        didSet { defaults.set(showIsland, forKey: "showIsland") }
+    }
+
+    @Published var showInMenuBar: Bool {
+        didSet { defaults.set(showInMenuBar, forKey: "showInMenuBar") }
+    }
+
+    @Published var compactMetric: CompactMetric {
+        didSet { defaults.set(compactMetric.rawValue, forKey: "compactMetric") }
+    }
+
+    @Published var expandOnHover: Bool {
+        didSet { defaults.set(expandOnHover, forKey: "expandOnHover") }
+    }
+
+    /// Confetti, bouncing glyphs and other flourishes.
+    @Published var playful: Bool {
+        didSet { defaults.set(playful, forKey: "playful") }
+    }
+
+    /// A connection to always feature in the compact island; empty means automatic.
+    @Published var pinnedID: String {
+        didSet { defaults.set(pinnedID, forKey: "pinnedID") }
+    }
+
+    @Published var refreshSeconds: Double {
+        didSet { defaults.set(refreshSeconds, forKey: "refreshSeconds") }
+    }
+
+    init() {
+        let file = store.load()
+        connections = file.connections
+        showIsland = defaults.object(forKey: "showIsland") as? Bool ?? true
+        showInMenuBar = defaults.object(forKey: "showInMenuBar") as? Bool ?? true
+        compactMetric = defaults.string(forKey: "compactMetric").flatMap(CompactMetric.init(rawValue:)) ?? .auto
+        expandOnHover = defaults.object(forKey: "expandOnHover") as? Bool ?? true
+        playful = defaults.object(forKey: "playful") as? Bool ?? true
+        pinnedID = defaults.string(forKey: "pinnedID") ?? ""
+        let refresh = defaults.double(forKey: "refreshSeconds")
+        refreshSeconds = refresh > 0 ? refresh : 10
+        save()
+    }
+
+    private func save() {
+        try? store.save(ConnectionFile(connections: connections))
+        lastSeenFileDate = store.modificationDate()
+    }
+
+    /// Picks up changes the `ai-island` command made to the connections file.
+    func reloadIfChangedOnDisk() {
+        guard let date = store.modificationDate(), date != lastSeenFileDate else { return }
+        lastSeenFileDate = date
+        let file = store.load()
+        if file.connections != connections { connections = file.connections }
+    }
+
+    var enabledConnections: [Connection] { connections.filter(\.isEnabled) }
+
+    // MARK: - Connections
+
+    func connection(_ id: String) -> Connection? {
+        connections.first { $0.id == id }
+    }
+
+    /// Adds a connected connection of `kind`. Users can add as many as they like.
+    @discardableResult
+    func add(_ kind: ToolKind) -> Connection {
+        var file = ConnectionFile(connections: connections)
+        let connection = file.add(kind)
+        connections = file.connections
+        return connection
+    }
+
+    func update(_ connection: Connection) {
+        guard let index = connections.firstIndex(where: { $0.id == connection.id }) else { return }
+        connections[index] = connection
+    }
+
+    func setEnabled(_ id: String, _ enabled: Bool) {
+        guard var connection = connection(id), connection.isEnabled != enabled else { return }
+        connection.isEnabled = enabled
+        update(connection)
+    }
+
+    func remove(_ id: String) {
+        connections.removeAll { $0.id == id }
+        if pinnedID == id { pinnedID = "" }
+    }
+
+    func setAllEnabled(_ enabled: Bool) {
+        connections = connections.map { var c = $0; c.isEnabled = enabled; return c }
+    }
+
+    func move(from source: IndexSet, to destination: Int) {
+        connections.move(fromOffsets: source, toOffset: destination)
+    }
+}
