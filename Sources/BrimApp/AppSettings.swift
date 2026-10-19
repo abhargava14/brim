@@ -35,6 +35,21 @@ enum IslandPlacement: String, CaseIterable, Identifiable {
     }
 }
 
+/// What the island does while no connection is on.
+enum EmptyIsland: String, CaseIterable, Identifiable {
+    case small
+    case hidden
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .small: return "Small island"
+        case .hidden: return "Hide until connected"
+        }
+    }
+}
+
 /// User preferences (UserDefaults) and the connections file shared with the `brim` command.
 @MainActor
 final class AppSettings: ObservableObject {
@@ -85,8 +100,13 @@ final class AppSettings: ObservableObject {
         didSet { defaults.set(refreshSeconds, forKey: "refreshSeconds") }
     }
 
+    @Published var emptyIsland: EmptyIsland {
+        didSet { defaults.set(emptyIsland.rawValue, forKey: "emptyIsland") }
+    }
+
     private static let keys = ["showIsland", "placement", "hideInFullScreen", "showInMenuBar", "compactMetric",
-                               "expandOnHover", "playful", "pinnedID", "refreshSeconds", "didOnboard"]
+                               "expandOnHover", "playful", "pinnedID", "refreshSeconds", "didOnboard",
+                               "emptyIsland"]
 
     init() {
         Self.copyLegacyDefaults(into: defaults)
@@ -102,6 +122,7 @@ final class AppSettings: ObservableObject {
         pinnedID = defaults.string(forKey: "pinnedID") ?? ""
         let refresh = defaults.double(forKey: "refreshSeconds")
         refreshSeconds = refresh > 0 ? refresh : 10
+        emptyIsland = defaults.string(forKey: "emptyIsland").flatMap(EmptyIsland.init(rawValue:)) ?? .small
         save()
     }
 

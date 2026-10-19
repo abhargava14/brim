@@ -17,9 +17,11 @@ final class IslandState: ObservableObject {
     @Published var rightWingLimit: CGFloat = .infinity
     /// A setup window is open: the island stays compact.
     @Published var expansionLocked = false
+    /// No connection is on: a small island that offers to connect one.
+    @Published var isEmpty = false
 
-    static let expandedWidth: CGFloat = 440
     static let wingWidth: CGFloat = 92
+    static let emptyWingWidth: CGFloat = 30
     /// Wings grow to this while an event (connected, near a limit, …) is showing.
     static let eventWingWidth: CGFloat = 140
     static let quietEventWingWidth: CGFloat = 112
@@ -27,10 +29,11 @@ final class IslandState: ObservableObject {
     static let glyphOnlyWidth: CGFloat = 40
 
     var compactWidth: CGFloat { compactWidth(for: nil) }
+    var expandedWidth: CGFloat { isEmpty ? 320 : 440 }
 
     func leftWingWidth(for event: IslandEvent.Style?) -> CGFloat {
         switch event {
-        case .none: return Self.wingWidth
+        case .none: return isEmpty ? Self.emptyWingWidth : Self.wingWidth
         case .disconnected: return Self.quietEventWingWidth
         default: return Self.eventWingWidth
         }
@@ -41,7 +44,9 @@ final class IslandState: ObservableObject {
     }
 
     func compactWidth(for event: IslandEvent.Style?) -> CGFloat {
-        hasNotch ? leftWingWidth(for: event) + notchWidth + rightWingWidth(for: event) : (event != nil ? 300 : 230)
+        guard !hasNotch else { return leftWingWidth(for: event) + notchWidth + rightWingWidth(for: event) }
+        if event != nil { return 300 }
+        return isEmpty ? 96 : 230
     }
 
     /// Shift that keeps the gap between the wings over the notch when the right wing is capped.
@@ -116,8 +121,19 @@ final class IslandController {
             .sink { [weak self] _ in Task { @MainActor in self?.position() } }
             .store(in: &cancellables)
 
-        settings.$showIsland.combineLatest(settings.$placement, settings.$hideInFullScreen)
-            .sink { [weak self] _, _, _ in Task { @MainActor in self?.updateVisibility() } }
+        settings.$showIsland.combineLatest(settings.$placement, settings.$hideInFullScreen, settings.$emptyIsland)
+            .sink { [weak self] _, _, _, _ in Task { @MainActor in self?.updateVisibility() } }
+            .store(in: &cancellables)
+
+        settings.$connections
+            .map { !$0.contains(where: \.isEnabled) }
+            .removeDuplicates()
+            .sink { [weak self] empty in
+                Task { @MainActor in
+                    self?.state.isEmpty = empty
+                    self?.updateVisibility()
+                }
+            }
             .store(in: &cancellables)
 
         state.$isExpanded
@@ -151,14 +167,19 @@ final class IslandController {
         }
     }
 
-    /// Shown unless the user turned it off, chose the menu bar only, or a full-screen app is in front.
+    /// Shown unless the user turned it off, chose the menu bar only, hid it until something is
+    /// connected, or a full-screen app is in front.
     private var shouldShow: Bool {
-        settings.showIsland && settings.placement != .menuBarOnly && !(settings.hideInFullScreen && fullScreenAppActive)
+        userWantsIsland && !(settings.hideInFullScreen && fullScreenAppActive)
+    }
+
+    private var userWantsIsland: Bool {
+        settings.showIsland && settings.placement != .menuBarOnly && !(state.isEmpty && settings.emptyIsland == .hidden)
     }
 
     private func updateVisibility() {
         // Only full screen holds moments; when the user hides the island they simply play out unseen.
-        model.setMomentsPaused(settings.showIsland && settings.placement != .menuBarOnly && !shouldShow, reason: "fullScreen")
+        model.setMomentsPaused(userWantsIsland && !shouldShow, reason: "fullScreen")
         if shouldShow {
             position()
             panel.orderFrontRegardless()
@@ -256,7 +277,7 @@ final class IslandController {
     private var islandRect: NSRect {
         guard let screen else { return .zero }
         let event = state.isExpanded ? nil : model.event?.style
-        let width = state.isExpanded ? IslandState.expandedWidth : state.compactWidth(for: event)
+        let width = state.isExpanded ? state.expandedWidth : state.compactWidth(for: event)
         var height = state.barHeight
         if state.isExpanded {
             height = state.islandSize.height > state.barHeight ? state.islandSize.height : Self.canvas.height
