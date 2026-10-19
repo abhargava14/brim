@@ -25,11 +25,11 @@ public struct ConnectionStore: Sendable {
         ClaudeStatusLineSetup.defaultSupportDirectory.appendingPathComponent("connections.json")
     }
 
-    /// The saved file, or a starter file when there is none yet.
+    /// The saved file, or an empty list when there is none yet (first run asks the user to choose).
     public func load() -> ConnectionFile {
         guard let data = try? Data(contentsOf: url),
               let file = try? Self.decoder.decode(ConnectionFile.self, from: data)
-        else { return ConnectionFile(connections: Connection.starterSet) }
+        else { return ConnectionFile(connections: []) }
         return file
     }
 

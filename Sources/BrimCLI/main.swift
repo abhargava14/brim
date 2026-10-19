@@ -401,6 +401,7 @@ func printHelp() {
                                       [--no-emails] hides account emails
       brim claude accounts            Claude Code sign-ins on this Mac and which are connected
       brim list                       All connections and whether they're connected
+      brim detect                     Tools found on this Mac (for first-run style picking)
       brim kinds                      Tools you can connect, with their plans
       brim add <tool> [options]       Add and connect a tool (any number, any mix)
       brim connect <name>|--all       Connect a saved connection again [--token T]
@@ -496,7 +497,7 @@ case "claude":
     }
 
 case "list", "ls":
-    if file.connections.isEmpty { print("No connections yet. Try: brim add claude") }
+    if file.connections.isEmpty { print("No connections yet. Try: brim add claude  (or open Brim for first-run)") }
     for connection in file.connections {
         let state = connection.isEnabled ? green("● on ") : dim("○ off")
         let plan = Plans.tier(connection.planID, for: connection.kind)?.name ?? "auto"
@@ -504,6 +505,27 @@ case "list", "ls":
         print("\(state)  \(bold(connection.name))  \(dim(connection.kind.rawValue)) · plan \(plan)\(token)  \(dim(String(connection.id.prefix(8))))")
     }
     print(dim("\n\(file.enabledCount) of \(file.connections.count) connected"))
+
+case "detect":
+    let logs = ToolDetection.logTools()
+    if logs.isEmpty {
+        print(dim("No Claude Code or Codex log folders found."))
+    } else {
+        print(bold("Found on this Mac"))
+        for tool in logs {
+            let mark = tool.shouldPreCheck ? green("●") : dim("○")
+            let age = tool.recentlyActive ? "active in last 30 days" : "no activity in 30 days"
+            let linked = file.connections.contains { $0.kind == tool.kind } ? " · already connected" : ""
+            print("  \(mark) \(bold(tool.kind.displayName))  \(dim(tool.detail)) · \(age)\(linked)")
+            if !tool.shouldPreCheck {
+                print(dim("      brim add \(tool.kind.rawValue)"))
+            }
+        }
+    }
+    if !GitHubCLI.accounts().isEmpty {
+        print(bold("\nNeeds sign-in"))
+        print("  \(dim("○")) \(bold("GitHub Copilot"))  \(dim("gh accounts: " + GitHubCLI.accounts().map(\.login).joined(separator: ", ")))")
+    }
 
 case "kinds":
     for kind in ToolKind.allCases {

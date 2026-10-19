@@ -16,10 +16,20 @@ struct IslandView: View {
     }
 
     var body: some View {
-        island
-            .offset(x: state.isExpanded ? 0 : state.xOffset(for: model.event?.style))
-            .frame(width: IslandController.canvas.width, height: IslandController.canvas.height, alignment: .top)
-            .environment(\.colorScheme, .dark)
+        ZStack(alignment: .top) {
+            island
+                .offset(x: state.isExpanded ? 0 : state.xOffset(for: model.event?.style))
+            if settings.pendingIslandTip, !state.isExpanded, !state.steppedAside {
+                IslandTipView { settings.pendingIslandTip = false }
+                    .padding(.top, state.barHeight + 10)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+        .frame(width: IslandController.canvas.width, height: IslandController.canvas.height, alignment: .top)
+        .environment(\.colorScheme, .dark)
+        .onChange(of: state.isExpanded) { expanded in
+            if expanded, settings.pendingIslandTip { settings.pendingIslandTip = false }
+        }
     }
 
     private var island: some View {
@@ -74,6 +84,46 @@ struct IslandView: View {
         }
         .animation(.spring(response: 0.38, dampingFraction: 0.82), value: state.isExpanded)
         .animation(.spring(response: 0.38, dampingFraction: 0.82), value: model.event?.id)
+    }
+}
+
+/// One-time tip under the island after first run (G44).
+struct IslandTipView: View {
+    let dismiss: () -> Void
+    @State private var task: Task<Void, Never>?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Brim lives here")
+                .font(.system(size: 14, weight: .bold))
+                .foregroundStyle(.primary)
+            Text("Your connections take turns in the notch. Hover to see all of them.")
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack {
+                Spacer()
+                Button("Got it", action: dismiss)
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+            }
+        }
+        .padding(14)
+        .frame(width: 300, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(Color(nsColor: .windowBackgroundColor))
+                .shadow(color: .black.opacity(0.25), radius: 16, y: 8)
+        )
+        .environment(\.colorScheme, .light)
+        .onAppear {
+            task = Task {
+                try? await Task.sleep(nanoseconds: 12_000_000_000)
+                guard !Task.isCancelled else { return }
+                dismiss()
+            }
+        }
+        .onDisappear { task?.cancel() }
     }
 }
 

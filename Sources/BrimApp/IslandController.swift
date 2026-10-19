@@ -31,6 +31,8 @@ final class IslandState: ObservableObject {
     @Published var expansionLocked = false
     /// No connection is on: a small island that offers to connect one.
     @Published var isEmpty = false
+    /// Another app is drawing in the notch; the island stepped aside to the menu bar item.
+    @Published var steppedAside = false
 
     static let wingWidth: CGFloat = 92
     static let emptyWingWidth: CGFloat = 30
@@ -151,8 +153,14 @@ final class IslandController {
             .store(in: &cancellables)
 
         clearanceTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.position() }
+            Task { @MainActor in
+                self?.checkNotchOccupancy()
+                self?.position()
+            }
         }
+        settings.$notchConflict.combineLatest(settings.$useNotchAnyway)
+            .sink { [weak self] _, _ in Task { @MainActor in self?.checkNotchOccupancy(); self?.updateVisibility() } }
+            .store(in: &cancellables)
 
         settings.$showIsland.combineLatest(settings.$placement, settings.$hideInFullScreen, settings.$emptyIsland)
             .sink { [weak self] _, _, _, _ in Task { @MainActor in self?.updateVisibility() } }
@@ -201,9 +209,9 @@ final class IslandController {
     }
 
     /// Shown unless the user turned it off, chose the menu bar only, hid it until something is
-    /// connected, or a full-screen app is in front.
+    /// connected, a full-screen app is in front, or another app owns the notch.
     private var shouldShow: Bool {
-        userWantsIsland && !(settings.hideInFullScreen && fullScreenAppActive)
+        userWantsIsland && !(settings.hideInFullScreen && fullScreenAppActive) && !state.steppedAside
     }
 
     private var userWantsIsland: Bool {
@@ -311,6 +319,56 @@ final class IslandController {
             NSRect(x: frame.midX - canvas.width / 2, y: top - canvas.height, width: canvas.width, height: canvas.height),
             display: true
         )
+    }
+
+    /// Another process drawing over the notch (for example a Now Playing widget). Bounds only —
+    /// Screen Recording is not required. Honours Settings · "When another app uses the notch".
+    func checkNotchOccupancy() {
+        guard settings.placement == .wrapNotch else {
+            if state.steppedAside { state.steppedAside = false }
+            return
+        }
+        guard settings.notchConflict == .moveToMenuBar, !settings.useNotchAnyway else {
+            if state.steppedAside { state.steppedAside = false; updateVisibility() }
+            return
+        }
+        guard let screen, screen.safeAreaInsets.top > 0,
+              let left = screen.auxiliaryTopLeftArea, let right = screen.auxiliaryTopRightArea else {
+            if state.steppedAside { state.steppedAside = false }
+            return
+        }
+        let frame = screen.frame
+        let notch = CGRect(x: frame.minX + left.width, y: frame.maxY - screen.safeAreaInsets.top,
+                           width: frame.width - left.width - right.width, height: screen.safeAreaInsets.top)
+        let occupied = Self.notchOccupied(byOtherApp: notch, ownPID: ProcessInfo.processInfo.processIdentifier)
+        if occupied != state.steppedAside {
+            state.steppedAside = occupied
+            updateVisibility()
+        }
+    }
+
+    /// True when another app's on-screen window intersects the notch at status-bar level or above.
+    private static func notchOccupied(byOtherApp notch: CGRect, ownPID: pid_t) -> Bool {
+        guard let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
+                as? [[String: Any]] else { return false }
+        let statusLevel = Int(CGWindowLevelForKey(.statusWindow))
+        let main = NSScreen.screens.first { $0.frame.origin == .zero } ?? NSScreen.main
+        let mainMaxY = main?.frame.maxY ?? notch.maxY
+        // Convert AppKit notch (bottom-left origin) to CGWindow bounds (top-left of main, Y down).
+        let cgNotch = CGRect(x: notch.minX, y: mainMaxY - notch.maxY, width: notch.width, height: notch.height)
+            .insetBy(dx: 4, dy: 2)
+
+        for info in windows {
+            let layer = info[kCGWindowLayer as String] as? Int ?? -1
+            guard layer >= statusLevel - 1 else { continue }
+            guard let pid = info[kCGWindowOwnerPID as String] as? pid_t, pid != ownPID else { continue }
+            guard let bounds = info[kCGWindowBounds as String] as? NSDictionary,
+                  let rect = CGRect(dictionaryRepresentation: bounds as CFDictionary) else { continue }
+            // Ignore ordinary status items (short, to the side) and huge desktop windows.
+            guard rect.height >= 20, rect.height <= 80, rect.width >= 40, rect.width <= 500 else { continue }
+            if rect.intersects(cgNotch) { return true }
+        }
+        return false
     }
 
     /// Free space on each side of the notch before other menu-bar items.

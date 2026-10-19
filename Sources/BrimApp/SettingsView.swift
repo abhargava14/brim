@@ -149,9 +149,24 @@ struct SettingsView: View {
                         Text(mode.title).tag(mode)
                     }
                 }
+                Picker("When another app uses the notch", selection: $settings.notchConflict) {
+                    ForEach(NotchConflictPolicy.allCases) { policy in
+                        Text(policy.title).tag(policy)
+                    }
+                }
+                if settings.useNotchAnyway {
+                    HStack {
+                        Text("Using the notch even though another app is there.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Button("Stop overriding") { settings.useNotchAnyway = false }
+                            .controlSize(.small)
+                    }
+                }
                 Toggle("Hide in full-screen apps", isOn: $settings.hideInFullScreen)
             } footer: {
-                Text("The menu bar item can't be turned off while the island is hidden, so Settings stays reachable.")
+                Text("The menu bar item can't be turned off while the island is hidden, so Settings stays reachable. Notch sharing is checked on launch and every few seconds.")
                     .foregroundStyle(.secondary)
             }
 

@@ -39,10 +39,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
         model.start()
 
-        // First run: what was found on this Mac, and a way to add each tool's accounts.
+        // First run: pick tools found on this Mac, then how the island should look.
         if !UserDefaults.standard.bool(forKey: "didOnboard") {
-            UserDefaults.standard.set(true, forKey: "didOnboard")
-            openAddAccount(AddAccountRequest(welcome: true))
+            openFirstRun()
         }
     }
 
@@ -144,6 +143,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         menu.addItem(.separator())
 
+        if island?.state.steppedAside == true || settings.useNotchAnyway {
+            if island?.state.steppedAside == true {
+                let note = NSMenuItem(title: "Another app is using the notch. Showing here instead.", action: nil, keyEquivalent: "")
+                note.isEnabled = false
+                menu.addItem(note)
+            }
+            let anyway = NSMenuItem(
+                title: settings.useNotchAnyway ? "Stop Using Notch Anyway" : "Use Notch Anyway",
+                action: #selector(toggleUseNotchAnyway), keyEquivalent: ""
+            )
+            anyway.target = self
+            menu.addItem(anyway)
+            menu.addItem(.separator())
+        }
+
         let toggle = NSMenuItem(title: "Show Island", action: #selector(toggleIsland), keyEquivalent: "")
         toggle.state = settings.showIsland ? .on : .off
         toggle.target = self
@@ -164,6 +178,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func toggleIsland() {
         settings.showIsland.toggle()
+        updateStatusItem()
+    }
+
+    @objc private func toggleUseNotchAnyway() {
+        settings.useNotchAnyway.toggle()
+        island?.checkNotchOccupancy()
         updateStatusItem()
     }
 
@@ -203,6 +223,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func openAddAccount(_ request: AddAccountRequest) {
         setup.show(.addAccount, title: request.welcome ? "Welcome to Brim" : "Add Account", size: NSSize(width: 500, height: 420), refresh: true) {
             AddAccountView(model: model, settings: settings, request: request) { [weak self] in self?.setup.close() }
+        }
+    }
+
+    func openFirstRun() {
+        setup.show(.firstRun, title: "Welcome to Brim", size: NSSize(width: 560, height: 640), refresh: true) {
+            FirstRunView(model: model, settings: settings) { [weak self] in self?.setup.close() }
         }
     }
 }

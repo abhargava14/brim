@@ -65,6 +65,21 @@ enum ClaudeCardStyle: String, CaseIterable, Identifiable {
     }
 }
 
+/// When another app already draws in the notch.
+enum NotchConflictPolicy: String, CaseIterable, Identifiable {
+    case moveToMenuBar
+    case stayOnNotch
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .moveToMenuBar: return "Move to menu bar"
+        case .stayOnNotch: return "Stay on the notch"
+        }
+    }
+}
+
 /// User preferences (UserDefaults) and the connections file shared with the `brim` command.
 @MainActor
 final class AppSettings: ObservableObject {
@@ -143,9 +158,25 @@ final class AppSettings: ObservableObject {
         didSet { defaults.set(claudeCardStyle.rawValue, forKey: "claudeCardStyle") }
     }
 
+    /// What to do when another app already draws in the notch.
+    @Published var notchConflict: NotchConflictPolicy {
+        didSet { defaults.set(notchConflict.rawValue, forKey: "notchConflict") }
+    }
+
+    /// User chose "Use Notch Anyway" after we stepped aside for another notch app.
+    @Published var useNotchAnyway: Bool {
+        didSet { defaults.set(useNotchAnyway, forKey: "useNotchAnyway") }
+    }
+
+    /// Show the one-time "Brim lives here" tip under the island after first run.
+    @Published var pendingIslandTip: Bool {
+        didSet { defaults.set(pendingIslandTip, forKey: "pendingIslandTip") }
+    }
+
     private static let keys = ["showIsland", "placement", "hideInFullScreen", "showInMenuBar", "compactMetric",
                                "expandOnHover", "playful", "pinnedID", "refreshSeconds", "didOnboard",
-                               "emptyIsland", "showAccountEmails", "placementMovedForCrowding", "claudeCardStyle"]
+                               "emptyIsland", "showAccountEmails", "placementMovedForCrowding", "claudeCardStyle",
+                               "notchConflict", "useNotchAnyway", "pendingIslandTip"]
 
     init() {
         Self.copyLegacyDefaults(into: defaults)
@@ -165,6 +196,9 @@ final class AppSettings: ObservableObject {
         emptyIsland = defaults.string(forKey: "emptyIsland").flatMap(EmptyIsland.init(rawValue:)) ?? .small
         showAccountEmails = defaults.object(forKey: "showAccountEmails") as? Bool ?? true
         claudeCardStyle = defaults.string(forKey: "claudeCardStyle").flatMap(ClaudeCardStyle.init(rawValue:)) ?? .short
+        notchConflict = defaults.string(forKey: "notchConflict").flatMap(NotchConflictPolicy.init(rawValue:)) ?? .moveToMenuBar
+        useNotchAnyway = defaults.bool(forKey: "useNotchAnyway")
+        pendingIslandTip = defaults.bool(forKey: "pendingIslandTip")
         isReady = true
         save()
     }

@@ -9,6 +9,7 @@ final class SetupWindows: NSObject, ObservableObject, NSWindowDelegate {
     enum Kind: Equatable {
         case settings
         case addAccount
+        case firstRun
     }
 
     @Published private(set) var open: Kind?

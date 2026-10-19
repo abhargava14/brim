@@ -197,13 +197,26 @@ final class ConnectionTests: XCTestCase {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).appendingPathComponent("connections.json")
         defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
         let store = ConnectionStore(url: url)
-        XCTAssertEqual(store.load().connections.map(\.kind), [.claude, .codex]) // starter set
+        XCTAssertEqual(store.load().connections, []) // first run starts empty; the app asks the user
         var file = store.load()
         var custom = file.add(.customEndpoint, name: "Acme")
         custom.options[Connection.Option.url] = "https://api.acme.dev/usage"
         file.connections[file.connections.count - 1] = custom
         try store.save(file)
         XCTAssertEqual(store.load(), file)
+    }
+
+    func testDetectsLogToolsWithRecentActivity() throws {
+        let home = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: home) }
+        let projects = home.appendingPathComponent(".claude/projects/demo")
+        try FileManager.default.createDirectory(at: projects, withIntermediateDirectories: true)
+        let log = projects.appendingPathComponent("session.jsonl")
+        try Data("{}\n".utf8).write(to: log)
+        let found = ToolDetection.logTools(home: home, environment: [:], now: Date())
+        XCTAssertEqual(found.map(\.kind), [.claude])
+        XCTAssertTrue(found[0].shouldPreCheck)
+        XCTAssertTrue(found[0].detail.contains(".claude/projects"))
     }
 
     func testLogSources() {
