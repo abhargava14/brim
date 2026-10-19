@@ -85,8 +85,7 @@ struct AddAccountView: View {
     private func tile(_ kind: ToolKind) -> some View {
         let count = settings.connections.filter { $0.kind == kind }.count
         return HStack(alignment: .top, spacing: 10) {
-            ToolGlyph(kind: kind, mood: .idle, size: 15, playful: false)
-                .frame(width: 22, height: 22)
+            GlyphTile(kind: kind)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 5) {
                     Text(kind.displayName).font(.body.weight(.semibold))
@@ -122,7 +121,7 @@ struct AddAccountView: View {
                     .buttonStyle(.borderless)
                     .help("All tools")
             }
-            ToolGlyph(kind: kind, mood: .idle, size: 16, playful: false, name: existing?.name)
+            GlyphTile(kind: kind, name: existing?.name)
             Text(existing.map { "Sign in \($0.name)" } ?? "Add \(kind.displayName)")
                 .font(.title2.bold())
         }
@@ -130,7 +129,9 @@ struct AddAccountView: View {
         case .copilot:
             CopilotSignIn(connected: model.connectedGitHubLogins(), finish: finish)
         case .cursor, .windsurf:
-            AppSignIn(kind: kind, showEmail: settings.showAccountEmails, finish: finish)
+            AppSignIn(kind: kind, showEmail: settings.showAccountEmails,
+                      signInTaken: existing == nil && settings.connections.contains { $0.kind == kind && !Keychain.has($0.id) },
+                      finish: finish)
         case .openrouter:
             KeyEntry(prompt: "API key", help: "Create a key at openrouter.ai/keys and paste it here. It's kept in your Keychain.",
                      link: URL(string: "https://openrouter.ai/keys"), finish: finish)
@@ -153,6 +154,19 @@ struct AddAccountView: View {
         } else {
             done()
         }
+    }
+}
+
+/// A tool's glyph on the 28pt black tile, so light logos read on a light window.
+struct GlyphTile: View {
+    let kind: ToolKind
+    var name: String?
+
+    var body: some View {
+        ToolGlyph(kind: kind, mood: .idle, size: 15, playful: false, name: name)
+            .frame(width: 28, height: 28)
+            .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Color.black))
+            .environment(\.colorScheme, .dark)
     }
 }
 
@@ -282,10 +296,20 @@ private struct CopilotSignIn: View {
 private struct AppSignIn: View {
     let kind: ToolKind
     let showEmail: Bool
+    /// A connection already uses the app's sign-in, so adding it again would count it twice.
+    let signInTaken: Bool
     let finish: FinishAccount
     @State private var status: LocalSignIns.AppStatus?
     @State private var token = ""
-    @State private var showToken = false
+    @State private var showToken: Bool
+
+    init(kind: ToolKind, showEmail: Bool, signInTaken: Bool, finish: @escaping FinishAccount) {
+        self.kind = kind
+        self.showEmail = showEmail
+        self.signInTaken = signInTaken
+        self.finish = finish
+        _showToken = State(initialValue: signInTaken)
+    }
 
     private var appName: String { kind.displayName }
 
@@ -320,9 +344,13 @@ private struct AppSignIn: View {
                 }
                 Button("Check Now") { check() }
                 Spacer()
-                Button("Add \(appName)") { finish([:], nil) }
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(!(status?.isSignedIn ?? false))
+                if signInTaken {
+                    Text("Already added").foregroundStyle(.secondary)
+                } else {
+                    Button("Add \(appName)") { finish([:], nil) }
+                        .keyboardShortcut(.defaultAction)
+                        .disabled(!(status?.isSignedIn ?? false))
+                }
             }
 
             DisclosureGroup("Another \(appName) account", isExpanded: $showToken) {
