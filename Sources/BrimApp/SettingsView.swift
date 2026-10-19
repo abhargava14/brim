@@ -179,6 +179,8 @@ struct SettingsView: View {
                 Text("30 seconds").tag(30.0)
                 Text("1 minute").tag(60.0)
             }
+            Toggle("Show account emails", isOn: $settings.showAccountEmails)
+                .help("Turn off while sharing your screen.")
             Toggle("Launch at login", isOn: $launchAtLogin)
                 .onChange(of: launchAtLogin) { enabled in
                     guard enabled != (SMAppService.mainApp.status == .enabled) else { return }
@@ -233,6 +235,12 @@ struct ConnectionRow: View {
                         statusDot
                         Text(state.summary)
                             .lineLimit(1)
+                        if let account = model.accountLabel(for: connection.id) {
+                            Text("· \(account)")
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                                .textSelection(.enabled)
+                        }
                     }
                     .font(.caption)
                     .foregroundStyle(.secondary)

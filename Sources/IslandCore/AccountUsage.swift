@@ -5,11 +5,14 @@ public struct AccountUsage: Equatable, Sendable {
     public var planName: String?
     public var windows: [PlanWindow]
     public var fetchedAt: Date
+    /// The signed-in account (email or login) as the tool itself reports it. Kept in memory only.
+    public var accountLabel: String?
 
-    public init(planName: String?, windows: [PlanWindow], fetchedAt: Date = Date()) {
+    public init(planName: String?, windows: [PlanWindow], fetchedAt: Date = Date(), accountLabel: String? = nil) {
         self.planName = planName
         self.windows = windows
         self.fetchedAt = fetchedAt
+        self.accountLabel = accountLabel
     }
 }
 
@@ -48,7 +51,7 @@ public enum CopilotUsage {
         }
 
         guard plan != nil || !windows.isEmpty else { return nil }
-        return AccountUsage(planName: plan, windows: windows, fetchedAt: now)
+        return AccountUsage(planName: plan, windows: windows, fetchedAt: now, accountLabel: JSON.string(root, "login"))
     }
 
     static func planName(_ raw: String?) -> String? {
@@ -159,7 +162,8 @@ public enum WindsurfUsage {
             windows.append(PlanWindow(label: label, usedPercent: used / available * 100, resetsAt: reset))
         }
         guard plan != nil || !windows.isEmpty else { return nil }
-        return AccountUsage(planName: plan, windows: windows, fetchedAt: now)
+        let email = (JSON.find("email", in: root) as? String).flatMap { $0.contains("@") ? $0 : nil }
+        return AccountUsage(planName: plan, windows: windows, fetchedAt: now, accountLabel: email)
     }
 }
 

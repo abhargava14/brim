@@ -142,6 +142,8 @@ struct ToolReport: Encodable {
     let todayTokens: Int64?
     let windows: [Window]
     let error: String?
+    /// The signed-in account, as the tool reports it. Printed only; never saved.
+    var account: String? = nil
 
     struct Window: Encodable {
         let label: String
@@ -187,12 +189,12 @@ func collectReports() async -> [ToolReport] {
         if let tool = logs[connection.id] {
             return ToolReport(id: connection.id, name: connection.name, kind: connection.kind.rawValue, plan: plan,
                               todayTokens: tool.today.total, windows: windows(tool.planWindows),
-                              error: tool.hasData ? nil : "No logs found")
+                              error: tool.hasData ? nil : "No logs found", account: tool.accountLabel)
         }
         switch accounts[connection.id] {
         case .success(let usage):
             return ToolReport(id: connection.id, name: connection.name, kind: connection.kind.rawValue, plan: plan ?? usage.planName,
-                              todayTokens: nil, windows: windows(usage.windows), error: nil)
+                              todayTokens: nil, windows: windows(usage.windows), error: nil, account: usage.accountLabel)
         case .failure(let error):
             return ToolReport(id: connection.id, name: connection.name, kind: connection.kind.rawValue, plan: plan,
                               todayTokens: nil, windows: [], error: error.localizedDescription)
@@ -226,6 +228,7 @@ func printReports(_ reports: [ToolReport]) {
             header += "  \(Format.tokens(tokens)) tokens today"
         }
         print(header)
+        if let account = report.account, !account.isEmpty { print("  " + dim(account)) }
         if let error = report.error { print("  " + amber(error)) }
         for window in report.windows {
             let reset = window.resetsAt.map { dim(Format.reset($0)) } ?? ""

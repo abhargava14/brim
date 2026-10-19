@@ -415,6 +415,12 @@ final class UsageModel: ObservableObject {
         return word?.isEmpty == false ? word : nil
     }
 
+    /// The account to show for a connection, unless the user hid emails.
+    func accountLabel(for id: String) -> String? {
+        guard settings.showAccountEmails else { return nil }
+        return snapshot[id]?.accountLabel.flatMap { $0.isEmpty ? nil : $0 }
+    }
+
     func isWorking(_ tool: ToolSnapshot) -> Bool {
         guard let last = tool.lastActivity else { return false }
         return Date().timeIntervalSince(last) < 120

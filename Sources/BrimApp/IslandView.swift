@@ -668,8 +668,16 @@ struct ToolCard: View {
     let openSettings: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 9) {
+        VStack(alignment: .leading, spacing: 10) {
             header
+            if let account = model.accountLabel(for: tool.id) {
+                Text(account)
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.35))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .padding(.top, -6)
+            }
             if let message = tool.statusMessage, !tool.hasData {
                 ProblemRow(message: message, openSettings: openSettings)
             } else if tool.hasTokenData {

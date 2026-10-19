@@ -283,6 +283,19 @@ final class AccountUsageTests: XCTestCase {
         XCTAssertEqual(Format.used(PlanWindow(label: "Premium", usedPercent: 70.7, resetsAt: nil, detail: "212 / 300")), "212 / 300 used")
     }
 
+    func testAccountLabelsComeFromTheToolsOwnResponse() throws {
+        let copilot = #"{"login":"example-user","copilot_plan":"individual","quota_snapshots":{"premium_interactions":{"entitlement":300,"remaining":88,"unlimited":false}}}"#
+        let usage = try XCTUnwrap(CopilotUsage.parse(Data(copilot.utf8)))
+        XCTAssertEqual(usage.accountLabel, "example-user")
+        XCTAssertEqual(usage.windows.first.map(Format.used), "212 / 300 used")
+
+        let windsurf = #"{"userStatus":{"email":"user@example.com","planStatus":{"planInfo":{"planName":"Pro"},"availablePromptCredits":50000,"usedPromptCredits":12500}}}"#
+        XCTAssertEqual(WindsurfUsage.parse(Data(windsurf.utf8))?.accountLabel, "user@example.com")
+
+        let snapshot = ToolSnapshot.account(id: "c", kind: .copilot, name: "Copilot", usage: usage, statusMessage: nil)
+        XCTAssertEqual(snapshot.accountLabel, "example-user")
+    }
+
     func testWindsurfFindsNestedFields() throws {
         let json = #"{"userStatus":{"planStatus":{"planInfo":{"planName":"Pro"},"availablePromptCredits":"50000","usedPromptCredits":"12500","planEnd":"2026-11-01T00:00:00Z"}}}"#
         let usage = try XCTUnwrap(WindsurfUsage.parse(Data(json.utf8)))

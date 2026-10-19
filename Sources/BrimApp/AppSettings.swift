@@ -104,9 +104,14 @@ final class AppSettings: ObservableObject {
         didSet { defaults.set(emptyIsland.rawValue, forKey: "emptyIsland") }
     }
 
+    /// Off while screen sharing, to keep account emails off screen.
+    @Published var showAccountEmails: Bool {
+        didSet { defaults.set(showAccountEmails, forKey: "showAccountEmails") }
+    }
+
     private static let keys = ["showIsland", "placement", "hideInFullScreen", "showInMenuBar", "compactMetric",
                                "expandOnHover", "playful", "pinnedID", "refreshSeconds", "didOnboard",
-                               "emptyIsland"]
+                               "emptyIsland", "showAccountEmails"]
 
     init() {
         Self.copyLegacyDefaults(into: defaults)
@@ -123,6 +128,7 @@ final class AppSettings: ObservableObject {
         let refresh = defaults.double(forKey: "refreshSeconds")
         refreshSeconds = refresh > 0 ? refresh : 10
         emptyIsland = defaults.string(forKey: "emptyIsland").flatMap(EmptyIsland.init(rawValue:)) ?? .small
+        showAccountEmails = defaults.object(forKey: "showAccountEmails") as? Bool ?? true
         save()
     }
 

@@ -31,7 +31,11 @@ public enum AccountFetcher {
         let saved = Keychain.read(connection.id)
         switch connection.kind {
         case .copilot: return try await copilot(token: saved ?? GitHubCLI.token())
-        case .cursor: return try await cursor(token: saved ?? VSCodeState.value(app: "Cursor", key: "cursorAuth/accessToken"))
+        case .cursor:
+            var usage = try await cursor(token: saved ?? VSCodeState.value(app: "Cursor", key: "cursorAuth/accessToken"))
+            // Only Cursor's own sign-in says whose it is; a pasted token may be another account.
+            if saved == nil { usage.accountLabel = VSCodeState.value(app: "Cursor", key: "cursorAuth/cachedEmail") }
+            return usage
         case .windsurf: return try await windsurf(apiKey: saved ?? VSCodeState.windsurfAPIKey())
         case .openrouter: return try await openRouter(key: saved)
         case .customEndpoint: return try await endpoint(connection, token: saved)

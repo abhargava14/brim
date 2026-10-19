@@ -203,6 +203,10 @@ public struct ToolSnapshot: Equatable, Sendable, Identifiable {
     public var statusMessage: String?
     /// When account data was last fetched.
     public var updatedAt: Date?
+    /// Which account this is (email or login), for any connection type that can tell: account
+    /// services fill it from their own response or local sign-in, log tools from their own config.
+    /// Read fresh each time; never saved to the connections file.
+    public var accountLabel: String?
 
     public init(id: String, kind: ToolKind, name: String) {
         self.id = id
@@ -236,6 +240,7 @@ public struct ToolSnapshot: Equatable, Sendable, Identifiable {
         snapshot.hasData = usage != nil
         snapshot.statusMessage = statusMessage
         snapshot.updatedAt = usage?.fetchedAt
+        snapshot.accountLabel = usage?.accountLabel
         return snapshot
     }
 }
