@@ -49,7 +49,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func setUpStatusItem() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        item.button?.image = NSImage(systemSymbolName: "sparkle", accessibilityDescription: "Brim")
+        item.button?.image = Self.defaultImage
         item.button?.imagePosition = .imageLeading
         item.button?.font = .monospacedDigitSystemFont(ofSize: NSFont.systemFontSize - 1, weight: .medium)
         statusItem = item
@@ -73,7 +73,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private static var defaultImage: NSImage? { NSImage(systemSymbolName: "sparkle", accessibilityDescription: "Brim") }
+    private static var defaultImage: NSImage? {
+        BrimAssets.brimMenuMark ?? NSImage(systemSymbolName: "sparkle", accessibilityDescription: "Brim")
+    }
 
     private func updateStatusItem() {
         guard let item = statusItem else { return }

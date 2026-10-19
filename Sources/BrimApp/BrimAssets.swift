@@ -38,6 +38,14 @@ enum BrimAssets {
         logo.isTemplate = true
         return logo
     }
+
+    /// Brim mark for the menu bar status item (logo 1a island template).
+    static var brimMenuMark: NSImage? {
+        guard let image = template("Logos/brim-menu.png")?.copy() as? NSImage else { return nil }
+        image.size = NSSize(width: 16, height: 14)
+        image.isTemplate = true
+        return image
+    }
 }
 
 extension ToolKind {

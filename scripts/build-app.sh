@@ -22,6 +22,7 @@ cp "$BIN_DIR/brim" "$APP/Contents/Helpers/brim"
 ln -sf brim "$APP/Contents/Helpers/ai-island"
 # Tool logos and other images (SwiftPM resource bundle, found by BrimAssets).
 cp -R "$BIN_DIR/Brim_BrimApp.bundle" "$APP/Contents/Resources/"
+cp packaging/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -36,6 +37,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>CFBundleShortVersionString</key><string>$VERSION</string>
     <key>CFBundleVersion</key><string>$VERSION</string>
     <key>LSMinimumSystemVersion</key><string>13.0</string>
+    <key>CFBundleIconFile</key><string>AppIcon</string>
     <key>LSUIElement</key><true/>
     <key>NSHighResolutionCapable</key><true/>
     <key>NSHumanReadableCopyright</key><string>MIT License</string>
