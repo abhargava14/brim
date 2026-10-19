@@ -33,14 +33,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         island = IslandController(
             model: model, settings: settings, setup: setup,
             statusItemFrame: { [weak self] in self?.statusItem?.button?.window?.frame },
-            openSettings: { [weak self] in self?.openSettings() }
+            openSettings: { [weak self] in self?.openSettings() },
+            addAccount: { [weak self] in self?.openAddAccount($0) }
         )
         model.start()
 
-        // First run: show settings so people see which tools were found and how to add more.
+        // First run: what was found on this Mac, and a way to add each tool's accounts.
         if !UserDefaults.standard.bool(forKey: "didOnboard") {
             UserDefaults.standard.set(true, forKey: "didOnboard")
-            openSettings()
+            openAddAccount(AddAccountRequest(welcome: true))
         }
     }
 
@@ -96,7 +97,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         header.isEnabled = false
         menu.addItem(header)
         menu.addItem(.separator())
-        menu.addItem(withTitle: "Add Connection…", action: #selector(openSettings), keyEquivalent: "").target = self
+        menu.addItem(withTitle: "Add Account…", action: #selector(addAccountFromMenu), keyEquivalent: "").target = self
         if !settings.connections.isEmpty {
             menu.addItem(withTitle: "Connect All", action: #selector(connectAll), keyEquivalent: "").target = self
         }
@@ -152,7 +153,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(playful)
         menu.addItem(.separator())
         menu.addItem(withTitle: "Refresh", action: #selector(refreshNow), keyEquivalent: "r").target = self
-        menu.addItem(withTitle: "Add Connection…", action: #selector(openSettings), keyEquivalent: "").target = self
+        menu.addItem(withTitle: "Add Account…", action: #selector(addAccountFromMenu), keyEquivalent: "").target = self
         menu.addItem(withTitle: "Disconnect All", action: #selector(disconnectAll), keyEquivalent: "").target = self
         menu.addItem(withTitle: "Settings…", action: #selector(openSettings), keyEquivalent: ",").target = self
         menu.addItem(.separator())
@@ -191,6 +192,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func openSettings() {
         setup.show(.settings, title: "Brim", size: NSSize(width: 600, height: 680)) {
             SettingsView(model: model, settings: settings)
+        }
+    }
+
+    @objc private func addAccountFromMenu() {
+        openAddAccount(AddAccountRequest())
+    }
+
+    func openAddAccount(_ request: AddAccountRequest) {
+        setup.show(.addAccount, title: request.welcome ? "Welcome to Brim" : "Add Account", size: NSSize(width: 500, height: 420), refresh: true) {
+            AddAccountView(model: model, settings: settings, request: request) { [weak self] in self?.setup.close() }
         }
     }
 }

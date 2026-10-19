@@ -11,6 +11,7 @@ struct SettingsView: View {
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
     @State private var cliMessage: String?
     @State private var expanded: String?
+    @State private var adding: AddAccountRequest?
 
     var body: some View {
         Form {
@@ -22,6 +23,9 @@ struct SettingsView: View {
         }
         .formStyle(.grouped)
         .frame(minWidth: 560, minHeight: 600)
+        .sheet(item: $adding) { request in
+            AddAccountView(model: model, settings: settings, request: request) { adding = nil }
+        }
         .alert("Something went wrong", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
             Button("OK", role: .cancel) {}
         } message: {
@@ -34,32 +38,23 @@ struct SettingsView: View {
     private var connectionsSection: some View {
         Section {
             if settings.connections.isEmpty {
-                Text("Nothing connected yet. Add Claude Code, Codex, Cursor, Copilot or any other tool below.")
+                Text("Nothing connected yet. Add Claude Code, Codex, Cursor, Copilot or any other tool.")
                     .foregroundStyle(.secondary)
             }
             ForEach($settings.connections) { $connection in
                 ConnectionRow(
                     connection: $connection,
                     model: model,
+                    signIn: { adding = AddAccountRequest(connectionID: connection.id) },
                     isExpanded: Binding(get: { expanded == connection.id }, set: { expanded = $0 ? connection.id : nil })
                 )
             }
             .onMove { settings.move(from: $0, to: $1) }
 
             HStack {
-                Menu {
-                    ForEach(ToolKind.allCases) { kind in
-                        Button {
-                            let added = model.add(kind)
-                            expanded = added.id
-                        } label: {
-                            Label("\(kind.displayName)\(kind.isExperimental ? " (experimental)" : "") — \(kind.blurb)", systemImage: kind.symbol)
-                        }
-                    }
-                } label: {
-                    Label("Add connection", systemImage: "plus")
+                Button { adding = AddAccountRequest() } label: {
+                    Label("Add Account…", systemImage: "plus")
                 }
-                .fixedSize()
                 Spacer()
                 if settings.enabledConnections.isEmpty {
                     Button("Connect all") { model.connectAll() }
@@ -206,6 +201,7 @@ struct SettingsView: View {
 struct ConnectionRow: View {
     @Binding var connection: Connection
     @ObservedObject var model: UsageModel
+    let signIn: () -> Void
     @Binding var isExpanded: Bool
     @State private var token = ""
     @State private var confirmRemove = false
@@ -310,6 +306,9 @@ struct ConnectionRow: View {
             }
 
             HStack {
+                if connection.kind.source == .account {
+                    Button("Sign In…", action: signIn)
+                }
                 Button("Check now") { model.connect(connection.id) }
                 Spacer()
                 Button("Remove…", role: .destructive) { confirmRemove = true }

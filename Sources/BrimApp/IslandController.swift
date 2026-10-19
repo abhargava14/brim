@@ -109,11 +109,12 @@ final class IslandController {
     private var fullScreenAppActive = false
 
     init(model: UsageModel, settings: AppSettings, setup: SetupWindows,
-         statusItemFrame: @escaping () -> NSRect?, openSettings: @escaping () -> Void) {
+         statusItemFrame: @escaping () -> NSRect?, openSettings: @escaping () -> Void,
+         addAccount: @escaping (AddAccountRequest) -> Void) {
         self.model = model
         self.settings = settings
         self.statusItemFrame = statusItemFrame
-        let root = IslandView(model: model, settings: settings, state: state, openSettings: openSettings)
+        let root = IslandView(model: model, settings: settings, state: state, openSettings: openSettings, addAccount: addAccount)
         panel.contentView = ClickThroughHostingView(rootView: root)
 
         position()

@@ -8,6 +8,7 @@ struct IslandView: View {
     @ObservedObject var settings: AppSettings
     @ObservedObject var state: IslandState
     let openSettings: () -> Void
+    let addAccount: (AddAccountRequest) -> Void
 
     private var cornerRadius: CGFloat { state.isExpanded ? (state.isEmpty ? 22 : 28) : (state.hasNotch ? 14 : 16) }
     private var width: CGFloat {
@@ -24,10 +25,10 @@ struct IslandView: View {
     private var island: some View {
         ZStack(alignment: .top) {
             if state.isExpanded && state.isEmpty {
-                EmptyPanel(settings: settings, state: state, openSettings: openSettings)
+                EmptyPanel(settings: settings, state: state, addAccount: addAccount)
                     .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .top)))
             } else if state.isExpanded {
-                ExpandedView(model: model, settings: settings, state: state, openSettings: openSettings)
+                ExpandedView(model: model, settings: settings, state: state, openSettings: openSettings, addAccount: addAccount)
                     .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .top)))
             } else if let event = model.event {
                 EventView(event: event, state: state, playful: settings.playful)
@@ -553,7 +554,7 @@ struct EmptyCompactView: View {
 struct EmptyPanel: View {
     @ObservedObject var settings: AppSettings
     @ObservedObject var state: IslandState
-    let openSettings: () -> Void
+    let addAccount: (AddAccountRequest) -> Void
 
     private static let kinds: [ToolKind] = [.claude, .codex, .copilot, .cursor, .windsurf, .openrouter]
 
@@ -573,7 +574,7 @@ struct EmptyPanel: View {
                 .foregroundStyle(.white.opacity(0.6))
                 .multilineTextAlignment(.center)
             HStack(spacing: 8) {
-                PillButton(title: "Connect…", filled: true, action: openSettings)
+                PillButton(title: "Add Account…", filled: true) { addAccount(AddAccountRequest()) }
                 PillButton(title: "Hide until connected", filled: false) { settings.emptyIsland = .hidden }
             }
         }
@@ -610,6 +611,7 @@ struct ExpandedView: View {
     @ObservedObject var settings: AppSettings
     @ObservedObject var state: IslandState
     let openSettings: () -> Void
+    let addAccount: (AddAccountRequest) -> Void
     @State private var appeared = false
 
     var body: some View {
@@ -625,6 +627,7 @@ struct ExpandedView: View {
                 Text("·").foregroundStyle(.white.opacity(0.35))
                 Text("\(tools.count) connected").foregroundStyle(.white.opacity(0.6)).lineLimit(1)
                 Spacer()
+                RoundButton(symbol: "plus", help: "Add account") { addAccount(AddAccountRequest()) }
                 RoundButton(symbol: "arrow.clockwise", help: "Refresh now") { model.refresh(forceAccounts: true) }
                 RoundButton(symbol: "gearshape.fill", help: "Settings", action: openSettings)
             }
@@ -635,7 +638,7 @@ struct ExpandedView: View {
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(spacing: 8) {
                     ForEach(Array(tools.enumerated()), id: \.element.id) { index, tool in
-                        ToolCard(tool: tool, model: model, openSettings: openSettings)
+                        ToolCard(tool: tool, model: model, openSettings: openSettings, addAccount: addAccount)
                             .opacity(appeared ? 1 : 0)
                             .offset(y: appeared ? 0 : -10)
                             .scaleEffect(appeared ? 1 : 0.98, anchor: .top)
@@ -666,6 +669,7 @@ struct ToolCard: View {
     let tool: ToolSnapshot
     @ObservedObject var model: UsageModel
     let openSettings: () -> Void
+    let addAccount: (AddAccountRequest) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -679,7 +683,7 @@ struct ToolCard: View {
                     .padding(.top, -6)
             }
             if let message = tool.statusMessage, !tool.hasData {
-                ProblemRow(message: message, openSettings: openSettings)
+                ProblemRow(message: message, action: fix)
             } else if tool.hasTokenData {
                 tokenDetails
             } else {
@@ -692,6 +696,13 @@ struct ToolCard: View {
     }
 
     private var isAccount: Bool { tool.kind.source == .account }
+
+    /// Account problems are fixed by signing in again; log problems by choosing the folder in Settings.
+    private var fix: ProblemRow.Action {
+        isAccount
+            ? .init(title: "Sign in") { addAccount(AddAccountRequest(connectionID: tool.id)) }
+            : .init(title: "Choose folder", run: openSettings)
+    }
 
     private var header: some View {
         HStack(spacing: 6) {
@@ -745,9 +756,9 @@ struct ToolCard: View {
         ForEach(tool.planWindows, id: \.label) { window in
             PlanBar(window: window)
         }
-        if tool.kind == .claude, tool.planWindows.isEmpty, model.claudeConnection != .connected {
-            Button(action: openSettings) {
-                Label("Connect Claude plan limits (5h / weekly) in Settings", systemImage: "link")
+        if tool.kind == .claude, tool.planWindows.isEmpty, model.claudeConnection == .notConnected {
+            Button { try? model.connectClaudePlan() } label: {
+                Label("Show Claude plan limits (5h / weekly)", systemImage: "link")
                     .font(.caption)
             }
             .buttonStyle(.plain)
@@ -781,7 +792,7 @@ struct ToolCard: View {
             QuotaRow(window: window)
         }
         if let message = tool.statusMessage {
-            ProblemRow(message: message, openSettings: openSettings)
+            ProblemRow(message: message, action: fix)
         }
     }
 }
@@ -808,8 +819,13 @@ struct RoundButton: View {
 
 /// A connection that needs the user: what went wrong and a way to fix it.
 struct ProblemRow: View {
+    struct Action {
+        var title: String
+        var run: () -> Void
+    }
+
     let message: String
-    let openSettings: () -> Void
+    let action: Action
 
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
@@ -818,8 +834,8 @@ struct ProblemRow: View {
                 .foregroundStyle(.white.opacity(0.6))
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 4)
-            Button(action: openSettings) {
-                Text("Sign in")
+            Button(action: action.run) {
+                Text(action.title)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 4)
                     .background(Capsule().fill(Brand.attention.opacity(0.16)))

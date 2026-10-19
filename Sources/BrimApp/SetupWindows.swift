@@ -8,15 +8,17 @@ import SwiftUI
 final class SetupWindows: NSObject, ObservableObject, NSWindowDelegate {
     enum Kind: Equatable {
         case settings
+        case addAccount
     }
 
     @Published private(set) var open: Kind?
     private var window: NSWindow?
     private var shown: Kind?
 
-    func show<Content: View>(_ kind: Kind, title: String, size: NSSize, @ViewBuilder content: () -> Content) {
+    /// `refresh` replaces the content even when the window already shows `kind`.
+    func show<Content: View>(_ kind: Kind, title: String, size: NSSize, refresh: Bool = false, @ViewBuilder content: () -> Content) {
         let window = self.window ?? makeWindow()
-        if shown != kind {
+        if shown != kind || refresh {
             window.contentViewController = NSHostingController(rootView: content())
             window.title = title
             window.setContentSize(size)

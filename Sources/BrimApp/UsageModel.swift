@@ -347,6 +347,46 @@ final class UsageModel: ObservableObject {
         return connection
     }
 
+    /// Adds a connection with its options and token in one go, from the Add Account window.
+    @discardableResult
+    func addAccount(_ kind: ToolKind, options: [String: String] = [:], token: String? = nil) -> Connection {
+        var connection = settings.add(kind)
+        if !options.isEmpty {
+            connection.options.merge(options) { $1 }
+            settings.update(connection)
+        }
+        if let token = token?.trimmingCharacters(in: .whitespacesAndNewlines), !token.isEmpty {
+            Keychain.save(token, for: connection.id)
+        }
+        justConnected.insert(connection.id)
+        if kind.source == .account { fetchAccount(connection) }
+        return connection
+    }
+
+    /// Signs an existing connection in again: a new token, or a different GitHub CLI account.
+    func reconnect(_ id: String, options: [String: String] = [:], token: String? = nil) {
+        guard var connection = settings.connection(id) else { return }
+        if !options.isEmpty {
+            connection.options.merge(options) { $1 }
+            settings.update(connection)
+        }
+        let token = token?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        // A saved token wins over the GitHub CLI, so picking a CLI account drops it.
+        if token.isEmpty, options[Connection.Option.githubLogin] != nil { Keychain.delete(id) }
+        connect(id, token: token)
+    }
+
+    /// Accounts that are connected already, so the Add Account window can mark them.
+    func connectedGitHubLogins() -> Set<String> {
+        var logins = Set<String>()
+        for connection in settings.connections where connection.kind == .copilot {
+            let login = connection.option(Connection.Option.githubLogin)
+            if !login.isEmpty { logins.insert(login) }
+            if let reported = snapshot[connection.id]?.accountLabel { logins.insert(reported) }
+        }
+        return logins
+    }
+
     func connectClaudePlan() throws {
         try statusLine.connect()
         claudeConnection = statusLine.state()
