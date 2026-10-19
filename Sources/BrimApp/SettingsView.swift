@@ -279,8 +279,8 @@ struct ConnectionRow: View {
                             Text("experimental")
                                 .font(.system(size: 9, weight: .semibold))
                                 .padding(.horizontal, 5)
-                                .background(Capsule().fill(Color.orange.opacity(0.2)))
-                                .foregroundStyle(.orange)
+                                .background(Capsule().fill(Color.secondary.opacity(0.18)))
+                                .foregroundStyle(.secondary)
                         }
                     }
                     HStack(spacing: 5) {

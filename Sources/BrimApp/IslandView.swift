@@ -389,7 +389,7 @@ struct CompactView: View {
 
     @ViewBuilder
     private func content(_ pair: [ToolSnapshot], total: Int, page: Int, pages: Int) -> some View {
-        HStack(spacing: state.hasNotch ? 0 : 16) {
+        HStack(spacing: state.hasNotch ? 0 : 12) {
             wing(pair.first, alignment: .leading)
             if state.hasNotch {
                 Spacer().frame(width: state.notchWidth)
@@ -402,7 +402,7 @@ struct CompactView: View {
                 detailWing(pair.first)
             }
         }
-        .padding(.horizontal, 13)
+        .padding(.horizontal, 8)
         .font(.system(size: 12.5, weight: .bold, design: .rounded))
         .monospacedDigit()
         .foregroundStyle(.white)
@@ -420,10 +420,10 @@ struct CompactView: View {
 
     private func wing(_ tool: ToolSnapshot?, alignment: HorizontalAlignment) -> some View {
         let density = wingDensity(alignment)
-        return HStack(spacing: 6) {
+        return HStack(spacing: 4) {
             if let tool {
                 if alignment == .trailing { Spacer(minLength: 0) }
-                ToolGlyph(kind: tool.kind, mood: mood(tool), size: 14, playful: model.settings.playful, name: tool.name)
+                ToolGlyph(kind: tool.kind, mood: mood(tool), size: 13, playful: model.settings.playful, name: tool.name)
                 if density != .iconOnly {
                     RollingText(text: model.compactValue(for: tool))
                         .foregroundStyle(valueColor(tool))
@@ -451,7 +451,7 @@ struct CompactView: View {
     private func wingWidth(_ alignment: HorizontalAlignment) -> CGFloat {
         guard state.hasNotch else { return .infinity }
         let wing = alignment == .leading ? state.leftWingWidth(for: nil) : state.rightWingWidth(for: nil)
-        return max(0, wing - 13)
+        return max(0, wing - 8)
     }
 
     /// With a single tool, the right wing shows today's tokens (or, for account tools, the
@@ -564,9 +564,9 @@ struct EventView: View {
                 Text(event.title).foregroundStyle(titleColor).lineLimit(1)
                 Spacer(minLength: 0)
             }
-            .frame(maxWidth: state.hasNotch ? max(0, state.leftWingWidth(for: event.style) - 13) : .infinity)
-            if state.hasNotch { Spacer().frame(width: state.notchWidth) } else { Spacer(minLength: 16) }
-            HStack(spacing: 5) {
+            .frame(maxWidth: state.hasNotch ? max(0, state.leftWingWidth(for: event.style) - 8) : .infinity)
+            if state.hasNotch { Spacer().frame(width: state.notchWidth) } else { Spacer(minLength: 12) }
+            HStack(spacing: 4) {
                 Spacer(minLength: 0)
                 if state.density(for: state.rightWingWidth(for: event.style)) != .iconOnly {
                     detail.lineLimit(1)
@@ -575,9 +575,9 @@ struct EventView: View {
                     Image(systemName: "checkmark").font(.system(size: 11, weight: .heavy)).foregroundStyle(Brand.good)
                 }
             }
-            .frame(maxWidth: state.hasNotch ? max(0, state.rightWingWidth(for: event.style) - 13) : .infinity)
+            .frame(maxWidth: state.hasNotch ? max(0, state.rightWingWidth(for: event.style) - 8) : .infinity)
         }
-        .padding(.horizontal, 13)
+        .padding(.horizontal, 8)
         .font(.system(size: 12.5, weight: .bold, design: .rounded))
         .foregroundStyle(.white)
         .frame(maxHeight: .infinity)
@@ -586,12 +586,12 @@ struct EventView: View {
 
 // MARK: - Nothing connected
 
-/// The notch plus two 30pt wings: a dashed tile and a plus, no text.
+/// The notch plus two small wings: a dashed tile and a plus, no text.
 struct EmptyCompactView: View {
     @ObservedObject var state: IslandState
 
     var body: some View {
-        HStack(spacing: state.hasNotch ? 0 : 16) {
+        HStack(spacing: state.hasNotch ? 0 : 12) {
             RoundedRectangle(cornerRadius: 4, style: .continuous)
                 .strokeBorder(Color.white.opacity(0.4), style: StrokeStyle(lineWidth: 1.5, dash: [2]))
                 .frame(width: 14, height: 14)

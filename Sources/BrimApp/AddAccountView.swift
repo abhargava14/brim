@@ -93,7 +93,7 @@ struct AddAccountView: View {
                         Text("experimental")
                             .font(.system(size: 9, weight: .semibold))
                             .padding(.horizontal, 5)
-                            .background(Capsule().fill(Color.secondary.opacity(0.18)))
+                            .background(Capsule().fill(Color.primary.opacity(0.08)))
                             .foregroundStyle(.secondary)
                     }
                 }
