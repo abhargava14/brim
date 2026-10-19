@@ -17,6 +17,13 @@ struct SettingsView: View {
     var body: some View {
         TabView {
             Form {
+                generalSection
+                terminalSection
+            }
+            .formStyle(.grouped)
+            .tabItem { Label("General", systemImage: "gearshape") }
+
+            Form {
                 connectionsSection
                 claudeSection
             }
@@ -26,14 +33,10 @@ struct SettingsView: View {
             Form { islandSection }
                 .formStyle(.grouped)
                 .tabItem { Label("Island", systemImage: "rectangle.roundedtop") }
-
-            Form {
-                generalSection
-                terminalSection
-            }
-            .formStyle(.grouped)
-            .tabItem { Label("General", systemImage: "gearshape") }
         }
+        // Keep the segmented tab bar clear of the title-bar chrome.
+        .padding(.top, 14)
+        .padding(.horizontal, 16)
         .frame(minWidth: 560, minHeight: 600)
         .sheet(item: $adding) { request in
             AddAccountView(model: model, settings: settings, request: request) { adding = nil }

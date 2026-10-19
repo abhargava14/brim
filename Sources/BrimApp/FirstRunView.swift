@@ -152,7 +152,7 @@ struct FirstRunView: View {
                     .frame(width: 180)
                 }
                 Divider()
-                lookRow(title: "Show in menu bar", detail: "Top connection's percentage next to the clock.") {
+                lookRow(title: "Show in menu bar", detail: "Brim icon only; usage stays in the island.") {
                     Toggle("", isOn: $settings.showInMenuBar).labelsHidden()
                 }
                 Divider()
