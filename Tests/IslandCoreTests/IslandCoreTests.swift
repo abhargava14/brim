@@ -237,6 +237,12 @@ final class AccountUsageTests: XCTestCase {
         XCTAssertNotNil(usage.windows[0].resetsAt)
     }
 
+    func testCopilotNoAccess() {
+        let json = #"{"login":"example-user","access_type_sku":"no_access","copilot_plan":"individual","can_signup_for_limited":true}"#
+        XCTAssertTrue(CopilotUsage.lacksCopilot(Data(json.utf8)))
+        XCTAssertFalse(CopilotUsage.lacksCopilot(Data(#"{"access_type_sku":"free_limited_copilot"}"#.utf8)))
+    }
+
     func testGitHubCLIAccounts() {
         let json = #"""
         {"hosts":{"github.com":[

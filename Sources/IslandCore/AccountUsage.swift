@@ -57,6 +57,11 @@ public enum CopilotUsage {
         return AccountUsage(planName: plan, windows: windows, fetchedAt: now, accountLabel: JSON.string(root, "login"))
     }
 
+    /// GitHub answers for any account, and says `no_access` when the account has no Copilot plan.
+    public static func lacksCopilot(_ data: Data) -> Bool {
+        JSON.object(data).flatMap { JSON.string($0, "access_type_sku") }?.lowercased() == "no_access"
+    }
+
     static func planName(_ raw: String?) -> String? {
         guard let raw = raw?.lowercased(), !raw.isEmpty else { return nil }
         if raw.contains("free") { return "Free" }

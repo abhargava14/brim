@@ -75,6 +75,9 @@ public enum AccountFetcher {
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue("vscode/1.99.0", forHTTPHeaderField: "Editor-Version")
         let data = try await send(request, service: "GitHub", help: "GitHub didn't accept the sign-in. Sign in with GitHub again, or paste a new token.")
+        if CopilotUsage.lacksCopilot(data) {
+            throw ConnectorError.unauthorized("This GitHub account doesn't have Copilot. Turn on Copilot Free at github.com/settings/copilot, or sign in with another account.")
+        }
         guard let usage = CopilotUsage.parse(data) else { throw ConnectorError.unexpectedResponse("GitHub Copilot") }
         return usage
     }
