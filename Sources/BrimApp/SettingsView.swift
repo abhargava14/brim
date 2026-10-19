@@ -11,6 +11,7 @@ struct SettingsView: View {
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
     @State private var cliMessage: String?
     @State private var expanded: String?
+    @State private var cliFix: CommandLineTool.Fix?
     @State private var adding: AddAccountRequest?
 
     var body: some View {
@@ -150,14 +151,18 @@ struct SettingsView: View {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("brim command")
-                    Text(cliMessage ?? "Connect tools and check usage from the terminal, e.g. brim add copilot or brim status.")
+                    Text(cliMessage ?? "Optional. Lets you check usage from the terminal with brim status.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer()
-                Button("Install") { cliMessage = CommandLineTool.install() }
+                if let cliFix {
+                    Button(cliFix.title) { (cliMessage, self.cliFix) = cliFix.run() }
+                } else {
+                    Button("Install") { (cliMessage, cliFix) = CommandLineTool.install() }
+                }
             }
         } header: {
             Text("Terminal")
@@ -398,30 +403,89 @@ struct ConnectionRow: View {
 
 /// Links the `brim` command shipped inside the app bundle into the user's PATH.
 enum CommandLineTool {
-    static func install() -> String {
-        let source = Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/brim")
-        guard FileManager.default.isExecutableFile(atPath: source.path) else {
-            return "This build doesn't include the command. Build with ./scripts/build-app.sh, or run: swift build -c release --product brim"
+    /// A follow-up the user can click when the plain install isn't enough.
+    enum Fix: Equatable {
+        case installAsAdmin
+        case addToPath
+
+        var title: String {
+            switch self {
+            case .installAsAdmin: return "Install with Password…"
+            case .addToPath: return "Add to PATH"
+            }
         }
-        let home = FileManager.default.homeDirectoryForCurrentUser
-        let candidates = [URL(fileURLWithPath: "/usr/local/bin"), URL(fileURLWithPath: "/opt/homebrew/bin"), home.appendingPathComponent(".local/bin")]
-        for directory in candidates {
+
+        func run() -> (String, Fix?) {
+            switch self {
+            case .installAsAdmin: return CommandLineTool.installAsAdmin()
+            case .addToPath: return CommandLineTool.addLocalBinToPath()
+            }
+        }
+    }
+
+    private static var source: URL { Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/brim") }
+    private static var home: URL { FileManager.default.homeDirectoryForCurrentUser }
+
+    static func install() -> (String, Fix?) {
+        guard FileManager.default.isExecutableFile(atPath: source.path) else {
+            return ("This copy of Brim doesn't include the brim command.", nil)
+        }
+        let localBin = home.appendingPathComponent(".local/bin")
+        for directory in [URL(fileURLWithPath: "/usr/local/bin"), URL(fileURLWithPath: "/opt/homebrew/bin"), localBin] {
             try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-            guard FileManager.default.isWritableFile(atPath: directory.path) else { continue }
-            let link = directory.appendingPathComponent("brim")
+            guard FileManager.default.isWritableFile(atPath: directory.path), link(in: directory) else { continue }
+            let onPath = (ProcessInfo.processInfo.environment["PATH"] ?? "").split(separator: ":").contains { $0 == directory.path }
+            if directory == localBin, !onPath, !zshrcMentionsLocalBin() {
+                return ("Installed at \(directory.path)/brim. Add that folder to your PATH so the terminal finds it.", .addToPath)
+            }
+            return ("Installed at \(directory.path)/brim. Try: brim status", nil)
+        }
+        return ("Brim needs your password to install into /usr/local/bin.", .installAsAdmin)
+    }
+
+    private static func link(in directory: URL) -> Bool {
+        for name in ["brim", "ai-island"] {
+            let link = directory.appendingPathComponent(name)
             try? FileManager.default.removeItem(at: link)
             do {
                 try FileManager.default.createSymbolicLink(at: link, withDestinationURL: source)
             } catch {
-                continue
+                return false
             }
-            let alias = directory.appendingPathComponent("ai-island")
-            try? FileManager.default.removeItem(at: alias)
-            try? FileManager.default.createSymbolicLink(at: alias, withDestinationURL: source)
-            let onPath = (ProcessInfo.processInfo.environment["PATH"] ?? "").split(separator: ":").contains { $0 == directory.path }
-            return "Installed at \(link.path). Try: brim status"
-                + (onPath || directory.path != home.appendingPathComponent(".local/bin").path ? "" : "\nAdd ~/.local/bin to your PATH: echo 'export PATH=\"$HOME/.local/bin:$PATH\"' >> ~/.zshrc")
         }
-        return "Couldn't write to /usr/local/bin or ~/.local/bin. Run: sudo ln -sf \"\(source.path)\" /usr/local/bin/brim"
+        return true
+    }
+
+    private static func installAsAdmin() -> (String, Fix?) {
+        let quoted = "'" + source.path.replacingOccurrences(of: "'", with: "'\\''") + "'"
+        let command = "mkdir -p /usr/local/bin && ln -sf \(quoted) /usr/local/bin/brim && ln -sf \(quoted) /usr/local/bin/ai-island"
+        let script = "do shell script \"\(command.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\""))\" with administrator privileges"
+        var error: NSDictionary?
+        NSAppleScript(source: script)?.executeAndReturnError(&error)
+        if error == nil { return ("Installed at /usr/local/bin/brim. Try: brim status", nil) }
+        return ("Not installed. Click the button to try again.", .installAsAdmin)
+    }
+
+    private static var zshrc: URL { home.appendingPathComponent(".zshrc") }
+
+    private static func zshrcMentionsLocalBin() -> Bool {
+        ((try? String(contentsOf: zshrc, encoding: .utf8)) ?? "").contains(".local/bin")
+    }
+
+    private static func addLocalBinToPath() -> (String, Fix?) {
+        guard !zshrcMentionsLocalBin() else { return ("~/.local/bin is already in ~/.zshrc. Open a new terminal window.", nil) }
+        let line = "\n# Added by Brim so the terminal finds the brim command\nexport PATH=\"$HOME/.local/bin:$PATH\"\n"
+        do {
+            if let handle = try? FileHandle(forWritingTo: zshrc) {
+                defer { try? handle.close() }
+                try handle.seekToEnd()
+                try handle.write(contentsOf: Data(line.utf8))
+            } else {
+                try Data(line.utf8).write(to: zshrc)
+            }
+            return ("Added ~/.local/bin to ~/.zshrc. New terminal windows will find brim.", nil)
+        } catch {
+            return ("Couldn't update ~/.zshrc: \(error.localizedDescription)", .addToPath)
+        }
     }
 }
