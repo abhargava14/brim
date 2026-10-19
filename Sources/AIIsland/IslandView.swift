@@ -49,13 +49,13 @@ struct IslandView: View {
             }
         }
         .background(
+            // Written straight to the state: a preference from here isn't delivered through NSHostingView.
             GeometryReader { geometry in
-                Color.clear.preference(key: IslandSizeKey.self, value: geometry.size)
+                Color.clear
+                    .onAppear { state.islandSize = geometry.size }
+                    .onChange(of: geometry.size) { size in state.islandSize = size }
             }
         )
-        .onPreferenceChange(IslandSizeKey.self) { size in
-            state.islandSize = size
-        }
         .contentShape(Rectangle())
         .onTapGesture {
             if model.event != nil && !state.isExpanded { model.dismissEvent() }
@@ -64,11 +64,6 @@ struct IslandView: View {
         .animation(.spring(response: 0.38, dampingFraction: 0.78), value: state.isExpanded)
         .animation(.spring(response: 0.42, dampingFraction: 0.7), value: model.event?.id)
     }
-}
-
-private struct IslandSizeKey: PreferenceKey {
-    static var defaultValue: CGSize = .zero
-    static func reduce(value: inout CGSize, nextValue: () -> CGSize) { value = nextValue() }
 }
 
 /// Square top edge (it hangs from the screen edge), rounded bottom corners like the notch.

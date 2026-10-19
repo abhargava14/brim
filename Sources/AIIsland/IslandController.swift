@@ -245,13 +245,23 @@ final class IslandController {
         updateVisibility()
     }
 
-    /// The visible island in screen coordinates.
+    /// Extra room around the island before the pointer counts as gone, so moving inward or
+    /// brushing an edge doesn't close it.
+    private static let hoverMargin: CGFloat = 6
+    private static let expandedHoverMargin: CGFloat = 16
+    private static let collapseDelay: UInt64 = 500_000_000
+
+    /// The visible island in screen coordinates. Width comes from the state (it changes before
+    /// the view is measured); height from the view once measured.
     private var islandRect: NSRect {
         guard let screen else { return .zero }
         let event = state.isExpanded ? nil : model.event?.style
-        let size = state.islandSize == .zero
-            ? CGSize(width: state.compactWidth(for: event), height: state.barHeight)
-            : state.islandSize
+        let width = state.isExpanded ? IslandState.expandedWidth : state.compactWidth(for: event)
+        var height = state.barHeight
+        if state.isExpanded {
+            height = state.islandSize.height > state.barHeight ? state.islandSize.height : Self.canvas.height
+        }
+        let size = CGSize(width: width, height: height)
         let top = panel.frame.maxY
         let midX = screen.frame.midX + (state.isExpanded ? 0 : state.xOffset(for: event))
         return NSRect(x: midX - size.width / 2, y: top - size.height, width: size.width, height: size.height)
@@ -259,8 +269,12 @@ final class IslandController {
 
     private func trackMouse() {
         guard panel.isVisible else { return }
-        let inside = islandRect.insetBy(dx: -6, dy: -6).contains(NSEvent.mouseLocation)
-        panel.ignoresMouseEvents = !inside
+        let rect = islandRect
+        let mouse = NSEvent.mouseLocation
+        // Clicks land only on the visible shape; everywhere else they reach the menu bar and apps.
+        panel.ignoresMouseEvents = !rect.contains(mouse)
+        let margin = state.isExpanded ? Self.expandedHoverMargin : Self.hoverMargin
+        let inside = rect.insetBy(dx: -margin, dy: -margin).contains(mouse)
 
         if inside {
             collapseTask?.cancel()
@@ -279,7 +293,7 @@ final class IslandController {
             expandTask = nil
             if state.isExpanded, collapseTask == nil {
                 collapseTask = Task { [weak self] in
-                    try? await Task.sleep(nanoseconds: 350_000_000)
+                    try? await Task.sleep(nanoseconds: Self.collapseDelay)
                     guard let self, !Task.isCancelled else { return }
                     self.state.isExpanded = false
                     self.collapseTask = nil
