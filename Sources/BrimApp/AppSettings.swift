@@ -50,6 +50,21 @@ enum EmptyIsland: String, CaseIterable, Identifiable {
     }
 }
 
+/// How a Claude card opens in the expanded island; a click on the card switches it.
+enum ClaudeCardStyle: String, CaseIterable, Identifiable {
+    case short
+    case full
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .short: return "Short (5h, week, today)"
+        case .full: return "Full (like Claude's /usage)"
+        }
+    }
+}
+
 /// User preferences (UserDefaults) and the connections file shared with the `brim` command.
 @MainActor
 final class AppSettings: ObservableObject {
@@ -124,9 +139,13 @@ final class AppSettings: ObservableObject {
         didSet { defaults.set(showAccountEmails, forKey: "showAccountEmails") }
     }
 
+    @Published var claudeCardStyle: ClaudeCardStyle {
+        didSet { defaults.set(claudeCardStyle.rawValue, forKey: "claudeCardStyle") }
+    }
+
     private static let keys = ["showIsland", "placement", "hideInFullScreen", "showInMenuBar", "compactMetric",
                                "expandOnHover", "playful", "pinnedID", "refreshSeconds", "didOnboard",
-                               "emptyIsland", "showAccountEmails", "placementMovedForCrowding"]
+                               "emptyIsland", "showAccountEmails", "placementMovedForCrowding", "claudeCardStyle"]
 
     init() {
         Self.copyLegacyDefaults(into: defaults)
@@ -145,6 +164,7 @@ final class AppSettings: ObservableObject {
         refreshSeconds = refresh > 0 ? refresh : 10
         emptyIsland = defaults.string(forKey: "emptyIsland").flatMap(EmptyIsland.init(rawValue:)) ?? .small
         showAccountEmails = defaults.object(forKey: "showAccountEmails") as? Bool ?? true
+        claudeCardStyle = defaults.string(forKey: "claudeCardStyle").flatMap(ClaudeCardStyle.init(rawValue:)) ?? .short
         isReady = true
         save()
     }

@@ -690,6 +690,8 @@ struct ToolCard: View {
             }
             if let message = tool.statusMessage, !tool.hasData {
                 ProblemRow(message: message, action: fix)
+            } else if tool.kind == .claude, model.claudeStyle(for: tool.id) == .full {
+                ClaudeDetailView(tool: tool, model: model)
             } else if tool.hasTokenData {
                 tokenDetails
             } else {
@@ -699,6 +701,11 @@ struct ToolCard: View {
         .padding(.vertical, 12)
         .padding(.horizontal, 14)
         .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Color.white.opacity(0.07)))
+        .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .onTapGesture {
+            guard tool.kind == .claude, tool.hasData else { return }
+            withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) { model.toggleClaudeStyle(for: tool.id) }
+        }
     }
 
     private var isAccount: Bool { tool.kind.source == .account }
@@ -759,10 +766,11 @@ struct ToolCard: View {
 
         TokenBreakdown(tokens: tool.today, tint: tool.kind.tint)
 
-        ForEach(tool.planWindows, id: \.label) { window in
+        ForEach(tool.planWindows.filter { $0.model == nil }, id: \.label) { window in
             PlanBar(window: window)
         }
-        if tool.kind == .claude, tool.planWindows.isEmpty, model.claudeConnection == .notConnected {
+        if tool.kind == .claude { ClaudeLimitsNote(tool: tool) }
+        if tool.kind == .claude, tool.planWindows.isEmpty, tool.limitsNote == nil, model.claudeConnection == .notConnected {
             Button { try? model.connectClaudePlan() } label: {
                 Label("Show Claude plan limits (5h / weekly)", systemImage: "link")
                     .font(.caption)
@@ -785,6 +793,8 @@ struct ToolCard: View {
         }
         .font(.system(size: 10.5, weight: .bold, design: .rounded))
         .monospacedDigit()
+
+        if tool.kind == .claude { ClaudeStyleToggle(tool: tool, model: model) }
     }
 
     @ViewBuilder

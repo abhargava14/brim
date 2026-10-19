@@ -141,6 +141,11 @@ struct SettingsView: View {
                     Text(metric.title).tag(metric)
                 }
             }
+            Picker("Claude cards open in", selection: $settings.claudeCardStyle) {
+                ForEach(ClaudeCardStyle.allCases) { style in
+                    Text(style.title).tag(style)
+                }
+            }
             Picker("Always feature", selection: $settings.pinnedID) {
                 Text("Automatic (most urgent first)").tag("")
                 ForEach(settings.connections) { connection in

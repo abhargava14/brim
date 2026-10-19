@@ -54,6 +54,14 @@ final class UsageModel: ObservableObject {
     /// Why moments are on hold (the island is expanded, hidden in full screen, …).
     private var pauseReasons = Set<String>()
 
+    /// Claude accounts by connection ID, and their limits as Anthropic last reported them.
+    private var claudeAccounts: [String: ClaudeAccount] = [:]
+    private var claudeLimits: [String: [PlanWindow]] = [:]
+    private var claudeErrors: [String: String] = [:]
+    private var claudeLimitsCache = ClaudeLimitsCache.load(from: ClaudeLimitsCache.defaultURL(supportDirectory: UsageModel.supportDirectory))
+    /// Claude cards the user switched away from the Settings default.
+    @Published private var claudeStyleOverrides: [String: ClaudeCardStyle] = [:]
+
     /// Account services are polled gently; logs are cheap and read every few seconds.
     private static let accountInterval: TimeInterval = 300
     private static let milestones: [Int64] = [1_000_000, 5_000_000, 10_000_000, 25_000_000, 50_000_000, 100_000_000, 250_000_000, 500_000_000]
@@ -99,9 +107,10 @@ final class UsageModel: ObservableObject {
         claudeConnection = statusLine.state()
         scanLogs()
         let now = Date()
-        for connection in settings.enabledConnections where connection.kind.source == .account {
+        for connection in settings.enabledConnections where connection.kind.source == .account || connection.kind == .claude {
             let due = (lastAccountFetch[connection.id] ?? .distantPast) < now.addingTimeInterval(-Self.accountInterval)
-            if forceAccounts || due { fetchAccount(connection) }
+            guard forceAccounts || due else { continue }
+            if connection.kind == .claude { fetchClaudeLimits(connection) } else { fetchAccount(connection) }
         }
         publish()
     }
@@ -158,6 +167,41 @@ final class UsageModel: ObservableObject {
         }
     }
 
+    /// Reads who is signed in to the connection's Claude Code folder, then asks Anthropic for its limits.
+    private func fetchClaudeLimits(_ connection: Connection) {
+        guard !fetching.contains(connection.id), let configDir = connection.claudeConfigDir() else { return }
+        fetching.insert(connection.id)
+        Task {
+            let account = await Task.detached { ClaudeAccounts.account(configDir: configDir) }.value
+            self.claudeAccounts[connection.id] = account
+            do {
+                let windows = try await ClaudeUsageFetcher.fetch(account)
+                self.claudeLimits[connection.id] = windows
+                self.claudeErrors[connection.id] = nil
+                self.claudeLimitsCache.readings[account.key] = .init(windows: windows, fetchedAt: Date())
+                self.claudeLimitsCache.save(to: ClaudeLimitsCache.defaultURL(supportDirectory: Self.supportDirectory))
+            } catch {
+                self.claudeLimits[connection.id] = nil
+                self.claudeErrors[connection.id] = error.localizedDescription
+            }
+            self.lastAccountFetch[connection.id] = Date()
+            self.fetching.remove(connection.id)
+            self.publish()
+        }
+    }
+
+    /// Fills in a Claude card's account, plan label and limits (live, else the last reading until it resets).
+    private func applyClaudeAccount(to tool: inout ToolSnapshot, connection: Connection) {
+        guard connection.kind == .claude, let account = claudeAccounts[connection.id] else { return }
+        tool.accountLabel = account.email
+        if tool.planName == nil { tool.planName = account.planLabel }
+        let resolved = ClaudeLimits.resolve(live: claudeLimits[connection.id], statusLine: tool.planWindows,
+                                            cached: claudeLimitsCache.readings[account.key], failure: claudeErrors[connection.id])
+        tool.planWindows = resolved.windows
+        tool.limitsAsOf = resolved.asOf
+        tool.limitsNote = resolved.note
+    }
+
     /// Merges log and account data in the user's order and raises events for what changed.
     private func publish() {
         var tools: [ToolSnapshot] = []
@@ -198,6 +242,7 @@ final class UsageModel: ObservableObject {
             if let tier = Plans.tier(connection.planID, for: connection.kind) {
                 tool.planName = tier.name
             }
+            applyClaudeAccount(to: &tool, connection: connection)
             tools.append(tool)
         }
 
@@ -459,6 +504,35 @@ final class UsageModel: ObservableObject {
     func accountLabel(for id: String) -> String? {
         guard settings.showAccountEmails else { return nil }
         return snapshot[id]?.accountLabel.flatMap { $0.isEmpty ? nil : $0 }
+    }
+
+    // MARK: - Claude
+
+    /// Whether a Claude card shows the full `/usage`-style view.
+    func claudeStyle(for id: String) -> ClaudeCardStyle {
+        claudeStyleOverrides[id] ?? settings.claudeCardStyle
+    }
+
+    func toggleClaudeStyle(for id: String) {
+        claudeStyleOverrides[id] = claudeStyle(for: id) == .full ? .short : .full
+    }
+
+    /// Adds a connection for a Claude account that just signed in (see `AddClaudeAccountView`).
+    @discardableResult
+    func addClaudeConnection(for account: ClaudeAccount) -> Connection {
+        let existing = settings.connections.first { $0.kind == .claude && $0.claudeConfigDir()?.standardizedFileURL == account.configDir.standardizedFileURL }
+        if let existing {
+            connect(existing.id)
+            return existing
+        }
+        var connection = settings.add(.claude)
+        connection.name = account.suggestedName
+        connection.options[Connection.Option.configDir] = account.configDir.path
+        settings.update(connection)
+        claudeAccounts[connection.id] = account
+        justConnected.insert(connection.id)
+        fetchClaudeLimits(connection)
+        return connection
     }
 
     func isWorking(_ tool: ToolSnapshot) -> Bool {
