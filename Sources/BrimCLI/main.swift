@@ -112,6 +112,7 @@ func applyOptions(to connection: inout Connection) {
     let mapping: [(flag: String, key: String)] = [
         ("path", O.path), ("format", O.format), ("url", O.url), ("header", O.authHeader), ("prefix", O.authPrefix),
         ("used", O.usedPath), ("limit", O.limitPath), ("plan-path", O.planPath), ("reset", O.resetPath), ("label", O.label),
+        ("github-user", O.githubLogin),
     ]
     for (flagName, key) in mapping {
         if let value = option(flagName) { connection.options[key] = value }
@@ -273,6 +274,7 @@ func printHelp() {
       brim add claude
       brim add claude --name "Claude · Work" --path ~/work/.claude/projects --plan max5
       brim add copilot
+      brim add copilot --github-user other-login   # another account the GitHub CLI is signed in to
       brim add openrouter            # prompts for the API key
       brim add custom --name Acme --url https://api.acme.dev/usage --used data.used --limit data.limit
       brim disconnect --all
@@ -411,7 +413,7 @@ case "claude-limits":
     default:
         switch setup.state() {
         case .connected: print(green("Connected") + (setup.planWindows().isEmpty ? dim(" · waiting for Claude Code's next reply") : ""))
-        case .notConnected: print("Not connected. Run: brim claude-limits connect")
+        case .notConnected: print("Not connected. Run: brim claude-limits connect, or click Connect in Brim's Settings.")
         case .unreadable: print(amber("Claude Code's settings.json could not be read."))
         }
     }
