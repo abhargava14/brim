@@ -15,14 +15,25 @@ struct SettingsView: View {
     @State private var adding: AddAccountRequest?
 
     var body: some View {
-        Form {
-            connectionsSection
-            claudeSection
-            islandSection
-            terminalSection
-            generalSection
+        TabView {
+            Form {
+                connectionsSection
+                claudeSection
+            }
+            .formStyle(.grouped)
+            .tabItem { Label("Connections", systemImage: "link") }
+
+            Form { islandSection }
+                .formStyle(.grouped)
+                .tabItem { Label("Island", systemImage: "rectangle.roundedtop") }
+
+            Form {
+                generalSection
+                terminalSection
+            }
+            .formStyle(.grouped)
+            .tabItem { Label("General", systemImage: "gearshape") }
         }
-        .formStyle(.grouped)
         .frame(minWidth: 560, minHeight: 600)
         .sheet(item: $adding) { request in
             AddAccountView(model: model, settings: settings, request: request) { adding = nil }
@@ -119,37 +130,51 @@ struct SettingsView: View {
     // MARK: Island
 
     private var islandSection: some View {
-        Section("Island") {
-            Toggle("Show the island at the top of the screen", isOn: $settings.showIsland)
-            Picker("Notch area", selection: $settings.placement) {
-                ForEach(IslandPlacement.allCases) { placement in
-                    Text(placement.title).tag(placement)
+        Group {
+            Section {
+                Toggle("Show the island at the top of the screen", isOn: $settings.showIsland)
+                Picker("Show in", selection: $settings.placement) {
+                    ForEach(IslandPlacement.allCases) { placement in
+                        Text(placement.title).tag(placement)
+                    }
                 }
-            }
-            if settings.placementMovedForCrowding {
-                Text("Moved below the menu bar — other status icons left too little room next to the notch. Choose “Around the notch” to try again.")
-                    .font(.caption)
+                if settings.placementMovedForCrowding {
+                    Text("Moved below the menu bar — other status icons left too little room next to the notch. Choose “Around the notch” to try again.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Picker("With nothing connected", selection: $settings.emptyIsland) {
+                    ForEach(EmptyIsland.allCases) { mode in
+                        Text(mode.title).tag(mode)
+                    }
+                }
+                Toggle("Hide in full-screen apps", isOn: $settings.hideInFullScreen)
+            } footer: {
+                Text("The menu bar item can't be turned off while the island is hidden, so Settings stays reachable.")
                     .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
             }
-            Toggle("Hide in full-screen apps", isOn: $settings.hideInFullScreen)
-            Toggle("Expand when the pointer is over it", isOn: $settings.expandOnHover)
-            Toggle("Show usage in the menu bar", isOn: $settings.showInMenuBar)
-            Toggle("Playful animations (confetti, bouncing icons)", isOn: $settings.playful)
-            Picker("Compact view shows", selection: $settings.compactMetric) {
-                ForEach(CompactMetric.allCases) { metric in
-                    Text(metric.title).tag(metric)
+
+            Section("Compact island") {
+                Toggle("Expand when the pointer is over it", isOn: $settings.expandOnHover)
+                Toggle("Show usage in the menu bar", isOn: $settings.showInMenuBar)
+                    .disabled(!settings.showIsland || (settings.emptyIsland == .hidden && settings.enabledConnections.isEmpty))
+                Toggle("Playful animations (confetti, bouncing icons)", isOn: $settings.playful)
+                Picker("Compact view shows", selection: $settings.compactMetric) {
+                    ForEach(CompactMetric.allCases) { metric in
+                        Text(metric.title).tag(metric)
+                    }
                 }
-            }
-            Picker("Claude cards open in", selection: $settings.claudeCardStyle) {
-                ForEach(ClaudeCardStyle.allCases) { style in
-                    Text(style.title).tag(style)
+                Picker("Claude cards open in", selection: $settings.claudeCardStyle) {
+                    ForEach(ClaudeCardStyle.allCases) { style in
+                        Text(style.title).tag(style)
+                    }
                 }
-            }
-            Picker("Always feature", selection: $settings.pinnedID) {
-                Text("Automatic (most urgent first)").tag("")
-                ForEach(settings.connections) { connection in
-                    Text(connection.name).tag(connection.id)
+                Picker("Always feature", selection: $settings.pinnedID) {
+                    Text("Automatic (most urgent first)").tag("")
+                    ForEach(settings.connections) { connection in
+                        Text(connection.name).tag(connection.id)
+                    }
                 }
             }
         }
