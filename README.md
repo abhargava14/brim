@@ -80,16 +80,20 @@ You'll know it's running when you see the Brim mark in the menu bar and a black 
 #### If Mac says Brim can’t be opened
 
 macOS may show **“Brim Not Opened — Apple could not verify…”** (or similar). That’s **normal** until
-the app is Apple-notarized — **not malware**. Double‑click alone fails on recent macOS.
+the app is Apple-notarized — **not malware**. On **Sonoma / Sequoia** the dialog often only has
+**Done** / **Move to Bin** (no **Open**); right‑click → **Open** usually fails.
 
-**Workaround (once is enough):**
+**Workaround (once is enough) — current macOS:**
 
-1. In **Finder**, open **Applications**.
-2. **Right‑click** (or **Control‑click**) **Brim** → **Open**.
-3. In the dialog, click **Open** again.
+1. Drag **Brim** into **Applications** (don’t run it only from the DMG).
+2. Double‑click Brim once; if the dialog appears, click **Done** (not **Move to Bin**).
+3. **System Settings → Privacy & Security** → scroll to **“Brim was blocked…”** → **Open Anyway**.
+4. Confirm again if macOS asks (password / **Open Anyway** a second time).
 
-**Alternative:** **System Settings → Privacy & Security** → scroll to the message that Brim was
-blocked → **Open Anyway**.
+**Optional Terminal** (clears quarantine on that app only — does not disable Gatekeeper):
+`xattr -cr /Applications/Brim.app`, then open Brim again.
+
+**Older macOS only:** right‑click (Control‑click) Brim in Applications → **Open** → **Open**.
 
 Do **not** turn Gatekeeper off system‑wide. Friend-facing steps:
 [docs/gatekeeper-friend-install.md](docs/gatekeeper-friend-install.md). Permanent fix (Developer ID +
@@ -304,8 +308,9 @@ safely).
 ## Troubleshooting
 
 **macOS says the app "can't be opened" / “Apple could not verify…”.** Normal until notarization —
-not malware. See [If Mac says Brim can’t be opened](#if-mac-says-brim-cant-be-opened) (right‑click →
-**Open**, or Privacy & Security → **Open Anyway**). Do not disable Gatekeeper system‑wide.
+not malware. See [If Mac says Brim can’t be opened](#if-mac-says-brim-cant-be-opened)
+(**Privacy & Security → Open Anyway** on Sonoma/Sequoia; right‑click → **Open** on older macOS).
+Do not disable Gatekeeper system‑wide.
 
 **A tool says "No logs found yet".** Use that tool once, then wait a few seconds. If it keeps its
 logs somewhere unusual, set the folder: Settings → open the connection → **Choose…**, or
