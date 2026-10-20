@@ -3,15 +3,15 @@ import Foundation
 import IslandCore
 import IslandServices
 
-/// Hook that lets the Add Account window call `ClaudeAccountSetup` without IslandCore knowing
-/// about AppKit. Wired once at launch; until then, Add Account falls back to choosing a log folder.
+/// Hook that lets Add Connection call `ClaudeAccountSetup` without IslandCore knowing about AppKit.
+/// Wired once at launch. Sign-in is the primary Claude path; log folders stay optional / advanced.
 @MainActor
 enum ClaudeAccountHook {
     static var addAccount: ((_ label: String) async throws -> ClaudeAccount)?
 
     static var canSignIn: Bool { addAccount != nil }
 
-    /// Points the hook at `ClaudeAccountSetup` so a second Claude account can be signed in from the app.
+    /// Points the hook at Anthropic browser OAuth via `ClaudeAccountSetup`.
     static func install() {
         addAccount = { label in
             try await ClaudeAccountSetup.addAccount(label: label) { url in

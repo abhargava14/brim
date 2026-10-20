@@ -39,7 +39,7 @@ public enum ToolKind: String, CaseIterable, Codable, Sendable, Identifiable {
 
     public var displayName: String {
         switch self {
-        case .claude: return "Claude Code"
+        case .claude: return "Claude"
         case .codex: return "Codex"
         case .cursor: return "Cursor"
         case .windsurf: return "Windsurf"
@@ -63,7 +63,7 @@ public enum ToolKind: String, CaseIterable, Codable, Sendable, Identifiable {
     /// One line for the "Add connection" menu.
     public var blurb: String {
         switch self {
-        case .claude: return "Reads Claude Code's local logs"
+        case .claude: return "Plan limits from your Claude account"
         case .codex: return "Reads Codex CLI's local logs"
         case .cursor: return "Uses your Cursor sign-in"
         case .windsurf: return "Uses your Windsurf sign-in"

@@ -188,8 +188,8 @@ final class ConnectionTests: XCTestCase {
         _ = file.add(.copilot)
         XCTAssertEqual(file.connections.count, 21)
         XCTAssertEqual(file.enabledCount, 21)
-        XCTAssertEqual(file.connections[1].name, "Claude Code 2")
-        XCTAssertEqual(file.find("claude code 2")?.id, file.connections[1].id)
+        XCTAssertEqual(file.connections[1].name, "Claude 2")
+        XCTAssertEqual(file.find("claude 2")?.id, file.connections[1].id)
         XCTAssertEqual(file.find(String(file.connections[20].id.prefix(12)))?.kind, .copilot)
     }
 

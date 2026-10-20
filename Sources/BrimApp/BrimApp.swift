@@ -237,7 +237,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func openAddAccount(_ request: AddAccountRequest) {
-        setup.show(.addAccount, title: request.welcome ? "Welcome to Brim" : "Add Account", size: NSSize(width: 500, height: 420), refresh: true) {
+        let title = request.welcome ? "Welcome to Brim" : "Connect"
+        setup.show(.addAccount, title: title, size: NSSize(width: 520, height: 640), refresh: true) {
             AddAccountView(model: model, settings: settings, request: request) { [weak self] in self?.setup.close() }
         }
     }

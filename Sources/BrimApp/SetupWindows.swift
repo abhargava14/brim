@@ -26,6 +26,7 @@ final class SetupWindows: NSObject, ObservableObject, NSWindowDelegate {
             if self.window == nil { window.center() }
             shown = kind
         }
+        style(window, for: kind)
         self.window = window
         open = kind
         NSApp.activate(ignoringOtherApps: true)
@@ -46,5 +47,25 @@ final class SetupWindows: NSObject, ObservableObject, NSWindowDelegate {
         window.isReleasedWhenClosed = false
         window.delegate = self
         return window
+    }
+
+    /// Add Connection uses Brim’s dark branded chrome; Settings / first run stay system windows.
+    private func style(_ window: NSWindow, for kind: Kind) {
+        switch kind {
+        case .addAccount:
+            window.appearance = NSAppearance(named: .darkAqua)
+            window.backgroundColor = .black
+            window.titlebarAppearsTransparent = true
+            window.titleVisibility = .hidden
+            if !window.styleMask.contains(.fullSizeContentView) {
+                window.styleMask.insert(.fullSizeContentView)
+            }
+        case .settings, .firstRun:
+            window.appearance = nil
+            window.backgroundColor = .windowBackgroundColor
+            window.titlebarAppearsTransparent = false
+            window.titleVisibility = .visible
+            window.styleMask.remove(.fullSizeContentView)
+        }
     }
 }

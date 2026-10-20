@@ -53,7 +53,7 @@ struct SettingsView: View {
     private var connectionsSection: some View {
         Section {
             if settings.connections.isEmpty {
-                Text("Nothing connected yet. Add Claude Code, Codex, Cursor, Copilot or any other tool.")
+                Text("Nothing connected yet. Add Claude, Codex, Cursor, Copilot or any other tool.")
                     .foregroundStyle(.secondary)
             }
             ForEach($settings.connections) { $connection in
