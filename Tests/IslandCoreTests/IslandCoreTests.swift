@@ -475,26 +475,61 @@ final class FormatTests: XCTestCase {
 }
 
 final class OverlappingLogRootTests: XCTestCase {
+    private var root: URL!
+
+    override func setUpWithError() throws {
+        root = FileManager.default.temporaryDirectory.appendingPathComponent("brim-cover-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    }
+
+    override func tearDownWithError() throws {
+        try? FileManager.default.removeItem(at: root)
+    }
+
+    private func mkdir(_ relative: String) throws -> String {
+        let url = root.appendingPathComponent(relative)
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        return url.path
+    }
+
     private func source(_ format: LogFormat, _ paths: String...) -> LogSource {
         LogSource(format: format, roots: paths.map { URL(fileURLWithPath: $0) })
     }
 
-    func testNestedAndDuplicateRootsAreCoveredOnce() {
+    func testNestedAndDuplicateRootsAreCoveredOnce() throws {
+        let projects = try mkdir("Users/me/.claude/projects")
+        let core = try mkdir("Users/me/.claude/projects/-Users-me-Core")
+        let sibling = try mkdir("Users/me/.claude/projects-other")
+        let work = try mkdir("Users/me/work-claude/projects")
+        let codex = try mkdir("Users/me/.claude/projects/x")
         let sources: [(id: String, source: LogSource)] = [
-            ("core", source(.claude, "/Users/me/.claude/projects/-Users-me-Core")),
-            ("main", source(.claude, "/Users/me/.claude/projects")),
-            ("again", source(.claude, "/Users/me/.claude/projects/")),
-            ("sibling", source(.claude, "/Users/me/.claude/projects-other")),
-            ("codex", source(.codex, "/Users/me/.claude/projects/x")),
-            ("work", source(.claude, "/Users/me/work-claude/projects")),
+            ("core", source(.claude, core)),
+            ("main", source(.claude, projects)),
+            ("again", source(.claude, projects + "/")),
+            ("sibling", source(.claude, sibling)),
+            ("codex", source(.codex, codex)),
+            ("work", source(.claude, work)),
         ]
         XCTAssertEqual(LogSource.coveredIDs(in: sources), ["core", "again"])
     }
 
-    func testMultiRootSourceIsCoveredOnlyWhenEveryRootIs() {
+    func testMultiRootSourceIsCoveredOnlyWhenEveryRootIs() throws {
+        let a = try mkdir("a/projects")
+        _ = try mkdir("a/projects/one")
+        let b = try mkdir("b/projects")
         let sources: [(id: String, source: LogSource)] = [
-            ("main", source(.claude, "/a/projects")),
-            ("mixed", source(.claude, "/a/projects/one", "/b/projects")),
+            ("main", source(.claude, a)),
+            ("mixed", source(.claude, a + "/one", b)),
+        ]
+        XCTAssertTrue(LogSource.coveredIDs(in: sources).isEmpty)
+    }
+
+    func testMissingOAuthProjectsRootDoesNotCoverOrHideSibling() throws {
+        let code = try mkdir("claude-code/projects")
+        let phantom = root.appendingPathComponent("oauth-only/projects").path // never created
+        let sources: [(id: String, source: LogSource)] = [
+            ("code", source(.claude, code)),
+            ("oauth", source(.claude, phantom)),
         ]
         XCTAssertTrue(LogSource.coveredIDs(in: sources).isEmpty)
     }
@@ -507,6 +542,30 @@ final class OverlappingLogRootTests: XCTestCase {
         let snapshot = UsageSnapshot(tools: [main, core], generatedAt: Date(), coveredIDs: ["core"])
         XCTAssertEqual(snapshot.todayTokens, main.today.total)
         XCTAssertEqual(UsageSnapshot(tools: [main, core], generatedAt: Date()).todayTokens, main.today.total + core.today.total)
+    }
+
+    func testTodayTokensIgnoresAccountToolsAndOAuthHeadlineFallsBackToPlan() {
+        var claude = ToolSnapshot(id: "claude", kind: .claude, name: "Claude Code")
+        claude.today = TokenCounts(input: 10, output: 90)
+        var cursor = ToolSnapshot(id: "cursor", kind: .cursor, name: "Cursor")
+        cursor.hasData = true
+        cursor.planWindows = [PlanWindow(label: "Other models", usedPercent: 100, resetsAt: nil)]
+        // Cursor has no token totals; must not change the log sum.
+        XCTAssertEqual(
+            UsageSnapshot(tools: [claude, cursor], generatedAt: Date()).todayTokens,
+            claude.today.total
+        )
+
+        var oauth = ToolSnapshot(id: "oauth", kind: .claude, name: "Claude · Work")
+        oauth.hasData = true
+        oauth.planWindows = [PlanWindow(label: "5h", usedPercent: 31, resetsAt: nil)]
+        let planOnly = UsageSnapshot(tools: [oauth, cursor], generatedAt: Date())
+        XCTAssertEqual(planOnly.todayTokens, 0)
+        XCTAssertEqual(planOnly.usageTodayHeadline, "Cursor · 100% used")
+        XCTAssertEqual(
+            UsageSnapshot(tools: [claude], generatedAt: Date()).usageTodayHeadline,
+            "\(Format.tokens(claude.today.total)) tokens"
+        )
     }
 }
 

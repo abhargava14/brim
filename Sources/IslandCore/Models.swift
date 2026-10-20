@@ -328,7 +328,36 @@ public struct UsageSnapshot: Equatable, Sendable {
         tools.first { $0.id == id }
     }
 
+    /// Combined local-log token total for Overview / island. Account-only tools (Cursor plan %,
+    /// OAuth Claude without jsonl) contribute plan windows, not tokens — they must not zero out
+    /// peers that do have log totals, and they are skipped here via `hasTokenData`.
     public var todayTokens: Int64 {
-        tools.filter { !coveredIDs.contains($0.id) }.reduce(0) { $0 + $1.today.total }
+        tools
+            .filter { !coveredIDs.contains($0.id) && $0.hasTokenData }
+            .reduce(0) { $0 + $1.today.total }
+    }
+
+    /// Tightest plan window among non-covered tools with real plan activity (`usedPercent > 0`).
+    public var primaryPlanActivity: (toolName: String, window: PlanWindow)? {
+        var best: (toolName: String, window: PlanWindow)?
+        for tool in tools where !coveredIDs.contains(tool.id) {
+            guard let window = tool.tightestWindow, window.usedPercent > 0 else { continue }
+            if best == nil || window.usedPercent > best!.window.usedPercent {
+                best = (tool.name, window)
+            }
+        }
+        return best
+    }
+
+    /// Overview / island headline: prefer today's log tokens; when those are 0 but a connected
+    /// account shows plan usage, say so instead of lying with "0 tokens".
+    public var usageTodayHeadline: String {
+        if todayTokens > 0 {
+            return "\(Format.tokens(todayTokens)) tokens"
+        }
+        if let activity = primaryPlanActivity {
+            return "\(activity.toolName) · \(Format.used(activity.window))"
+        }
+        return "\(Format.tokens(0)) tokens"
     }
 }

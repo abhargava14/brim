@@ -275,6 +275,8 @@ final class UsageModel: ObservableObject {
             applyClaudeAccount(to: &tool, connection: connection)
             if connection.kind == .claude {
                 if tool.tightestWindow != nil {
+                    // OAuth plan limits are enough to count as connected — local jsonl is optional.
+                    tool.hasData = true
                     tool.statusMessage = nil
                     if case .checking = newStates[connection.id] {
                         newStates[connection.id] = .connected("Plan limits")

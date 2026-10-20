@@ -197,7 +197,7 @@ struct AppShellView: View {
                     Text("Usage today")
                         .font(BrimChrome.section)
                         .foregroundStyle(BrimChrome.muted)
-                    Text("\(Format.tokens(model.snapshot.todayTokens)) tokens")
+                    Text(model.snapshot.usageTodayHeadline)
                         .font(.system(size: 28, weight: .semibold, design: .rounded))
                         .foregroundStyle(BrimChrome.ink)
                     Text("\(settings.enabledConnections.count) of \(settings.connections.count) accounts connected")

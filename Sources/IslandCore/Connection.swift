@@ -144,12 +144,21 @@ public struct LogSource: Equatable, Sendable {
     /// Connections whose logs another connection of the same format already reads: every root
     /// is the same folder as, or inside, one of the other's roots. Their tokens would be counted
     /// twice in a combined total. Of two identical sources, the later one is the duplicate.
+    ///
+    /// Roots that do not exist on disk are ignored. OAuth-only Claude accounts often point at a
+    /// `…/projects` folder that has never been created — those must not participate in coverage,
+    /// or a sibling Claude Code connection with real jsonl can be excluded from Overview totals.
     public static func coveredIDs(in sources: [(id: String, source: LogSource)]) -> Set<String> {
-        func path(_ url: URL) -> String {
-            let path = url.standardizedFileURL.resolvingSymlinksInPath().path
+        func path(_ url: URL) -> String? {
+            let standardized = url.standardizedFileURL.resolvingSymlinksInPath()
+            var isDirectory: ObjCBool = false
+            guard FileManager.default.fileExists(atPath: standardized.path, isDirectory: &isDirectory),
+                  isDirectory.boolValue
+            else { return nil }
+            let path = standardized.path
             return path.count > 1 && path.hasSuffix("/") ? String(path.dropLast()) : path
         }
-        let paths = sources.map { $0.source.roots.map(path) }
+        let paths = sources.map { $0.source.roots.compactMap(path) }
         var covered = Set<String>()
         for (i, entry) in sources.enumerated() where !paths[i].isEmpty {
             let isCovered = paths[i].allSatisfy { root in

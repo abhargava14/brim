@@ -297,7 +297,24 @@ func printReports(_ reports: [ToolReport], full: Bool = false, emails: Bool = tr
     let sources = file.connections.filter(\.isEnabled).compactMap { c in c.logSource().map { (id: c.id, source: $0) } }
     let covered = LogSource.coveredIDs(in: sources)
     let tokens = reports.filter { !covered.contains($0.id) }.compactMap(\.todayTokens).reduce(0, +)
-    print(bold("Today") + "  \(Format.tokens(tokens)) tokens · \(reports.count) connected")
+    let planLine: String? = {
+        guard tokens == 0 else { return nil }
+        var best: (name: String, percent: Double, label: String)?
+        for report in reports where !covered.contains(report.id) {
+            for window in report.windows where window.model == nil && window.usedPercent > 0 {
+                if best == nil || window.usedPercent > best!.percent {
+                    best = (report.name, window.usedPercent, window.label)
+                }
+            }
+        }
+        guard let best else { return nil }
+        return "\(best.name) · \(Format.percent(best.percent)) used (\(best.label))"
+    }()
+    if let planLine {
+        print(bold("Today") + "  \(planLine) · \(reports.count) connected")
+    } else {
+        print(bold("Today") + "  \(Format.tokens(tokens)) tokens · \(reports.count) connected")
+    }
     for report in reports {
         print("")
         var header = bold(report.name)
