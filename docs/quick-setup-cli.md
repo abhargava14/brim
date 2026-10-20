@@ -1,16 +1,36 @@
 # Quick setup (CLI / Terminal)
 
-Short path for Terminal. Prefer the app for **Add Account…** (menu bar ✳ → Connections & Settings). CLI is best for install, status, and update.
+Prefer the **Mac app** if you don’t want Terminal: download **Brim.dmg** from
+[GitHub Releases](https://github.com/abhargava14/brim/releases/latest)
+(**no Xcode, no Command Line Tools**). Full picture: [mac-requirements.md](mac-requirements.md).
 
-Current release: **[v0.3.0](https://github.com/abhargava14/brim/releases/tag/v0.3.0)** (`1a4698c`). Needs macOS 13+ and `xcode-select --install` (builds from source).
+This page is for **Terminal** users. Prefer the app for **Add Account…** (menu bar ✳ →
+Connections & Settings). CLI is best for status and update.
 
-## 1. Install (pick one)
+Current release tag: **[v0.3.0](https://github.com/abhargava14/brim/releases/tag/v0.3.0)** (`1a4698c`).
 
-### A. Pinned install script (recommended)
+## 0. Easiest (no Terminal)
 
-Download the script from the **release tag** (not floating `main`), then run it. Do **not** pipe into `bash`.
+1. Open [releases/latest](https://github.com/abhargava14/brim/releases/latest).
+2. Download **Brim.dmg** (if missing on that tag, use the newest release that has **Brim.dmg**).
+3. Drag to Applications → open (right-click → Open once if needed).
+
+## 1. Install from Terminal (builds from source)
+
+These options **compile** Brim. You need Apple’s **Command Line Tools** only
+(`xcode-select --install`) — not the full Xcode App Store app.
+
+`install.sh` **does not** download a prebuilt DMG; it clones and builds.
+
+### A. Pinned install script
+
+Download the script from the **release tag** (not floating `main`), then run it. Do **not**
+pipe into `bash`.
 
 ```bash
+# once, if needed:
+xcode-select --install
+
 curl -fsSL https://raw.githubusercontent.com/abhargava14/brim/v0.3.0/install.sh -o install-brim.sh
 chmod +x install-brim.sh
 ./install-brim.sh
@@ -60,7 +80,8 @@ Ensure `~/.local/bin` is on your PATH (`which brim` should resolve).
 
 ## 3. Add accounts
 
-**Preferred:** menu bar ✳ → **Connections & Settings** → **Add connection** (or **Add Account…**). Terminal is not required.
+**Preferred:** menu bar ✳ → **Connections & Settings** → **Add connection** (or **Add Account…**).
+Terminal is not required.
 
 **Optional CLI** (same connection store as the app):
 
@@ -71,7 +92,7 @@ brim add openrouter
 brim list
 ```
 
-## 4. Update
+## 4. Update (no Xcode)
 
 ```bash
 brim update                 # check GitHub Releases and install if newer
@@ -83,7 +104,7 @@ Or menu bar ✳ → **Check for Updates…**. Details: [how-to-update-brim.md](h
 ## 5. Verify
 
 ```bash
-brim --version              # expect 0.2.2
+brim --version
 which brim                  # e.g. ~/.local/bin/brim → …/Brim.app/Contents/Helpers/brim
 ls /Applications/Brim.app
 ```
