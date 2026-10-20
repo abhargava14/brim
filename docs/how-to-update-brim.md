@@ -6,6 +6,6 @@ Quit alone does **not** update — reopening the same `/Applications/Brim.app` n
 2. Or run **`brim update`** in Terminal (same release channel; `brim update --check` only reports).
 3. Or **reinstall**: Homebrew / pinned `install.sh` / `./scripts/build-app.sh --install`.
 
-Current release: **[v0.2.2](https://github.com/abhargava14/brim/releases/tag/v0.2.2)** (`cd84a2f`).
+Current release: **[v0.3.0](https://github.com/abhargava14/brim/releases/tag/v0.3.0)** (`3f71262`).
 
 CLI install path: [quick-setup-cli.md](quick-setup-cli.md).

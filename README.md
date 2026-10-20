@@ -75,14 +75,14 @@ brew install --HEAD abhargava14/tap/brim
 
 ### Option 2: Pinned installer (recommended)
 
-Download `install.sh` from the **release tag**, then run it (script already pins v0.2.2):
+Download `install.sh` from the **release tag**, then run it (script already pins v0.3.0):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/abhargava14/brim/v0.2.2/install.sh -o install-brim.sh
+curl -fsSL https://raw.githubusercontent.com/abhargava14/brim/v0.3.0/install.sh -o install-brim.sh
 chmod +x install-brim.sh
 ./install-brim.sh
-# or explicit: BRIM_REF=v0.2.2 ./install-brim.sh
-# or: BRIM_COMMIT=cd84a2fca90373eeceda2c1994318e545862c150 ./install-brim.sh
+# or explicit: BRIM_REF=v0.3.0 ./install-brim.sh
+# or: BRIM_COMMIT=3f712624237927d8ee6287e33c6f1eb0efb11e69 ./install-brim.sh
 ```
 
 When a GitHub release publishes `install.sh.sha256` / `Brim.dmg.sha256`, verify before running:
@@ -100,7 +100,7 @@ Applications, adds `brim` to `~/.local/bin`, and starts the app.
 ```bash
 git clone https://github.com/abhargava14/brim.git
 cd brim
-git checkout v0.2.2
+git checkout v0.3.0
 ./scripts/build-app.sh --install
 ```
 
