@@ -30,6 +30,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         ClaudeAccountHook.install()
+        // Collapse same-email Claude connections left over from older builds.
+        _ = settings.dedupeClaudeConnectionsByEmail()
         setUpStatusItem()
         island = IslandController(
             model: model, settings: settings, setup: setup,
@@ -42,6 +44,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // First run: pick tools found on this Mac, then how the island should look.
         if !UserDefaults.standard.bool(forKey: "didOnboard") {
             openFirstRun()
+        } else if ProcessInfo.processInfo.environment["BRIM_OPEN_APP"] == "1" {
+            // Screenshot / QA hook: open the light app shell once after launch.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+                self?.openSettings()
+            }
+        } else if ProcessInfo.processInfo.environment["BRIM_OPEN_ADD"] == "1" {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+                self?.openAddAccount(AddAccountRequest(kind: .claude))
+            }
         }
     }
 
@@ -250,8 +261,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Settings window
 
     @objc func openSettings() {
-        setup.show(.settings, title: "Brim", size: NSSize(width: 600, height: 680)) {
-            SettingsView(model: model, settings: settings)
+        setup.show(.settings, title: "Brim", size: NSSize(width: 920, height: 640), refresh: true) {
+            AppShellView(model: model, settings: settings)
         }
     }
 

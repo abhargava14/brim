@@ -242,6 +242,10 @@ final class UsageModel: ObservableObject {
                     newStates[connection.id] = .checking
                 } else if tool.hasData {
                     newStates[connection.id] = .connected("\(tool.logFileCount) log files")
+                } else if connection.kind == .claude {
+                    // Plan limits come from OAuth; local logs are optional session detail only.
+                    newStates[connection.id] = .checking
+                    tool.statusMessage = "Fetching plan limits…"
                 } else {
                     newStates[connection.id] = .attention("No logs found yet")
                     tool.statusMessage = "No logs found yet. Use \(connection.kind.displayName) once, or set its folder in Settings."
@@ -264,6 +268,19 @@ final class UsageModel: ObservableObject {
                 tool.planName = tier.name
             }
             applyClaudeAccount(to: &tool, connection: connection)
+            if connection.kind == .claude {
+                if tool.tightestWindow != nil {
+                    tool.statusMessage = nil
+                    if case .checking = newStates[connection.id] {
+                        newStates[connection.id] = .connected("Plan limits")
+                    } else if case .attention("No logs found yet") = newStates[connection.id] {
+                        newStates[connection.id] = .connected("Plan limits")
+                    }
+                } else if let failure = claudeErrors[connection.id] {
+                    tool.statusMessage = failure
+                    newStates[connection.id] = .attention(failure)
+                }
+            }
             tools.append(tool)
         }
 
@@ -543,16 +560,31 @@ final class UsageModel: ObservableObject {
     }
 
     /// Adds a connection for a Claude account that just signed in (see `AddClaudeAccountView`).
+    /// Refuses a second connection for the same auth email.
     @discardableResult
-    func addClaudeConnection(for account: ClaudeAccount) -> Connection {
+    func addClaudeConnection(for account: ClaudeAccount) throws -> Connection {
+        if let email = account.email, let existing = settings.connection(withEmail: email, kind: .claude) {
+            // Same folder → reconnect; different folder / duplicate sign-in → refuse.
+            if existing.claudeConfigDir()?.standardizedFileURL == account.configDir.standardizedFileURL {
+                connect(existing.id)
+                return existing
+            }
+            throw ClaudeAccountSetupError.duplicateEmail(AccountEmail.normalize(email))
+        }
         let existing = settings.connections.first { $0.kind == .claude && $0.claudeConfigDir()?.standardizedFileURL == account.configDir.standardizedFileURL }
         if let existing {
+            var updated = existing
+            if let email = account.email { updated.options[Connection.Option.accountEmail] = AccountEmail.normalize(email) }
+            settings.update(updated)
             connect(existing.id)
-            return existing
+            return updated
         }
         var connection = settings.add(.claude)
         connection.name = account.suggestedName
         connection.options[Connection.Option.configDir] = account.configDir.path
+        if let email = account.email {
+            connection.options[Connection.Option.accountEmail] = AccountEmail.normalize(email)
+        }
         settings.update(connection)
         claudeAccounts[connection.id] = account
         justConnected.insert(connection.id)

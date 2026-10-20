@@ -1,5 +1,17 @@
 import Foundation
 
+/// Normalized account emails for duplicate detection across connections.
+public enum AccountEmail {
+    public static func normalize(_ email: String) -> String {
+        email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
+    public static func matches(_ a: String?, _ b: String?) -> Bool {
+        guard let a, let b, !a.isEmpty, !b.isEmpty else { return false }
+        return normalize(a) == normalize(b)
+    }
+}
+
 /// One Claude Code sign-in on this Mac: a config folder (`~/.claude`, or any `CLAUDE_CONFIG_DIR`
 /// such as `~/.claude-personal`) with its own logs, `.claude.json` and Keychain item.
 public struct ClaudeAccount: Equatable, Sendable {

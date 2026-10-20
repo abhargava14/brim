@@ -500,7 +500,7 @@ struct AddClaudeAccountView: View {
                 let account = try await ClaudeAccountSetup.addAccount(label: label.isEmpty ? "Claude" : label) { url in
                     Task { @MainActor in if case .signingIn = phase { phase = .signingIn(url) } }
                 }
-                let connection = model.addClaudeConnection(for: account)
+                let connection = try model.addClaudeConnection(for: account)
                 phase = .done(connection.name)
             } catch {
                 phase = .failed(error.localizedDescription)

@@ -49,7 +49,8 @@ final class SetupWindows: NSObject, ObservableObject, NSWindowDelegate {
         return window
     }
 
-    /// Add Connection uses Brim’s dark branded chrome; Settings / first run stay system windows.
+    /// Add Connection uses Brim’s dark branded chrome; the main app shell is a calm light window
+    /// (Wispr-inspired layout, not a system Preferences sheet). First run stays a system window.
     private func style(_ window: NSWindow, for kind: Kind) {
         switch kind {
         case .addAccount:
@@ -60,7 +61,15 @@ final class SetupWindows: NSObject, ObservableObject, NSWindowDelegate {
             if !window.styleMask.contains(.fullSizeContentView) {
                 window.styleMask.insert(.fullSizeContentView)
             }
-        case .settings, .firstRun:
+        case .settings:
+            window.appearance = NSAppearance(named: .aqua)
+            window.backgroundColor = NSColor(calibratedWhite: 0.96, alpha: 1)
+            window.titlebarAppearsTransparent = true
+            window.titleVisibility = .hidden
+            if !window.styleMask.contains(.fullSizeContentView) {
+                window.styleMask.insert(.fullSizeContentView)
+            }
+        case .firstRun:
             window.appearance = nil
             window.backgroundColor = .windowBackgroundColor
             window.titlebarAppearsTransparent = false

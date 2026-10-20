@@ -38,6 +38,14 @@ public struct Connection: Codable, Equatable, Identifiable, Sendable {
         public static let label = "label"
         /// Which of the GitHub CLI's accounts to read the token from; empty means the active one (Copilot).
         public static let githubLogin = "githubLogin"
+        /// Auth email for the connection (Claude / account tools). Used to refuse duplicate adds.
+        public static let accountEmail = "accountEmail"
+    }
+
+    /// Normalized auth email when known (stored option or empty).
+    public var accountEmail: String? {
+        let stored = option(Option.accountEmail)
+        return stored.isEmpty ? nil : AccountEmail.normalize(stored)
     }
 
     public init(id: String = UUID().uuidString, kind: ToolKind, name: String? = nil, planID: String = Plans.automatic,

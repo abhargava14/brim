@@ -187,7 +187,7 @@ struct AddAccountView: View {
                 EndpointEntry(finish: finish)
             case .claude:
                 ClaudeSignIn(defaultTaken: settings.connections.contains { $0.kind == .claude && $0.usesDefaultLocation },
-                             model: model, done: done, finish: finish)
+                             model: model, settings: settings, done: done, finish: finish)
             case .codex, .customLogs:
                 LogFolderEntry(kind: kind, defaultTaken: settings.connections.contains { $0.kind == kind && $0.usesDefaultLocation },
                                finish: finish)
@@ -196,6 +196,22 @@ struct AddAccountView: View {
     }
 
     private func finish(_ options: [String: String], _ token: String?) {
+        var options = options
+        if kind == .claude || existing?.kind == .claude {
+            let probe = Connection(kind: .claude, options: options)
+            if let dir = probe.claudeConfigDir() {
+                let account = ClaudeAccounts.account(configDir: dir)
+                if let email = account.email {
+                    let normalized = AccountEmail.normalize(email)
+                    if let dup = settings.connection(withEmail: normalized, kind: .claude, excluding: existing?.id),
+                       dup.claudeConfigDir()?.standardizedFileURL != dir.standardizedFileURL {
+                        // Folder path tried to add an email that already has a connection.
+                        return
+                    }
+                    options[Connection.Option.accountEmail] = normalized
+                }
+            }
+        }
         if let existing {
             model.reconnect(existing.id, options: options, token: token)
         } else if let kind {
@@ -288,6 +304,7 @@ typealias FinishAccount = (_ options: [String: String], _ token: String?) -> Voi
 private struct ClaudeSignIn: View {
     let defaultTaken: Bool
     @ObservedObject var model: UsageModel
+    @ObservedObject var settings: AppSettings
     let done: () -> Void
     let finish: FinishAccount
     @State private var label = ""
@@ -374,7 +391,7 @@ private struct ClaudeSignIn: View {
                     HStack(spacing: 8) {
                         if !defaultTaken {
                             AddChrome.secondaryButton("Use this Mac’s Claude Code logs") {
-                                finish([:], nil)
+                                addOptionalLogs([:])
                             }
                         }
                         AddChrome.secondaryButton("Choose folder…", action: chooseFolder)
@@ -401,7 +418,14 @@ private struct ClaudeSignIn: View {
         Task {
             do {
                 let account = try await add(label.isEmpty ? "Claude" : label)
-                _ = model.addClaudeConnection(for: account)
+                if let email = account.email, let existing = settings.connection(withEmail: email, kind: .claude),
+                   existing.claudeConfigDir()?.standardizedFileURL != account.configDir.standardizedFileURL {
+                    problem = ClaudeAccountSetupError.duplicateEmail(AccountEmail.normalize(email)).errorDescription
+                        ?? "That Claude account is already connected."
+                    signingIn = false
+                    return
+                }
+                _ = try model.addClaudeConnection(for: account)
                 done()
             } catch {
                 problem = error.localizedDescription
@@ -419,7 +443,27 @@ private struct ClaudeSignIn: View {
         panel.directoryURL = FileManager.default.homeDirectoryForCurrentUser
         panel.message = "Choose the Claude Code projects folder with .jsonl session logs"
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        finish([Connection.Option.path: url.path], nil)
+        addOptionalLogs([Connection.Option.path: url.path])
+    }
+
+    /// Optional session-log path only. Refuses if that folder’s auth email is already connected.
+    private func addOptionalLogs(_ options: [String: String]) {
+        let probe = Connection(kind: .claude, options: options)
+        if let dir = probe.claudeConfigDir() {
+            let account = ClaudeAccounts.account(configDir: dir)
+            if let email = account.email, let existing = settings.connection(withEmail: email, kind: .claude),
+               existing.claudeConfigDir()?.standardizedFileURL != dir.standardizedFileURL {
+                problem = ClaudeAccountSetupError.duplicateEmail(AccountEmail.normalize(email)).errorDescription
+                return
+            }
+            var options = options
+            if let email = account.email {
+                options[Connection.Option.accountEmail] = AccountEmail.normalize(email)
+            }
+            finish(options, nil)
+            return
+        }
+        finish(options, nil)
     }
 }
 
