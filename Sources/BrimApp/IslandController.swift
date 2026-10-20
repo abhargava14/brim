@@ -180,7 +180,12 @@ final class IslandController {
 
         state.$isExpanded
             .removeDuplicates()
-            .sink { [weak model] expanded in Task { @MainActor in model?.setMomentsPaused(expanded, reason: "expanded") } }
+            .sink { [weak model] expanded in
+                Task { @MainActor in
+                    model?.setMomentsPaused(expanded, reason: "expanded")
+                    model?.setExpandedHistory(expanded)
+                }
+            }
             .store(in: &cancellables)
 
         setup.$open

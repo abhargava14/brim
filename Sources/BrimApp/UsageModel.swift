@@ -33,11 +33,16 @@ final class UsageModel: ObservableObject {
     let settings: AppSettings
     let statusLine: ClaudeStatusLineSetup
 
-    private let engine = UsageEngine(historyDays: 30)
+    /// Compact wing scans today only; expand loads the full history window.
+    private let engine = UsageEngine(
+        historyDays: UsageEngine.compactHistoryDays,
+        checkpointURL: UsageCollector.defaultCheckpointURL
+    )
     private let queue = DispatchQueue(label: "brim.usage", qos: .utility)
     private var timer: Timer?
     private var isScanning = false
     private var scanAgain = false
+    private var wantsExpandedHistory = false
     private var cancellables = Set<AnyCancellable>()
 
     private var logTools: [String: ToolSnapshot] = [:]
@@ -115,6 +120,19 @@ final class UsageModel: ObservableObject {
         publish()
     }
 
+    /// Compact island keeps a 1-day window; opening the panel loads 30 days (lazy history).
+    func setExpandedHistory(_ expanded: Bool) {
+        wantsExpandedHistory = expanded
+        let target = expanded ? UsageEngine.fullHistoryDays : UsageEngine.compactHistoryDays
+        guard engine.historyDays != target else { return }
+        let engine = self.engine
+        let queue = self.queue
+        queue.async {
+            engine.setHistoryDays(target)
+        }
+        scanLogs()
+    }
+
     private func scanLogs() {
         guard !isScanning else {
             scanAgain = true
@@ -123,20 +141,22 @@ final class UsageModel: ObservableObject {
         isScanning = true
 
         let enabled = settings.enabledConnections
-        let sources = enabled.compactMap { c in c.logSource().map { (id: c.id, source: $0) } }
-        // Claude Code's status line reports plan limits for its default folder only.
         let planWindows = statusLine.planWindows()
-        let external = Dictionary(enabled.filter { $0.kind == .claude && $0.usesDefaultLocation }.map { ($0.id, planWindows) },
-                                  uniquingKeysWith: { first, _ in first })
         let engine = self.engine
         let queue = self.queue
+        let targetDays = wantsExpandedHistory ? UsageEngine.fullHistoryDays : UsageEngine.compactHistoryDays
         Task {
             let tools = await withCheckedContinuation { (continuation: CheckedContinuation<[ToolSnapshot], Never>) in
                 queue.async {
-                    engine.configure(sources)
-                    engine.externalPlanWindows = external
-                    engine.scan()
-                    continuation.resume(returning: engine.snapshot())
+                    if engine.historyDays != targetDays {
+                        engine.setHistoryDays(targetDays)
+                    }
+                    let scanned = UsageCollector.scanLogs(
+                        engine: engine,
+                        connections: enabled,
+                        statusLineWindows: planWindows
+                    )
+                    continuation.resume(returning: scanned)
                 }
             }
             self.logTools = Dictionary(tools.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
@@ -192,14 +212,15 @@ final class UsageModel: ObservableObject {
 
     /// Fills in a Claude card's account, plan label and limits (live, else the last reading until it resets).
     private func applyClaudeAccount(to tool: inout ToolSnapshot, connection: Connection) {
-        guard connection.kind == .claude, let account = claudeAccounts[connection.id] else { return }
-        tool.accountLabel = account.email
-        if tool.planName == nil { tool.planName = account.planLabel }
-        let resolved = ClaudeLimits.resolve(live: claudeLimits[connection.id], statusLine: tool.planWindows,
-                                            cached: claudeLimitsCache.readings[account.key], failure: claudeErrors[connection.id])
-        tool.planWindows = resolved.windows
-        tool.limitsAsOf = resolved.asOf
-        tool.limitsNote = resolved.note
+        guard connection.kind == .claude else { return }
+        UsageCollector.applyClaudeLimits(
+            to: &tool,
+            account: claudeAccounts[connection.id],
+            live: claudeLimits[connection.id],
+            cached: claudeAccounts[connection.id].flatMap { claudeLimitsCache.readings[$0.key] },
+            failure: claudeErrors[connection.id],
+            planName: tool.planName
+        )
     }
 
     /// Merges log and account data in the user's order and raises events for what changed.
