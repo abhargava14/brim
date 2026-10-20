@@ -121,6 +121,9 @@ public enum UsageCollector {
                         failure: failure,
                         planName: tool.planName
                     )
+                    if tool.tightestWindow != nil {
+                        tool.hasData = true
+                    }
                 }
                 if !tool.hasData {
                     tool.statusMessage = "No logs found"

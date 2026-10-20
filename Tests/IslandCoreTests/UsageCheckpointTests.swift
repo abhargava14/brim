@@ -157,4 +157,50 @@ final class UsageCheckpointTests: XCTestCase {
         XCTAssertEqual(tool.todayRequests, 1)
         XCTAssertEqual(tool.today.output, 50)
     }
+
+    /// Compact (historyDays=1) scan with Claude Code jsonl + an OAuth-only sibling whose
+    /// `projects` folder was never created must still surface today's log tokens in Overview.
+    func testCompactScanKeepsClaudeCodeTokensBesideOAuthOnlySibling() throws {
+        let codeRoot = directory.appendingPathComponent("code/projects/proj")
+        try FileManager.default.createDirectory(at: codeRoot, withIntermediateDirectories: true)
+        let oauthProjects = directory.appendingPathComponent("oauth-only/projects") // not created
+
+        let line = ClaudeLogParserTests.claudeLine(
+            id: "msg_today", request: "req_today",
+            timestamp: "2026-10-18T19:15:00.000Z", output: 777
+        )
+        let file = codeRoot.appendingPathComponent("session.jsonl")
+        try (line + "\n").write(to: file, atomically: true, encoding: .utf8)
+
+        let fixedNow = now
+        let engine = UsageEngine(historyDays: 1, checkpointURL: checkpointURL, calendar: calendar, now: { fixedNow })
+        engine.configure([
+            (id: "code", source: LogSource(format: .claude, roots: [directory.appendingPathComponent("code/projects")])),
+            (id: "oauth", source: LogSource(format: .claude, roots: [oauthProjects])),
+        ])
+        engine.scan()
+
+        let tools = engine.snapshot()
+        XCTAssertEqual(tools.count, 2)
+        let code = try XCTUnwrap(tools.first { $0.id == "code" })
+        let oauth = try XCTUnwrap(tools.first { $0.id == "oauth" })
+        XCTAssertEqual(code.today.output, 777)
+        XCTAssertGreaterThan(code.today.total, 0)
+        XCTAssertEqual(oauth.logFileCount, 0)
+        XCTAssertEqual(oauth.today.total, 0)
+
+        let sources: [(id: String, source: LogSource)] = [
+            (id: "code", source: LogSource(format: .claude, roots: [directory.appendingPathComponent("code/projects")])),
+            (id: "oauth", source: LogSource(format: .claude, roots: [oauthProjects])),
+        ]
+        let covered = LogSource.coveredIDs(in: sources)
+        XCTAssertTrue(covered.isEmpty)
+
+        var cursor = ToolSnapshot(id: "cursor", kind: .cursor, name: "Cursor")
+        cursor.hasData = true
+        cursor.planWindows = [PlanWindow(label: "Other models", usedPercent: 100, resetsAt: nil)]
+        let snapshot = UsageSnapshot(tools: tools + [cursor], generatedAt: fixedNow, coveredIDs: covered)
+        XCTAssertEqual(snapshot.todayTokens, code.today.total)
+        XCTAssertEqual(snapshot.usageTodayHeadline, "\(Format.tokens(code.today.total)) tokens")
+    }
 }

@@ -19,7 +19,7 @@ struct ExpandedView: View {
             HStack(spacing: 5) {
                 Text("Today").foregroundStyle(.white.opacity(0.6))
                 Text("·").foregroundStyle(.white.opacity(0.35))
-                RollingText(text: "\(Format.tokens(model.snapshot.todayTokens)) tokens")
+                RollingText(text: model.snapshot.usageTodayHeadline)
                     .font(.system(size: 13, weight: .heavy, design: .rounded))
                 Text("·").foregroundStyle(.white.opacity(0.35))
                 Text("\(tools.count) connected").foregroundStyle(.white.opacity(0.6)).lineLimit(1)
