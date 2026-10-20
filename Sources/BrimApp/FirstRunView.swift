@@ -152,10 +152,6 @@ struct FirstRunView: View {
                     .frame(width: 180)
                 }
                 Divider()
-                lookRow(title: "Show in menu bar", detail: "Brim icon only; usage stays in the island.") {
-                    Toggle("", isOn: $settings.showInMenuBar).labelsHidden()
-                }
-                Divider()
                 lookRow(title: "Open at login", detail: nil) {
                     Toggle("", isOn: $launchAtLogin).labelsHidden()
                         .onChange(of: launchAtLogin) { enabled in
