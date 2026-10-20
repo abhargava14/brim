@@ -52,7 +52,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if !UserDefaults.standard.bool(forKey: "didOnboard") {
             openFirstRun()
         } else if ProcessInfo.processInfo.environment["BRIM_OPEN_APP"] == "1" {
-            // Screenshot / QA hook: open the light app shell once after launch.
+            // Screenshot / QA hook: open the app shell once after launch.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
                 self?.openSettings()
             }
