@@ -46,6 +46,37 @@ enum BrimAssets {
         image.isTemplate = true
         return image
     }
+
+    /// Status-item glyph: always the Brim mark. When `attention` is true, a small corner
+    /// badge overlays the template (same tint as the mark — no color animation).
+    static func statusItemImage(attention: Bool) -> NSImage? {
+        guard let mark = brimMenuMark else { return nil }
+        guard attention else { return mark }
+
+        let markSize = NSSize(width: 16, height: 14)
+        let canvas = NSSize(width: 18, height: 16)
+        let image = NSImage(size: canvas, flipped: false) { bounds in
+            mark.draw(
+                in: NSRect(x: 0, y: 1, width: markSize.width, height: markSize.height),
+                from: .zero,
+                operation: .sourceOver,
+                fraction: 1
+            )
+            // Top-trailing attention dot (template black → system menu-bar tint).
+            let diameter: CGFloat = 5
+            let badge = NSRect(
+                x: bounds.width - diameter,
+                y: bounds.height - diameter - 0.5,
+                width: diameter,
+                height: diameter
+            )
+            NSColor.black.setFill()
+            NSBezierPath(ovalIn: badge).fill()
+            return true
+        }
+        image.isTemplate = true
+        return image
+    }
 }
 
 extension ToolKind {

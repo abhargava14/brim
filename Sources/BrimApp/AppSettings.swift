@@ -119,6 +119,8 @@ final class AppSettings: ObservableObject {
         didSet { defaults.set(hideInFullScreen, forKey: "hideInFullScreen") }
     }
 
+    /// Legacy preference. Kept so older installs don't lose the key; the menu bar is always
+    /// Brim-mark-only (usage lives in the island). Not shown in Settings or the status menu.
     @Published var showInMenuBar: Bool {
         didSet { defaults.set(showInMenuBar, forKey: "showInMenuBar") }
     }
@@ -186,7 +188,7 @@ final class AppSettings: ObservableObject {
         placement = defaults.string(forKey: "placement").flatMap(IslandPlacement.init(rawValue:)) ?? .wrapNotch
         placementMovedForCrowding = defaults.bool(forKey: "placementMovedForCrowding")
         hideInFullScreen = defaults.object(forKey: "hideInFullScreen") as? Bool ?? true
-        // Off by default: menu bar stays Brim-icon-only; usage % lives in the island wings.
+        // Legacy key only — menu bar is always icon-only regardless of this value.
         showInMenuBar = defaults.object(forKey: "showInMenuBar") as? Bool ?? false
         compactMetric = defaults.string(forKey: "compactMetric").flatMap(CompactMetric.init(rawValue:)) ?? .auto
         expandOnHover = defaults.object(forKey: "expandOnHover") as? Bool ?? true

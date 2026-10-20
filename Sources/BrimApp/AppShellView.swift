@@ -350,8 +350,6 @@ struct AppShellView: View {
                 Form {
                     Section("Compact island") {
                         Toggle("Expand when the pointer is over it", isOn: $settings.expandOnHover)
-                        Toggle("Show usage in the menu bar", isOn: $settings.showInMenuBar)
-                            .disabled(!settings.showIsland || (settings.emptyIsland == .hidden && settings.enabledConnections.isEmpty))
                         Toggle("Playful animations (confetti, bouncing icons)", isOn: $settings.playful)
                         Picker("Compact view shows", selection: $settings.compactMetric) {
                             ForEach(CompactMetric.allCases) { metric in

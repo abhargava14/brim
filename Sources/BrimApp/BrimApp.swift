@@ -80,17 +80,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Menu bar
 
     private func setUpStatusItem() {
-        // Length switches in updateStatusItem: square when icon-only, variable when usage text shows.
-        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        item.button?.image = Self.defaultImage
-        item.button?.imagePosition = .imageLeading
+        // Always icon-only Brim mark — never usage % / tool glyphs in the status item.
+        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        item.button?.image = Self.statusImage(attention: false)
+        item.button?.imagePosition = .imageOnly
         item.button?.imageScaling = .scaleProportionallyDown
-        item.button?.font = .monospacedDigitSystemFont(ofSize: NSFont.systemFontSize - 1, weight: .medium)
+        item.button?.title = ""
         statusItem = item
 
-        model.$snapshot.combineLatest(settings.$showInMenuBar, settings.$compactMetric, settings.$placement)
+        model.$snapshot
             .receive(on: RunLoop.main)
-            .sink { [weak self] _, _, _, _ in self?.updateStatusItem() }
+            .sink { [weak self] _ in self?.updateStatusItem() }
             .store(in: &cancellables)
         settings.$connections.combineLatest(settings.$emptyIsland, settings.$showIsland, settings.$playful)
             .receive(on: RunLoop.main)
@@ -107,35 +107,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private static var defaultImage: NSImage? {
-        BrimAssets.brimMenuMark ?? NSImage(systemSymbolName: "sparkle", accessibilityDescription: "Brim")
+    private static func statusImage(attention: Bool) -> NSImage? {
+        BrimAssets.statusItemImage(attention: attention)
+            ?? NSImage(systemSymbolName: "sparkle", accessibilityDescription: "Brim")
+    }
+
+    /// Dot on the mark when something needs the user's attention (not for routine usage %).
+    private func statusItemNeedsAttention() -> Bool {
+        if settings.enabledConnections.isEmpty { return true }
+        for tool in model.featuredTools {
+            if tool.statusMessage != nil && !tool.hasData { return true }
+            // Critically high plan use — same bar as island attention mood.
+            if (tool.tightestWindow?.usedPercent ?? 0) >= 95 { return true }
+        }
+        return false
     }
 
     private func updateStatusItem() {
         guard let item = statusItem else { return }
-        // Usage beside the mark when opted in, or when placement is menu-bar-only (no island wings).
-        let showValue = settings.showInMenuBar || settings.placement == .menuBarOnly
-        let top = model.featuredTools.first(where: \.hasData)
+        let attention = statusItemNeedsAttention()
+        item.length = NSStatusItem.squareLength
+        item.button?.image = Self.statusImage(attention: attention)
+        item.button?.title = ""
+        item.button?.imagePosition = .imageOnly
         if settings.enabledConnections.isEmpty {
-            item.length = NSStatusItem.squareLength
-            item.button?.image = NSImage(systemSymbolName: "square.dashed", accessibilityDescription: "Brim: nothing connected")
-            item.button?.title = ""
-            item.button?.imagePosition = .imageOnly
             item.button?.toolTip = "Brim — nothing connected"
-        } else if showValue {
-            // Always the Brim mark — usage text beside it, never a Claude/Cursor/Codex glyph.
-            item.length = NSStatusItem.variableLength
-            item.button?.image = Self.defaultImage
-            item.button?.title = top.map { " " + model.compactValue(for: $0) } ?? ""
-            item.button?.imagePosition = .imageLeading
-            item.button?.toolTip = top.flatMap { tool in
-                tool.tightestWindow.map { "\(tool.name): \($0.label) \(Format.used($0))" }
-            } ?? statusItemTooltip()
         } else {
-            item.length = NSStatusItem.squareLength
-            item.button?.image = Self.defaultImage
-            item.button?.title = ""
-            item.button?.imagePosition = .imageOnly
             item.button?.toolTip = statusItemTooltip()
         }
         item.menu = settings.enabledConnections.isEmpty ? buildEmptyMenu() : buildMenu()
@@ -223,13 +220,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         toggle.state = settings.showIsland ? .on : .off
         toggle.target = self
         menu.addItem(toggle)
-        let showUsage = NSMenuItem(title: "Show Usage in Menu Bar", action: #selector(toggleShowInMenuBar), keyEquivalent: "")
-        showUsage.state = settings.showInMenuBar ? .on : .off
-        showUsage.target = self
-        // Same gate as Settings → Island.
-        showUsage.isEnabled = settings.showIsland
-            && !(settings.emptyIsland == .hidden && settings.enabledConnections.isEmpty)
-        menu.addItem(showUsage)
         let playful = NSMenuItem(title: "Playful Animations", action: #selector(togglePlayful), keyEquivalent: "")
         playful.state = settings.playful ? .on : .off
         playful.target = self
@@ -274,11 +264,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func toggleUseNotchAnyway() {
         settings.useNotchAnyway = !settings.useNotchAnyway
         island?.checkNotchOccupancy()
-        updateStatusItem()
-    }
-
-    @objc private func toggleShowInMenuBar() {
-        settings.showInMenuBar = !settings.showInMenuBar
         updateStatusItem()
     }
 
