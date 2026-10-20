@@ -9,7 +9,7 @@ import SwiftUI
 struct AppShellView: View {
     @ObservedObject var model: UsageModel
     @ObservedObject var settings: AppSettings
-    @State private var page: AppPage = .overview
+    @State private var page: AppPage = ProcessInfo.processInfo.environment["BRIM_OPEN_ISLAND"] == "1" ? .island : .overview
     @State private var errorMessage: String?
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
     @State private var cliMessage: String?

@@ -64,8 +64,8 @@ struct CompactView: View {
         return HStack(alignment: .center, spacing: 3) {
             if let tool {
                 if alignment == .trailing { Spacer(minLength: 0) }
-                // No playful bounce in wings — attention's -3pt hop misaligned left/right.
-                ToolGlyph(kind: tool.kind, mood: mood(tool), size: 12, playful: false, name: tool.name)
+                // Playful working/celebrate spin when opted in; bounce stays off so the wing centerline holds.
+                ToolGlyph(kind: tool.kind, mood: mood(tool), size: 12, playful: model.settings.playful, bounce: false, name: tool.name)
                     .frame(width: 14, height: Self.wingLineHeight, alignment: .center)
                 if density != .iconOnly {
                     RollingText(text: model.compactValue(for: tool))
