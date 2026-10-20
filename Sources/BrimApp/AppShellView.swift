@@ -101,16 +101,25 @@ struct AppShellView: View {
                 Button {
                     adding = AddAccountRequest()
                 } label: {
-                    Label("Add Account…", systemImage: "person.badge.plus")
-                        .font(.system(size: 13, weight: .bold, design: .rounded))
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 10)
-                        .background(Capsule().fill(BrimChrome.ctaFill))
-                        .foregroundStyle(BrimChrome.ctaLabel)
-                        .contentShape(Capsule())
+                    HStack(spacing: 10) {
+                        Image(systemName: "person.badge.plus")
+                            .font(.system(size: 13, weight: .bold))
+                            .frame(width: 16, alignment: .center)
+                        Text("Add Account…")
+                            .font(.system(size: 13, weight: .bold, design: .rounded))
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Capsule().fill(BrimChrome.ctaFill))
+                    .foregroundStyle(BrimChrome.ctaLabel)
+                    .contentShape(Capsule())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(AppShellNavButtonStyle())
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Capsule())
+                .onHover(perform: AppShellPointer.hand)
 
                 Text("Plan limits show how much is used.")
                     .font(.system(size: 11, weight: .medium, design: .rounded))
@@ -123,25 +132,36 @@ struct AppShellView: View {
         .background(BrimChrome.sidebar)
     }
 
+    /// Full-row nav control: icon + padding + background share one hit target and pointer cursor.
+    /// `Label` alone still routes hits/cursor to the title string on macOS plain buttons.
     private func sidebarRow(_ item: AppPage) -> some View {
         let selected = page == item
         return Button {
             page = item
         } label: {
-            Label(item.title, systemImage: item.symbol)
-                .font(.system(size: 13, weight: selected ? .semibold : .medium, design: .rounded))
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 9)
-                .background(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(selected ? BrimChrome.selected : Color.clear)
-                )
-                .foregroundStyle(selected ? BrimChrome.ink : BrimChrome.muted)
-                // Plain Label hit-tests only the glyph + title; match the full hover row.
-                .contentShape(Rectangle())
+            HStack(spacing: 10) {
+                Image(systemName: item.symbol)
+                    .font(.system(size: 13, weight: selected ? .semibold : .medium))
+                    .frame(width: 16, alignment: .center)
+                Text(item.title)
+                    .font(.system(size: 13, weight: selected ? .semibold : .medium, design: .rounded))
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 9)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    // Near-clear (not Color.clear) so the padded row stays in the hit tree.
+                    .fill(selected ? BrimChrome.selected : Color.white.opacity(0.001))
+            )
+            .foregroundStyle(selected ? BrimChrome.ink : BrimChrome.muted)
+            .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(AppShellNavButtonStyle())
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+        .onHover(perform: AppShellPointer.hand)
     }
 
     // MARK: Main
@@ -454,6 +474,27 @@ struct AppShellView: View {
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+}
+
+// MARK: - Pointer / nav button
+
+private enum AppShellPointer {
+    static func hand(_ hovering: Bool) {
+        if hovering {
+            NSCursor.pointingHand.push()
+        } else {
+            NSCursor.pop()
+        }
+    }
+}
+
+/// Keeps the expanded label (not just the Text) as the pressed/hover hit region.
+private struct AppShellNavButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .contentShape(Rectangle())
+            .opacity(configuration.isPressed ? 0.88 : 1)
     }
 }
 
