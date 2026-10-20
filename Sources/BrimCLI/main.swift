@@ -5,7 +5,7 @@ import IslandServices
 // `brim`: connect AI tools and check usage from the terminal. It edits the same connections
 // file as the app, so changes show up on the island within one refresh.
 
-let version = "0.2.0"
+let version = BrimVersion.string
 BrimMigration.run()
 if URL(fileURLWithPath: CommandLine.arguments[0]).lastPathComponent == "ai-island" {
     FileHandle.standardError.write(Data("ai-island is now called brim. The old name still works for now.\n".utf8))
@@ -354,6 +354,7 @@ func printHelp() {
       brim claude-limits connect|disconnect|status
                                            Share Claude's 5h / weekly limits with Brim
       brim open                       Open the Brim app
+      brim update                     Check GitHub Releases and install if newer
 
     \(bold("OPTIONS"))  (for add and set)
       --name N           Your label, e.g. "Claude · Work"
@@ -591,6 +592,50 @@ case "open":
     try? process.run()
     process.waitUntilExit()
     if process.terminationStatus != 0 { fail("Brim.app isn't installed. Run the installer, or ./scripts/build-app.sh --install") }
+
+case "update":
+    let checkOnly = flag("check")
+    let outcome = runBlocking { () -> Result<AppUpdater.Outcome, Error> in
+        do { return .success(try await AppUpdater.check()) }
+        catch { return .failure(error) }
+    }
+    switch outcome {
+    case .failure(let error):
+        fail(error.localizedDescription)
+    case .success(let result):
+        switch result {
+        case .upToDate(let current, let latest):
+            print(green("You’re up to date.") + " Brim \(current) matches latest release \(latest).")
+        case .aheadOfRelease(let current, let latest):
+            print(amber("Dev build ahead of latest release.") + " Running \(current); GitHub latest is \(latest).")
+            print(dim("Quit alone never fetches builds. Wait for a newer release, or reinstall from source."))
+        case .noReleaseAsset(let tag):
+            fail("Release \(tag) has no Brim.dmg asset. Install from source instead.")
+        case .updateAvailable(let update):
+            print(bold("Update available") + "  \(update.tag) (you have \(AppUpdater.currentVersion()))")
+            if checkOnly {
+                print(dim("Run `brim update` (without --check) to download & install."))
+                break
+            }
+            print("Downloading \(update.dmgURL.lastPathComponent)…")
+            let installed: Result<URL, Error> = runBlocking {
+                do { return .success(try await AppUpdater.downloadAndInstall(update)) }
+                catch { return .failure(error) }
+            }
+            switch installed {
+            case .failure(let error): fail(error.localizedDescription)
+            case .success(let dest):
+                print(green("✓ ") + "Scheduled install to \(dest.path). Quitting Brim so the helper can replace it…")
+                let quit = Process()
+                quit.executableURL = URL(fileURLWithPath: "/usr/bin/pkill")
+                quit.arguments = ["-x", "Brim"]
+                try? quit.run()
+                quit.waitUntilExit()
+                // If this CLI is the only process, the helper still replaces /Applications.
+                print(dim("Brim will relaunch when the update finishes."))
+            }
+        }
+    }
 
 case "version", "--version", "-v":
     print(version)

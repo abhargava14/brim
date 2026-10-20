@@ -78,7 +78,7 @@ Download the install script, pin a commit (or release tag), then run it:
 curl -fsSL https://raw.githubusercontent.com/abhargava14/brim/main/install.sh -o install-brim.sh
 chmod +x install-brim.sh
 BRIM_COMMIT=<40-char-sha> ./install-brim.sh
-# or: BRIM_REF=v0.2.0 ./install-brim.sh   # when a release tag exists
+# or: BRIM_REF=v0.2.1 ./install-brim.sh   # when a release tag exists
 ```
 
 When a GitHub release publishes `install.sh.sha256` / `Brim.dmg.sha256`, verify before running:
@@ -121,6 +121,14 @@ click **Open** again. You only need to do this once.
 
 You'll know it's running when you see the ✳ icon in your menu bar and a black shape around the
 notch.
+
+## Updating
+
+Quit alone does **not** fetch new builds. To update:
+
+1. Menu bar ✳ → **Check for Updates…**, or
+2. `brim update`, or
+3. Reinstall (Homebrew / pinned `install.sh` / `./scripts/build-app.sh --install`).
 
 ## Connect your first tool
 
@@ -252,6 +260,7 @@ Limits and percentages always come from the tool itself. Brim never guesses them
 | `brim plan <name> <plan>` | Set a connection's plan (`auto` to go back) |
 | `brim claude-limits connect` | Share Claude Code's 5-hour and weekly limits |
 | `brim open` | Open the app |
+| `brim update` | Check GitHub Releases and install if newer (`--check` to only report) |
 | `brim help` | All options, with examples |
 
 Common options: `--name`, `--plan`, `--path` (log folder), `--token-stdin` (paste a token
@@ -269,9 +278,11 @@ safely).
   from `state.vscdb` (allowlisted keys only), then copies it into Brim's Keychain so the DB
   is not re-read every refresh.
 - **Network:** log-based tools never touch the network. Built-in account tools only call an
-  allowlisted HTTPS host for that tool. Custom Usage URLs must be `https://` (no cleartext
-  `http://`). Brim trusts macOS system roots (no certificate pinning — see security notes in
-  the engineering review deliverable).
+  allowlisted HTTPS host for that tool. **Check for Updates** / `brim update` only contact
+  `api.github.com` / `github.com` for `abhargava14/brim` Releases (and download the release
+  asset). Custom Usage URLs must be `https://` (no cleartext `http://`). Brim trusts macOS
+  system roots (no certificate pinning — see security notes in the engineering review
+  deliverable).
 - Your connection list lives in `~/Library/Application Support/Brim/connections.json`
   (mode `600`). It holds no secrets.
 - Custom log folders must resolve under your home directory; symlink escapes are refused.

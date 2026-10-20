@@ -7,7 +7,11 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 APP_NAME="Brim"
 BUNDLE_ID="com.brim.app"
-VERSION="${VERSION:-0.2.0}"
+# Prefer VERSION=… from the environment; else read IslandCore/BrimVersion.swift.
+if [[ -z "${VERSION:-}" ]]; then
+    VERSION="$(sed -n 's/.*static let string = \"\([^\"]*\)\".*/\1/p' Sources/IslandCore/BrimVersion.swift | head -1)"
+fi
+VERSION="${VERSION:-0.2.1}"
 APP="build/$APP_NAME.app"
 
 swift build -c release --product BrimApp
