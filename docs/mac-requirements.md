@@ -25,7 +25,7 @@ Brim runs on **macOS 13 Ventura or later** (Apple silicon or Intel).
 ## Verified today
 
 - **`install.sh` builds from source.** It checks for `git` and `swift`, clones a pinned commit, and runs `scripts/build-app.sh --install`. It does **not** install by downloading a prebuilt DMG (a `BRIM_DMG` env var only verifies a checksum if you already have a DMG file).
-- Prebuilt **Brim.dmg** assets are published on some GitHub Releases (e.g. v0.2.2). If `releases/latest` has no DMG yet, use the newest release that lists **Brim.dmg**.
+- Prebuilt **Brim.dmg** (and `Brim.dmg.sha256`) ships on [releases/latest](https://github.com/abhargava14/brim/releases/latest) (v0.3.2+).
 
 ## If you don’t have Xcode
 

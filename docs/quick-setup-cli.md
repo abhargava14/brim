@@ -7,12 +7,12 @@ Prefer the **Mac app** if you don’t want Terminal: download **Brim.dmg** from
 This page is for **Terminal** users. Prefer the app for **Add Account…** (menu bar ✳ →
 Connections & Settings). CLI is best for status and update.
 
-Current release tag: **[v0.3.0](https://github.com/abhargava14/brim/releases/tag/v0.3.0)** (`1a4698c`).
+Current release tag: **[v0.3.2](https://github.com/abhargava14/brim/releases/tag/v0.3.2)**.
 
 ## 0. Easiest (no Terminal)
 
 1. Open [releases/latest](https://github.com/abhargava14/brim/releases/latest).
-2. Download **Brim.dmg** (if missing on that tag, use the newest release that has **Brim.dmg**).
+2. Download **Brim.dmg**.
 3. Drag to Applications → open (right-click → Open once if needed).
 
 ## 1. Install from Terminal (builds from source)
@@ -31,15 +31,15 @@ pipe into `bash`.
 # once, if needed:
 xcode-select --install
 
-curl -fsSL https://raw.githubusercontent.com/abhargava14/brim/v0.3.0/install.sh -o install-brim.sh
+curl -fsSL https://raw.githubusercontent.com/abhargava14/brim/v0.3.2/install.sh -o install-brim.sh
 chmod +x install-brim.sh
 ./install-brim.sh
 ```
 
-The script’s built-in pin is v0.3.0 (`1a4698c…`). To be explicit:
+The script’s built-in pin may lag the DMG release; prefer `BRIM_REF=v0.3.2` (or the tag you installed). To be explicit:
 
 ```bash
-BRIM_REF=v0.3.0 ./install-brim.sh
+BRIM_REF=v0.3.2 ./install-brim.sh
 # or
 BRIM_COMMIT=1a4698c2519b0f58fc5805252caf636dcd3d6295 ./install-brim.sh
 ```
@@ -60,7 +60,7 @@ Prefer A or C if you want a release pin; Homebrew `--HEAD` tracks `main`.
 ```bash
 git clone https://github.com/abhargava14/brim.git
 cd brim
-git checkout v0.3.0
+git checkout v0.3.2
 ./scripts/build-app.sh --install
 ```
 
