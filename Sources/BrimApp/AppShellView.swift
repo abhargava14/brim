@@ -108,6 +108,7 @@ struct AppShellView: View {
                         .padding(.vertical, 10)
                         .background(Capsule().fill(BrimChrome.ctaFill))
                         .foregroundStyle(BrimChrome.ctaLabel)
+                        .contentShape(Capsule())
                 }
                 .buttonStyle(.plain)
 
@@ -137,6 +138,8 @@ struct AppShellView: View {
                         .fill(selected ? BrimChrome.selected : Color.clear)
                 )
                 .foregroundStyle(selected ? BrimChrome.ink : BrimChrome.muted)
+                // Plain Label hit-tests only the glyph + title; match the full hover row.
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }
