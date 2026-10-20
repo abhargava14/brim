@@ -91,7 +91,7 @@ public enum ToolKind: String, CaseIterable, Codable, Sendable, Identifiable {
 ///
 /// `fresh` = input + output + cache writes (work done without a cache hit);
 /// `total` = fresh + cache reads (every token the model handled).
-public struct TokenCounts: Equatable, Sendable {
+public struct TokenCounts: Equatable, Sendable, Codable {
     public var input: Int64
     public var output: Int64
     public var cacheWrite: Int64

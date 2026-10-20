@@ -190,103 +190,42 @@ struct ToolReport: Encodable {
     }
 }
 
-/// Live Claude limits per connection ID, from Anthropic (see `ClaudeUsageFetcher`).
-func fetchClaudeLimits(_ connections: [Connection]) async -> [String: (account: ClaudeAccount, result: Result<[PlanWindow], Error>)] {
-    await withTaskGroup(of: (String, ClaudeAccount, Result<[PlanWindow], Error>).self) { group in
-        for connection in connections where connection.kind == .claude {
-            guard let dir = connection.claudeConfigDir() else { continue }
-            group.addTask {
-                let account = ClaudeAccounts.account(configDir: dir)
-                do { return (connection.id, account, .success(try await ClaudeUsageFetcher.fetch(account))) }
-                catch { return (connection.id, account, .failure(error)) }
-            }
-        }
-        var results: [String: (account: ClaudeAccount, result: Result<[PlanWindow], Error>)] = [:]
-        for await (id, account, result) in group { results[id] = (account, result) }
-        return results
-    }
-}
-
-typealias AccountResult = (id: String, result: Result<AccountUsage, Error>)
-
-/// Reads logs and fetches account usage for every connected connection.
-func collectReports() async -> [ToolReport] {
-    let active = file.connections.filter(\.isEnabled)
-
-    let engine = UsageEngine(historyDays: 30)
-    engine.configure(active.compactMap { c in c.logSource().map { (id: c.id, source: $0) } })
-    let statusLine = ClaudeStatusLineSetup(supportDirectory: ClaudeStatusLineSetup.defaultSupportDirectory,
-                                           settingsURL: ClaudeStatusLineSetup.defaultSettingsURL())
-    let planWindows = statusLine.planWindows()
-    engine.externalPlanWindows = Dictionary(active.filter { $0.kind == .claude && $0.usesDefaultLocation }.map { ($0.id, planWindows) },
-                                            uniquingKeysWith: { first, _ in first })
-    engine.scan()
-    let logs = Dictionary(engine.snapshot().map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-
-    let accounts = await withTaskGroup(of: AccountResult.self) { group -> [String: Result<AccountUsage, Error>] in
-        for connection in active where connection.kind.source == .account {
-            group.addTask {
-                do { return (connection.id, .success(try await AccountFetcher.fetch(connection))) }
-                catch { return (connection.id, .failure(error)) }
-            }
-        }
-        var results: [String: Result<AccountUsage, Error>] = [:]
-        for await (id, result) in group { results[id] = result }
-        return results
-    }
-
-    let claude = await fetchClaudeLimits(active)
-    let cacheURL = ClaudeLimitsCache.defaultURL(supportDirectory: ClaudeStatusLineSetup.defaultSupportDirectory)
-    var cache = ClaudeLimitsCache.load(from: cacheURL)
-    for entry in claude.values {
-        if case .success(let windows) = entry.result { cache.readings[entry.account.key] = .init(windows: windows, fetchedAt: Date()) }
-    }
-    if claude.values.contains(where: { if case .success = $0.result { return true } else { return false } }) { cache.save(to: cacheURL) }
-
-    return active.map { connection -> ToolReport in
-        let plan = Plans.tier(connection.planID, for: connection.kind)?.name
+/// Reads logs (checkpointed; default 7d, `--full` → 30d) and fetches account usage for every connection.
+func collectReports(historyDays: Int) async -> [ToolReport] {
+    let (tools, _) = await UsageCollector.collect(
+        connections: file.connections,
+        historyDays: historyDays
+    )
+    return tools.map { tool in
         func windows(_ list: [PlanWindow]) -> [ToolReport.Window] {
             list.map { ToolReport.Window(label: $0.label, usedPercent: $0.usedPercent, resetsAt: $0.resetsAt, detail: $0.detail, model: $0.model) }
         }
-        if var tool = logs[connection.id] {
-            var report = ToolReport(id: connection.id, name: connection.name, kind: connection.kind.rawValue, plan: plan,
-                                    todayTokens: tool.today.total, windows: [],
-                                    error: tool.hasData ? nil : "No logs found", account: tool.accountLabel)
-            if let entry = claude[connection.id] {
-                let live = try? entry.result.get()
-                var failure: String?
-                if case .failure(let error) = entry.result { failure = error.localizedDescription }
-                let resolved = ClaudeLimits.resolve(live: live, statusLine: tool.planWindows, cached: cache.readings[entry.account.key], failure: failure)
-                tool.planWindows = resolved.windows
-                report.account = entry.account.email
-                report.plan = plan ?? entry.account.planLabel
-                report.limitsAsOf = resolved.asOf
-                report.limitsNote = resolved.note
-            }
-            report.windows = windows(tool.planWindows)
-            report.tokens = .init(today: .init(tool.today), last5Hours: .init(tool.last5Hours), week: .init(tool.week), month: .init(tool.month))
+        var report = ToolReport(
+            id: tool.id,
+            name: tool.name,
+            kind: tool.kind.rawValue,
+            plan: tool.planName,
+            todayTokens: tool.hasTokenData ? tool.today.total : nil,
+            windows: windows(tool.planWindows),
+            error: tool.statusMessage,
+            account: tool.accountLabel,
+            limitsAsOf: tool.limitsAsOf,
+            limitsNote: tool.limitsNote
+        )
+        if tool.hasTokenData {
+            report.tokens = .init(today: .init(tool.today), last5Hours: .init(tool.last5Hours),
+                                  week: .init(tool.week), month: .init(tool.month))
             report.models = tool.models.map { .init(model: $0.model, today: .init($0.today), week: .init($0.week)) }
-            if !tool.sessions.isEmpty {
-                let now = Date()
-                report.sessions = tool.sessions.map {
-                    .init(id: $0.id, project: $0.project, model: $0.model, today: .init($0.today),
-                          requests: $0.requests, lastActivity: $0.lastActivity, active: $0.isActive(at: now))
-                }
-                report.activeSessions = tool.activeSessionCount(at: now)
+        }
+        if !tool.sessions.isEmpty {
+            let now = Date()
+            report.sessions = tool.sessions.map {
+                .init(id: $0.id, project: $0.project, model: $0.model, today: .init($0.today),
+                      requests: $0.requests, lastActivity: $0.lastActivity, active: $0.isActive(at: now))
             }
-            return report
+            report.activeSessions = tool.activeSessionCount(at: now)
         }
-        switch accounts[connection.id] {
-        case .success(let usage):
-            return ToolReport(id: connection.id, name: connection.name, kind: connection.kind.rawValue, plan: plan ?? usage.planName,
-                              todayTokens: nil, windows: windows(usage.windows), error: nil, account: usage.accountLabel)
-        case .failure(let error):
-            return ToolReport(id: connection.id, name: connection.name, kind: connection.kind.rawValue, plan: plan,
-                              todayTokens: nil, windows: [], error: error.localizedDescription)
-        case nil:
-            return ToolReport(id: connection.id, name: connection.name, kind: connection.kind.rawValue, plan: plan,
-                              todayTokens: nil, windows: [], error: "Not checked")
-        }
+        return report
     }
 }
 
@@ -386,8 +325,8 @@ func printReports(_ reports: [ToolReport], full: Bool = false, emails: Bool = tr
         }
         if !limitsNote.isEmpty { print("  " + amber(limitsNote)) }
     }
-    if !full, reports.contains(where: { $0.kind == ToolKind.claude.rawValue }) {
-        print(dim("\nbrim status --full for every limit, tokens by kind, per model and sessions"))
+    if !full, reports.contains(where: { $0.kind == ToolKind.claude.rawValue || $0.tokens != nil }) {
+        print(dim("\nbrim status --full for 30-day history, every limit, tokens by kind, per model and sessions"))
     }
 }
 
@@ -398,9 +337,9 @@ func printHelp() {
     \(bold("brim")) \(version) — AI usage in your Mac's notch
 
     \(bold("USAGE"))
-      brim [status] [--json]          Usage of every connected tool
+      brim [status] [--json]          Usage of every connected tool (scans ~7 days; uses a disk checkpoint)
       brim status --full              Also every Claude limit (5h, week, per model), tokens by kind,
-                                      per model and today's sessions (metadata only)
+                                      per model and today's sessions (metadata only); scans 30 days
                                       [--no-emails] hides account emails
       brim claude accounts            Claude Code sign-ins on this Mac and which are connected
       brim list                       All connections and whether they're connected
@@ -474,7 +413,8 @@ case "status", "usage":
     let json = flag("json")
     let full = flag("full")
     let emails = !flag("no-emails")
-    var reports = runBlocking { await collectReports() }
+    let historyDays = full ? UsageEngine.fullHistoryDays : UsageEngine.cliHistoryDays
+    var reports = runBlocking { await collectReports(historyDays: historyDays) }
     if !emails { reports = reports.map { var r = $0; r.account = nil; return r } }
     if json {
         let encoder = JSONEncoder()
