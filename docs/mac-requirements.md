@@ -32,6 +32,15 @@ Brim runs on **macOS 13 Ventura or later** (Apple silicon or Intel).
 Use the DMG:
 
 1. [Releases](https://github.com/abhargava14/brim/releases/latest) → download **Brim.dmg**
-2. Drag to Applications → open (right-click → Open once if Gatekeeper asks)
+2. Drag to Applications → open Brim
+
+### If Mac says Brim can’t be opened
+
+Gatekeeper may block an unsigned/unnotarized DMG with **“Apple could not verify…”**. That’s
+**normal until notarization** — not malware. **Right‑click (or Control‑click) Brim → Open → Open**
+again (double‑click alone fails on recent macOS). Or **System Settings → Privacy & Security →
+Open Anyway**. Do **not** disable Gatekeeper system‑wide. Friend steps:
+[gatekeeper-friend-install.md](gatekeeper-friend-install.md). Notarization:
+[notarization.md](notarization.md).
 
 That’s the supported path for everyone who isn’t compiling Brim themselves.
