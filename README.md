@@ -35,7 +35,8 @@ the Claude Code status line over on first launch, and the old `ai-island` comman
 ## Contents
 
 - [Requirements](#requirements)
-- [Install](#install)
+- [Install](#install) · [Quick setup (CLI)](docs/quick-setup-cli.md)
+- [Updating](#updating) · [How to update](docs/how-to-update-brim.md)
 - [Connect your first tool](#connect-your-first-tool)
 - [Using the island](#using-the-island)
 - [Supported tools](#supported-tools)
@@ -61,8 +62,8 @@ top centre of the screen.
 
 ## Install
 
-Pick **one** of these. Prefer Homebrew or a **pinned commit/tag** — avoid piping floating
-`main` into `bash`.
+Pick **one** of these. Prefer a **pinned commit/tag** — do **not** pipe floating `main`
+into `bash`. Copy-paste CLI path: [docs/quick-setup-cli.md](docs/quick-setup-cli.md).
 
 ### Option 1: Homebrew
 
@@ -70,15 +71,18 @@ Pick **one** of these. Prefer Homebrew or a **pinned commit/tag** — avoid pipi
 brew install --HEAD abhargava14/tap/brim
 ```
 
-### Option 2: Pinned installer (recommended over curl\|bash from main)
+(`packaging/homebrew/brim.rb` — builds HEAD from `main`. Prefer Option 2/3 for a release pin.)
 
-Download the install script, pin a commit (or release tag), then run it:
+### Option 2: Pinned installer (recommended)
+
+Download `install.sh` from the **release tag**, then run it (script already pins v0.2.1):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/abhargava14/brim/main/install.sh -o install-brim.sh
+curl -fsSL https://raw.githubusercontent.com/abhargava14/brim/v0.2.1/install.sh -o install-brim.sh
 chmod +x install-brim.sh
-BRIM_COMMIT=<40-char-sha> ./install-brim.sh
-# or: BRIM_REF=v0.2.1 ./install-brim.sh   # when a release tag exists
+./install-brim.sh
+# or explicit: BRIM_REF=v0.2.1 ./install-brim.sh
+# or: BRIM_COMMIT=3b2c724d6326131aaf5ad69e8e5f71ae17e3b9ea ./install-brim.sh
 ```
 
 When a GitHub release publishes `install.sh.sha256` / `Brim.dmg.sha256`, verify before running:
@@ -96,7 +100,7 @@ Applications, adds `brim` to `~/.local/bin`, and starts the app.
 ```bash
 git clone https://github.com/abhargava14/brim.git
 cd brim
-git checkout <tag-or-sha>    # pin what you build
+git checkout v0.2.1
 ./scripts/build-app.sh --install
 ```
 
@@ -127,8 +131,10 @@ notch.
 Quit alone does **not** fetch new builds. To update:
 
 1. Menu bar ✳ → **Check for Updates…**, or
-2. `brim update`, or
+2. `brim update` (`--check` only reports), or
 3. Reinstall (Homebrew / pinned `install.sh` / `./scripts/build-app.sh --install`).
+
+More detail: [docs/how-to-update-brim.md](docs/how-to-update-brim.md).
 
 ## Connect your first tool
 
