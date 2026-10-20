@@ -123,8 +123,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             item.button?.imagePosition = .imageOnly
             item.button?.toolTip = "Brim — nothing connected"
         } else if showValue {
+            // Always the Brim mark — usage text beside it, never a Claude/Cursor/Codex glyph.
             item.length = NSStatusItem.variableLength
-            item.button?.image = top.flatMap { BrimAssets.menuImage(for: $0.kind, size: 15) } ?? Self.defaultImage
+            item.button?.image = Self.defaultImage
             item.button?.title = top.map { " " + model.compactValue(for: $0) } ?? ""
             item.button?.imagePosition = .imageLeading
             item.button?.toolTip = top.flatMap { tool in
