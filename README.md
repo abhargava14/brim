@@ -9,32 +9,39 @@ plan's limits. Hover over it for the details.
 Brim used to be called AI Island. Updating moves your connections, saved tokens, settings and
 the Claude Code status line over on first launch, and the old `ai-island` command still works.
 
-<!-- Screenshot: add docs/assets/hero.png (exported from the Claude Design file), then uncomment:
-<p align="center"><img src="docs/assets/hero.png" alt="Brim around the MacBook notch, expanded to show Claude Code and GitHub Copilot usage" width="560"></p>
--->
-
-```
-  Around the notch:     ✳ 14.2M ●  ███ notch ███  71% ✈︎
-
-  Hover to expand:      Today · 18.4M tokens · 3 connected
-                        ✳ Claude Code   Max 5×    14.2M tokens
-                          5h    ████████░░  84%   resets in 1h 20m
-                          Week  ███░░░░░░░  31%   resets in 3d 4h
-                        ✈︎ GitHub Copilot  Pro
-                          Premium ███████░░░  212 / 300   resets in 13d
-```
-
 - **Works with the tools you use.** Claude Code, Codex, GitHub Copilot, Cursor, Windsurf,
   OpenRouter, and anything else that writes logs or reports usage at a URL.
 - **As many as you like.** Connect one tool or twenty, including several accounts of the same
   tool (say, personal and work).
 - **Private.** No account, no tracking. Your prompts and code are never read.
 
+## About the app
+
+<p align="center">
+  <img src="media/readme/overview.png" alt="Brim Overview: today's token usage and connected accounts" width="720">
+</p>
+<p align="center"><em>Overview — today's usage and your connected tools.</em></p>
+
+<p align="center">
+  <img src="media/readme/island-compact.png" alt="Brim compact island in the Mac notch showing plan usage percent" width="420">
+</p>
+<p align="center"><em>The island in the notch — a glanceable usage % while you work.</em></p>
+
+<p align="center">
+  <img src="media/readme/connections.png" alt="Brim Connections list with anonymized demo accounts" width="720">
+</p>
+<p align="center"><em>Connections — turn accounts on or off. (Demo email shown.)</em></p>
+
+<p align="center">
+  <img src="media/readme/connect.png" alt="Brim Connect sheet listing Claude, Codex, Cursor, and other tools" width="720">
+</p>
+<p align="center"><em>Add Account — pick a tool and sign in. No Terminal needed.</em></p>
+
 ---
 
 ## Contents
 
-- [Requirements](#requirements)
+- [Requirements](#requirements) · [Mac requirements](docs/mac-requirements.md)
 - [Install](#install) · [Quick setup (CLI)](docs/quick-setup-cli.md)
 - [Updating](#updating) · [How to update](docs/how-to-update-brim.md)
 - [Connect your first tool](#connect-your-first-tool)
@@ -49,53 +56,50 @@ the Claude Code status line over on first launch, and the old `ai-island` comman
 
 ## Requirements
 
-- A Mac running **macOS 13 Ventura or later**. Apple silicon or Intel.
-- **Apple's developer tools**, because Brim is built on your Mac from source. If you don't
-  have them, open Terminal and run:
-
-  ```bash
-  xcode-select --install
-  ```
+- A Mac on **macOS 13 Ventura or later** (Apple silicon or Intel).
+- **You do not need Xcode** (the big App Store app) for normal use.
 
 A MacBook with a notch looks best, but any Mac works. Without a notch, the island hangs from the
 top centre of the screen.
 
+What each install path needs: [docs/mac-requirements.md](docs/mac-requirements.md).
+
 ## Install
 
-Pick **one** of these. Prefer a **pinned commit/tag** — do **not** pipe floating `main`
-into `bash`. Copy-paste CLI path: [docs/quick-setup-cli.md](docs/quick-setup-cli.md).
+### Easiest — Download the Mac application
 
-### Option 1: Homebrew
+**No Xcode. No Terminal. No developer tools.**
 
-```bash
-brew install --HEAD abhargava14/tap/brim
-```
+1. Open the latest release: **[Download Brim (GitHub Releases)](https://github.com/abhargava14/brim/releases/latest)**
+2. Download **`Brim.dmg`**  
+   *(If that release page has no DMG yet, open the newest release that lists **Brim.dmg** — for example [v0.2.2](https://github.com/abhargava14/brim/releases/tag/v0.2.2).)*
+3. Open the DMG and drag **Brim** into **Applications**.
+4. Open Brim from Applications. If macOS blocks it (Gatekeeper): **right-click Brim → Open**, then **Open** again. Once is enough.
 
-(`packaging/homebrew/brim.rb` — builds HEAD from `main`. Prefer Option 2/3 for a release pin.)
+You'll know it's running when you see the Brim mark in the menu bar and a black shape around the notch.
 
-### Option 2: Pinned installer (recommended)
+### Later updates (still no Xcode)
 
-Download `install.sh` from the **release tag**, then run it (script already pins v0.3.0):
+- In the app: menu bar ✳ → **Check for Updates…**
+- Or, if you use Terminal: `brim update`
+
+### For developers / Terminal (optional)
+
+These paths **compile Brim on your Mac**. They need Apple's small **Command Line Tools** package
+(`xcode-select --install`) — **not** the full Xcode app from the App Store.
+
+`install.sh` today **builds from source** (it does not download a prebuilt DMG). Details:
+[docs/quick-setup-cli.md](docs/quick-setup-cli.md).
+
+**Pinned install script** (pins a release; about a minute the first time):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/abhargava14/brim/v0.3.0/install.sh -o install-brim.sh
 chmod +x install-brim.sh
 ./install-brim.sh
-# or explicit: BRIM_REF=v0.3.0 ./install-brim.sh
-# or: BRIM_COMMIT=1a4698c2519b0f58fc5805252caf636dcd3d6295 ./install-brim.sh
 ```
 
-When a GitHub release publishes `install.sh.sha256` / `Brim.dmg.sha256`, verify before running:
-
-```bash
-shasum -a 256 -c install-brim.sh.sha256
-# DMG path: BRIM_DMG=./Brim.dmg BRIM_DMG_SHA256=<hex> ./install-brim.sh
-```
-
-The installer builds from source (about a minute the first time), puts **Brim** in
-Applications, adds `brim` to `~/.local/bin`, and starts the app.
-
-### Option 3: From a clone
+**From a clone:**
 
 ```bash
 git clone https://github.com/abhargava14/brim.git
@@ -104,35 +108,22 @@ git checkout v0.3.0
 ./scripts/build-app.sh --install
 ```
 
-### Option 4: DMG
-
-Build a disk image locally (writes `build/Brim.dmg` and `build/Brim.dmg.sha256`):
+**Homebrew** (tracks `main`, also builds from source):
 
 ```bash
-./scripts/build-dmg.sh
-shasum -a 256 -c build/Brim.dmg.sha256
-open build/Brim.dmg
+brew install --HEAD abhargava14/tap/brim
 ```
 
-Drag **Brim** onto **Applications**, then open it from there. Notarized DMGs need Apple
-Developer ID credentials — see [docs/notarization.md](docs/notarization.md).
-
-### First launch
-
-Brim isn't notarized with an Apple developer certificate yet (ad-hoc signature only). If macOS
-says it can't be opened (Gatekeeper): open **Applications**, **right-click Brim → Open**, then
-click **Open** again. You only need to do this once.
-
-You'll know it's running when you see the ✳ icon in your menu bar and a black shape around the
-notch.
+**Build a DMG yourself** (also needs Command Line Tools): see `./scripts/build-dmg.sh` and
+[docs/notarization.md](docs/notarization.md).
 
 ## Updating
 
-Quit alone does **not** fetch new builds. To update:
+Quit alone does **not** fetch new builds. Prefer:
 
-1. Menu bar ✳ → **Check for Updates…**, or
+1. Menu bar ✳ → **Check for Updates…** (no Xcode), or
 2. `brim update` (`--check` only reports), or
-3. Reinstall (Homebrew / pinned `install.sh` / `./scripts/build-app.sh --install`).
+3. Reinstall from a newer **Brim.dmg**, or rebuild via Terminal.
 
 More detail: [docs/how-to-update-brim.md](docs/how-to-update-brim.md).
 
@@ -296,7 +287,7 @@ safely).
 ## Troubleshooting
 
 **macOS says the app "can't be opened".** Right-click Brim in Applications and choose
-**Open**. See [First launch](#first-launch).
+**Open**, then **Open** again. You only need this once (Gatekeeper). No Xcode required.
 
 **A tool says "No logs found yet".** Use that tool once, then wait a few seconds. If it keeps its
 logs somewhere unusual, set the folder: Settings → open the connection → **Choose…**, or
