@@ -190,12 +190,14 @@ final class AppSettings: ObservableObject {
         showInMenuBar = defaults.object(forKey: "showInMenuBar") as? Bool ?? false
         compactMetric = defaults.string(forKey: "compactMetric").flatMap(CompactMetric.init(rawValue:)) ?? .auto
         expandOnHover = defaults.object(forKey: "expandOnHover") as? Bool ?? true
-        playful = defaults.object(forKey: "playful") as? Bool ?? true
+        // Quiet by default — less motion in the notch until the user opts in.
+        playful = defaults.object(forKey: "playful") as? Bool ?? false
         pinnedID = defaults.string(forKey: "pinnedID") ?? ""
         let refresh = defaults.double(forKey: "refreshSeconds")
         refreshSeconds = refresh > 0 ? refresh : 10
         emptyIsland = defaults.string(forKey: "emptyIsland").flatMap(EmptyIsland.init(rawValue:)) ?? .small
         showAccountEmails = defaults.object(forKey: "showAccountEmails") as? Bool ?? true
+        // Short Claude cards by default (minimal island).
         claudeCardStyle = defaults.string(forKey: "claudeCardStyle").flatMap(ClaudeCardStyle.init(rawValue:)) ?? .short
         notchConflict = defaults.string(forKey: "notchConflict").flatMap(NotchConflictPolicy.init(rawValue:)) ?? .moveToMenuBar
         useNotchAnyway = defaults.bool(forKey: "useNotchAnyway")
@@ -266,5 +268,62 @@ final class AppSettings: ObservableObject {
 
     func move(from source: IndexSet, to destination: Int) {
         connections.move(fromOffsets: source, toOffset: destination)
+    }
+
+    // MARK: - Duplicate emails
+
+    /// Existing connection whose auth email matches (normalized), optionally excluding one id.
+    func connection(withEmail email: String?, kind: ToolKind? = nil, excluding id: String? = nil) -> Connection? {
+        guard let email, !email.isEmpty else { return nil }
+        let needle = AccountEmail.normalize(email)
+        return connections.first { connection in
+            if let id, connection.id == id { return false }
+            if let kind, connection.kind != kind { return false }
+            if let stored = connection.accountEmail, stored == needle { return true }
+            if connection.kind == .claude, let dir = connection.claudeConfigDir() {
+                let live = ClaudeAccounts.account(configDir: dir).email
+                return AccountEmail.matches(live, needle)
+            }
+            return false
+        }
+    }
+
+    /// On launch: collapse same-email Claude connections to one (prefer enabled + stored email + token).
+    /// Returns how many duplicates were removed.
+    @discardableResult
+    func dedupeClaudeConnectionsByEmail() -> Int {
+        var byEmail: [String: [Connection]] = [:]
+        for connection in connections where connection.kind == .claude {
+            let email = connection.accountEmail
+                ?? ClaudeAccounts.account(configDir: connection.claudeConfigDir() ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude")).email.flatMap(AccountEmail.normalize)
+            guard let email, !email.isEmpty else { continue }
+            byEmail[email, default: []].append(connection)
+        }
+        var removeIDs = Set<String>()
+        for (_, group) in byEmail where group.count > 1 {
+            let keeper = group.max { a, b in
+                // Prefer enabled, then one with a stored email option, then stable id.
+                if a.isEnabled != b.isEnabled { return !a.isEnabled && b.isEnabled }
+                let aEmail = a.accountEmail != nil
+                let bEmail = b.accountEmail != nil
+                if aEmail != bEmail { return !aEmail && bEmail }
+                return a.id > b.id
+            }!
+            for connection in group where connection.id != keeper.id {
+                removeIDs.insert(connection.id)
+            }
+            // Ensure keeper remembers the email.
+            if var kept = connections.first(where: { $0.id == keeper.id }), kept.accountEmail == nil,
+               let email = byEmail.first(where: { $0.value.contains(where: { $0.id == keeper.id }) })?.key {
+                kept.options[Connection.Option.accountEmail] = email
+                if let index = connections.firstIndex(where: { $0.id == kept.id }) {
+                    connections[index] = kept
+                }
+            }
+        }
+        guard !removeIDs.isEmpty else { return 0 }
+        connections.removeAll { removeIDs.contains($0.id) }
+        if removeIDs.contains(pinnedID) { pinnedID = "" }
+        return removeIDs.count
     }
 }

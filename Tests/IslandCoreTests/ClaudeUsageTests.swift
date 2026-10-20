@@ -210,6 +210,14 @@ final class ClaudeAccountTests: XCTestCase {
         XCTAssertNil(ClaudeOAuthTokens.parse(Data(#"{"error":"invalid_grant"}"#.utf8)))
     }
 
+    func testAccountEmailNormalizationAndMatch() {
+        XCTAssertEqual(AccountEmail.normalize("  Ada@Example.COM "), "ada@example.com")
+        XCTAssertTrue(AccountEmail.matches("Ada@Example.COM", "ada@example.com"))
+        XCTAssertFalse(AccountEmail.matches("a@x.com", "b@x.com"))
+        XCTAssertFalse(AccountEmail.matches(nil, "a@x.com"))
+        XCTAssertFalse(AccountEmail.matches("", "a@x.com"))
+    }
+
     func testConnectionFollowsItsConfigFolder() {
         let home = URL(fileURLWithPath: "/Users/me")
         var personal = Connection(kind: .claude, name: "Claude · Personal")

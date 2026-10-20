@@ -425,12 +425,23 @@ public enum VSCodeState {
 }
 
 /// Tokens the user pasted (or copied once from an editor DB), one Keychain item per connection.
+/// Also stores Claude OAuth JSON under `claude.oauth.<account.key>` so Brim never needs to shell
+/// out to `/usr/bin/security` or re-prompt for Claude Code's Keychain ACL on every refresh.
 public enum Keychain {
     public static let service = "com.brim.app.connections"
     /// Where AI Island, Brim's old name, kept the same tokens.
     static let legacyService = "com.aiisland.app.connections"
 
+    /// Brim-owned Keychain account for a Claude config folder's OAuth blob.
+    public static func claudeOAuthAccount(for accountKey: String) -> String {
+        "claude.oauth.\(accountKey)"
+    }
+
     public static func read(_ account: String, service: String = service) -> String? {
+        readData(account, service: service).flatMap { String(data: $0, encoding: .utf8) }
+    }
+
+    public static func readData(_ account: String, service: String = service) -> Data? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -440,18 +451,23 @@ public enum Keychain {
         ]
         var item: CFTypeRef?
         guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess, let data = item as? Data else { return nil }
-        return String(data: data, encoding: .utf8)
+        return data
     }
 
     @discardableResult
     public static func save(_ value: String, for account: String) -> Bool {
+        saveData(Data(value.utf8), for: account)
+    }
+
+    @discardableResult
+    public static func saveData(_ data: Data, for account: String) -> Bool {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
         ]
         let attributes: [String: Any] = [
-            kSecValueData as String: Data(value.utf8),
+            kSecValueData as String: data,
             kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
         ]
         let updated = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
@@ -460,7 +476,7 @@ public enum Keychain {
             delete(account)
         }
         var item = query
-        item[kSecValueData as String] = Data(value.utf8)
+        item[kSecValueData as String] = data
         item[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
         return SecItemAdd(item as CFDictionary, nil) == errSecSuccess
     }

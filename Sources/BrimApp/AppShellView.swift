@@ -1,0 +1,483 @@
+import AppKit
+import IslandCore
+import IslandServices
+import ServiceManagement
+import SwiftUI
+
+/// Calm light app window: sidebar + page content. Replaces the old General / Connections / Island
+/// tabbed preferences sheet. Layout inspired by Wispr Flow’s lightness — not a feature clone.
+struct AppShellView: View {
+    @ObservedObject var model: UsageModel
+    @ObservedObject var settings: AppSettings
+    @State private var page: AppPage = .overview
+    @State private var errorMessage: String?
+    @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
+    @State private var cliMessage: String?
+    @State private var expanded: String?
+    @State private var cliFix: CommandLineTool.Fix?
+    @State private var adding: AddAccountRequest?
+
+    private enum AppPage: String, CaseIterable, Identifiable {
+        case overview
+        case connections
+        case island
+        case general
+
+        var id: String { rawValue }
+
+        var title: String {
+            switch self {
+            case .overview: return "Overview"
+            case .connections: return "Connections"
+            case .island: return "Island"
+            case .general: return "Settings"
+            }
+        }
+
+        var symbol: String {
+            switch self {
+            case .overview: return "square.grid.2x2"
+            case .connections: return "link"
+            case .island: return "rectangle.roundedtop"
+            case .general: return "gearshape"
+            }
+        }
+    }
+
+    var body: some View {
+        HStack(spacing: 0) {
+            sidebar
+                .frame(width: 220)
+            Divider().opacity(0.35)
+            main
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .background(AppShellChrome.canvas)
+        .frame(minWidth: 860, minHeight: 560)
+        .sheet(item: $adding) { request in
+            AddAccountView(model: model, settings: settings, request: request) { adding = nil }
+        }
+        .alert("Something went wrong", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(errorMessage ?? "")
+        }
+    }
+
+    // MARK: Sidebar
+
+    private var sidebar: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 10) {
+                Image(nsImage: BrimAssets.brimMenuMark ?? NSImage(systemSymbolName: "sparkle", accessibilityDescription: "Brim")!)
+                    .resizable()
+                    .interpolation(.high)
+                    .frame(width: 22, height: 22)
+                Text("Brim")
+                    .font(.system(size: 18, weight: .semibold, design: .rounded))
+                    .foregroundStyle(AppShellChrome.ink)
+                Spacer()
+                Text("v\(BrimVersion.string)")
+                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                    .foregroundStyle(AppShellChrome.muted)
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 28)
+            .padding(.bottom, 22)
+
+            VStack(spacing: 4) {
+                ForEach(AppPage.allCases) { item in
+                    sidebarRow(item)
+                }
+            }
+            .padding(.horizontal, 12)
+
+            Spacer(minLength: 16)
+
+            VStack(alignment: .leading, spacing: 8) {
+                Button {
+                    adding = AddAccountRequest()
+                } label: {
+                    Label("Add Account…", systemImage: "person.badge.plus")
+                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 10)
+                        .background(Capsule().fill(AppShellChrome.ink.opacity(0.92)))
+                        .foregroundStyle(.white)
+                }
+                .buttonStyle(.plain)
+
+                Text("Plan limits show how much is used.")
+                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                    .foregroundStyle(AppShellChrome.muted)
+                    .padding(.horizontal, 4)
+            }
+            .padding(.horizontal, 12)
+            .padding(.bottom, 20)
+        }
+        .background(AppShellChrome.sidebar)
+    }
+
+    private func sidebarRow(_ item: AppPage) -> some View {
+        let selected = page == item
+        return Button {
+            page = item
+        } label: {
+            Label(item.title, systemImage: item.symbol)
+                .font(.system(size: 13, weight: selected ? .semibold : .medium, design: .rounded))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 9)
+                .background(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(selected ? AppShellChrome.card : Color.clear)
+                )
+                .foregroundStyle(selected ? AppShellChrome.ink : AppShellChrome.muted)
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: Main
+
+    @ViewBuilder
+    private var main: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                Text(page.title)
+                    .font(.system(size: 26, weight: .semibold, design: .rounded))
+                    .foregroundStyle(AppShellChrome.ink)
+                    .padding(.bottom, 4)
+
+                switch page {
+                case .overview: overviewPage
+                case .connections: connectionsPage
+                case .island: islandPage
+                case .general: generalPage
+                }
+            }
+            .padding(28)
+            .frame(maxWidth: 720, alignment: .leading)
+        }
+        .background(AppShellChrome.canvas)
+    }
+
+    // MARK: Overview
+
+    private var overviewPage: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            AppShellCard {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Usage today")
+                        .font(AppShellChrome.section)
+                        .foregroundStyle(AppShellChrome.muted)
+                    Text("\(Format.tokens(model.snapshot.todayTokens)) tokens")
+                        .font(.system(size: 28, weight: .semibold, design: .rounded))
+                        .foregroundStyle(AppShellChrome.ink)
+                    Text("\(settings.enabledConnections.count) of \(settings.connections.count) accounts connected")
+                        .font(AppShellChrome.body)
+                        .foregroundStyle(AppShellChrome.muted)
+                }
+            }
+
+            if model.featuredTools.isEmpty {
+                AppShellCard {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Nothing connected yet")
+                            .font(AppShellChrome.headline)
+                        Text("Add Claude, Codex, Cursor, Copilot or another tool. Claude plan limits come from Anthropic after Sign in with Claude — no log folder required.")
+                            .font(AppShellChrome.body)
+                            .foregroundStyle(AppShellChrome.muted)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Button("Add Account…") { adding = AddAccountRequest() }
+                            .buttonStyle(.borderedProminent)
+                            .tint(AppShellChrome.ink)
+                    }
+                }
+            } else {
+                ForEach(model.featuredTools) { tool in
+                    AppShellCard {
+                        HStack(alignment: .top, spacing: 12) {
+                            ToolGlyph(kind: tool.kind, mood: .idle, size: 16, playful: false, name: tool.name)
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(tool.name)
+                                    .font(AppShellChrome.headline)
+                                if let account = model.accountLabel(for: tool.id) {
+                                    Text(account)
+                                        .font(AppShellChrome.caption)
+                                        .foregroundStyle(AppShellChrome.muted)
+                                }
+                                if tool.hasData {
+                                    let parts = tool.planWindows.map { "\($0.label) \(Format.used($0))" }
+                                    Text(parts.isEmpty ? model.compactValue(for: tool) : parts.joined(separator: " · "))
+                                        .font(AppShellChrome.body)
+                                        .foregroundStyle(AppShellChrome.ink)
+                                } else {
+                                    Text(tool.statusMessage ?? "Connecting…")
+                                        .font(AppShellChrome.body)
+                                        .foregroundStyle(AppShellChrome.muted)
+                                }
+                            }
+                            Spacer()
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: Connections
+
+    private var connectionsPage: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            AppShellCard {
+                VStack(alignment: .leading, spacing: 12) {
+                    if settings.connections.isEmpty {
+                        Text("Nothing connected yet. Add Claude, Codex, Cursor, Copilot or any other tool.")
+                            .font(AppShellChrome.body)
+                            .foregroundStyle(AppShellChrome.muted)
+                    }
+                    ForEach($settings.connections) { $connection in
+                        ConnectionRow(
+                            connection: $connection,
+                            model: model,
+                            signIn: { adding = AddAccountRequest(connectionID: connection.id) },
+                            isExpanded: Binding(get: { expanded == connection.id }, set: { expanded = $0 ? connection.id : nil })
+                        )
+                    }
+                    .onMove { settings.move(from: $0, to: $1) }
+
+                    HStack {
+                        Button { adding = AddAccountRequest() } label: {
+                            Label("Add Account…", systemImage: "plus")
+                        }
+                        Spacer()
+                        if settings.enabledConnections.isEmpty {
+                            Button("Connect all") { model.connectAll() }
+                                .disabled(settings.connections.isEmpty)
+                        } else {
+                            Button("Disconnect all") { model.disconnectAll() }
+                        }
+                    }
+                }
+            }
+
+            AppShellCard {
+                HStack(alignment: .top) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Claude plan limits")
+                            .font(AppShellChrome.headline)
+                        Text(claudeStatusText)
+                            .font(AppShellChrome.caption)
+                            .foregroundStyle(AppShellChrome.muted)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer()
+                    if model.claudeConnection == .connected {
+                        Button("Disconnect") { run { try model.disconnectClaudePlan() } }
+                    } else {
+                        Button("Connect") { run { try model.connectClaudePlan() } }
+                            .disabled(model.claudeConnection == .unreadable)
+                    }
+                }
+            }
+
+            Text("Tokens stay in your Keychain. The same email can’t be added twice.")
+                .font(AppShellChrome.caption)
+                .foregroundStyle(AppShellChrome.muted)
+        }
+    }
+
+    private var claudeStatusText: String {
+        switch model.claudeConnection {
+        case .connected:
+            return "Optional status-line bridge connected for Claude Code session hints."
+        case .notConnected:
+            return "Optional. Adds a small status line script to Claude Code. Plan limits from Sign in with Claude do not need this."
+        case .unreadable:
+            return "~/.claude/settings.json could not be read. Fix the file, then try again."
+        }
+    }
+
+    // MARK: Island
+
+    private var islandPage: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            AppShellCard {
+                Form {
+                    Toggle("Show the island at the top of the screen", isOn: $settings.showIsland)
+                    Picker("Show in", selection: $settings.placement) {
+                        ForEach(IslandPlacement.allCases) { placement in
+                            Text(placement.title).tag(placement)
+                        }
+                    }
+                    if settings.placementMovedForCrowding {
+                        Text("Moved below the menu bar — other status icons left too little room next to the notch. Choose “Around the notch” to try again.")
+                            .font(AppShellChrome.caption)
+                            .foregroundStyle(AppShellChrome.muted)
+                    }
+                    Picker("With nothing connected", selection: $settings.emptyIsland) {
+                        ForEach(EmptyIsland.allCases) { mode in
+                            Text(mode.title).tag(mode)
+                        }
+                    }
+                    Picker("When another app uses the notch", selection: $settings.notchConflict) {
+                        ForEach(NotchConflictPolicy.allCases) { policy in
+                            Text(policy.title).tag(policy)
+                        }
+                    }
+                    if settings.useNotchAnyway {
+                        HStack {
+                            Text("Using the notch even though another app is there.")
+                                .font(AppShellChrome.caption)
+                                .foregroundStyle(AppShellChrome.muted)
+                            Spacer()
+                            Button("Stop overriding") { settings.useNotchAnyway = false }
+                                .controlSize(.small)
+                        }
+                    }
+                    Toggle("Hide in full-screen apps", isOn: $settings.hideInFullScreen)
+                }
+                .formStyle(.grouped)
+                .scrollContentBackground(.hidden)
+            }
+
+            AppShellCard {
+                Form {
+                    Section("Compact island") {
+                        Toggle("Expand when the pointer is over it", isOn: $settings.expandOnHover)
+                        Toggle("Show usage in the menu bar", isOn: $settings.showInMenuBar)
+                            .disabled(!settings.showIsland || (settings.emptyIsland == .hidden && settings.enabledConnections.isEmpty))
+                        Toggle("Playful animations (confetti, bouncing icons)", isOn: $settings.playful)
+                        Picker("Compact view shows", selection: $settings.compactMetric) {
+                            ForEach(CompactMetric.allCases) { metric in
+                                Text(metric.title).tag(metric)
+                            }
+                        }
+                        Picker("Claude cards open in", selection: $settings.claudeCardStyle) {
+                            ForEach(ClaudeCardStyle.allCases) { style in
+                                Text(style.title).tag(style)
+                            }
+                        }
+                        Picker("Always feature", selection: $settings.pinnedID) {
+                            Text("Automatic (most urgent first)").tag("")
+                            ForEach(settings.connections) { connection in
+                                Text(connection.name).tag(connection.id)
+                            }
+                        }
+                    }
+                }
+                .formStyle(.grouped)
+                .scrollContentBackground(.hidden)
+            }
+
+            Text("The notch stays minimal by default — one metric at a time. Expand for detail.")
+                .font(AppShellChrome.caption)
+                .foregroundStyle(AppShellChrome.muted)
+        }
+    }
+
+    // MARK: General / Settings
+
+    private var generalPage: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            AppShellCard {
+                Form {
+                    Section("General") {
+                        Picker("Read logs every", selection: $settings.refreshSeconds) {
+                            Text("5 seconds").tag(5.0)
+                            Text("10 seconds").tag(10.0)
+                            Text("30 seconds").tag(30.0)
+                            Text("1 minute").tag(60.0)
+                        }
+                        Toggle("Show account emails", isOn: $settings.showAccountEmails)
+                            .help("Turn off while sharing your screen.")
+                        Toggle("Launch at login", isOn: $launchAtLogin)
+                            .onChange(of: launchAtLogin) { enabled in
+                                guard enabled != (SMAppService.mainApp.status == .enabled) else { return }
+                                run {
+                                    if enabled { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
+                                }
+                                launchAtLogin = SMAppService.mainApp.status == .enabled
+                            }
+                    }
+                }
+                .formStyle(.grouped)
+                .scrollContentBackground(.hidden)
+            }
+
+            AppShellCard {
+                HStack(alignment: .top) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("brim command")
+                            .font(AppShellChrome.headline)
+                        Text(cliMessage ?? "Optional. Installs into ~/.local/bin when possible — no Mac password. Lets you run brim status in Terminal.")
+                            .font(AppShellChrome.caption)
+                            .foregroundStyle(AppShellChrome.muted)
+                            .textSelection(.enabled)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer()
+                    if let cliFix {
+                        Button(cliFix.title) { (cliMessage, self.cliFix) = cliFix.run() }
+                    } else {
+                        Button("Install") { (cliMessage, cliFix) = CommandLineTool.install() }
+                    }
+                }
+            }
+
+            AppShellCard {
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Updates")
+                            .font(AppShellChrome.headline)
+                        Text("Check GitHub Releases for a newer Brim. Quit/reopen alone is not an update path.")
+                            .font(AppShellChrome.caption)
+                            .foregroundStyle(AppShellChrome.muted)
+                    }
+                    Spacer()
+                    Button("Check for Updates…") {
+                        Task { @MainActor in await BrimUpdateUI.check(from: nil) }
+                    }
+                }
+            }
+        }
+    }
+
+    private func run(_ action: () throws -> Void) {
+        do {
+            try action()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+}
+
+// MARK: - Chrome
+
+private enum AppShellChrome {
+    static let canvas = Color(nsColor: NSColor(calibratedWhite: 0.96, alpha: 1))
+    static let sidebar = Color(nsColor: NSColor(calibratedRed: 0.96, green: 0.94, blue: 0.90, alpha: 1))
+    static let card = Color.white
+    static let ink = Color(nsColor: NSColor(calibratedWhite: 0.12, alpha: 1))
+    static let muted = Color(nsColor: NSColor(calibratedWhite: 0.45, alpha: 1))
+    static let section = Font.system(size: 12, weight: .semibold, design: .rounded)
+    static let headline = Font.system(size: 15, weight: .semibold, design: .rounded)
+    static let body = Font.system(size: 13, weight: .medium, design: .rounded)
+    static let caption = Font.system(size: 11, weight: .medium, design: .rounded)
+}
+
+private struct AppShellCard<Content: View>: View {
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        content
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(AppShellChrome.card)
+                    .shadow(color: .black.opacity(0.04), radius: 8, y: 2)
+            )
+    }
+}
