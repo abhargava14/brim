@@ -73,9 +73,27 @@ What each install path needs: [docs/mac-requirements.md](docs/mac-requirements.m
 1. Open the latest release: **[Download Brim (GitHub Releases)](https://github.com/abhargava14/brim/releases/latest)**
 2. Download **`Brim.dmg`**
 3. Open the DMG and drag **Brim** into **Applications**.
-4. Open Brim from Applications. If macOS blocks it (Gatekeeper): **right-click Brim → Open**, then **Open** again. Once is enough.
+4. Open Brim from Applications (see below if macOS shows a warning).
 
 You'll know it's running when you see the Brim mark in the menu bar and a black shape around the notch.
+
+#### If Mac says Brim can’t be opened
+
+macOS may show **“Brim Not Opened — Apple could not verify…”** (or similar). That’s **normal** until
+the app is Apple-notarized — **not malware**. Double‑click alone fails on recent macOS.
+
+**Workaround (once is enough):**
+
+1. In **Finder**, open **Applications**.
+2. **Right‑click** (or **Control‑click**) **Brim** → **Open**.
+3. In the dialog, click **Open** again.
+
+**Alternative:** **System Settings → Privacy & Security** → scroll to the message that Brim was
+blocked → **Open Anyway**.
+
+Do **not** turn Gatekeeper off system‑wide. Friend-facing steps:
+[docs/gatekeeper-friend-install.md](docs/gatekeeper-friend-install.md). Permanent fix (Developer ID +
+notarize): [docs/notarization.md](docs/notarization.md).
 
 ### Later updates (still no Xcode)
 
@@ -285,8 +303,9 @@ safely).
 
 ## Troubleshooting
 
-**macOS says the app "can't be opened".** Right-click Brim in Applications and choose
-**Open**, then **Open** again. You only need this once (Gatekeeper). No Xcode required.
+**macOS says the app "can't be opened" / “Apple could not verify…”.** Normal until notarization —
+not malware. See [If Mac says Brim can’t be opened](#if-mac-says-brim-cant-be-opened) (right‑click →
+**Open**, or Privacy & Security → **Open Anyway**). Do not disable Gatekeeper system‑wide.
 
 **A tool says "No logs found yet".** Use that tool once, then wait a few seconds. If it keeps its
 logs somewhere unusual, set the folder: Settings → open the connection → **Choose…**, or
