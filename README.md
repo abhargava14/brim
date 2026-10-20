@@ -61,50 +61,63 @@ top centre of the screen.
 
 ## Install
 
-Pick **one** of these.
+Pick **one** of these. Prefer Homebrew or a **pinned commit/tag** — avoid piping floating
+`main` into `bash`.
 
-### Option 1: One command (easiest)
-
-Open **Terminal** and paste:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/abhargava14/brim/main/install.sh | bash
-```
-
-It downloads Brim, builds it (about a minute the first time), puts **Brim** in your
-Applications folder, adds the `brim` terminal command to `~/.local/bin`, and starts the app
-(you'll see the first-run screen).
-
-### Option 2: From a clone
-
-```bash
-git clone https://github.com/abhargava14/brim.git
-cd brim
-./scripts/build-app.sh --install
-```
-
-### Option 3: DMG
-
-Build a disk image locally (or download one when published):
-
-```bash
-./scripts/build-dmg.sh
-open build/Brim.dmg
-```
-
-Drag **Brim** onto **Applications**, then open it from there.
-
-### Option 4: Homebrew
+### Option 1: Homebrew
 
 ```bash
 brew install --HEAD abhargava14/tap/brim
 ```
 
+### Option 2: Pinned installer (recommended over curl\|bash from main)
+
+Download the install script, pin a commit (or release tag), then run it:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/abhargava14/brim/main/install.sh -o install-brim.sh
+chmod +x install-brim.sh
+BRIM_COMMIT=<40-char-sha> ./install-brim.sh
+# or: BRIM_REF=v0.2.0 ./install-brim.sh   # when a release tag exists
+```
+
+When a GitHub release publishes `install.sh.sha256` / `Brim.dmg.sha256`, verify before running:
+
+```bash
+shasum -a 256 -c install-brim.sh.sha256
+# DMG path: BRIM_DMG=./Brim.dmg BRIM_DMG_SHA256=<hex> ./install-brim.sh
+```
+
+The installer builds from source (about a minute the first time), puts **Brim** in
+Applications, adds `brim` to `~/.local/bin`, and starts the app.
+
+### Option 3: From a clone
+
+```bash
+git clone https://github.com/abhargava14/brim.git
+cd brim
+git checkout <tag-or-sha>    # pin what you build
+./scripts/build-app.sh --install
+```
+
+### Option 4: DMG
+
+Build a disk image locally (writes `build/Brim.dmg` and `build/Brim.dmg.sha256`):
+
+```bash
+./scripts/build-dmg.sh
+shasum -a 256 -c build/Brim.dmg.sha256
+open build/Brim.dmg
+```
+
+Drag **Brim** onto **Applications**, then open it from there. Notarized DMGs need Apple
+Developer ID credentials — see [docs/notarization.md](docs/notarization.md).
+
 ### First launch
 
-Brim isn't signed with an Apple developer certificate yet. If macOS says it can't be opened
-(Gatekeeper): open **Applications**, **right-click Brim → Open**, then click **Open** again.
-You only need to do this once.
+Brim isn't notarized with an Apple developer certificate yet (ad-hoc signature only). If macOS
+says it can't be opened (Gatekeeper): open **Applications**, **right-click Brim → Open**, then
+click **Open** again. You only need to do this once.
 
 You'll know it's running when you see the ✳ icon in your menu bar and a black shape around the
 notch.
@@ -249,11 +262,19 @@ safely).
 - **No account, no analytics, no tracking.**
 - **Your prompts, replies and code are never read.** For Claude Code and Codex, Brim reads
   only usage numbers from their logs: tokens, model, time, session and project folder name.
-- **Tokens are stored in your Mac's Keychain**, never in plain files.
-- **Network:** log-based tools never touch the network. Copilot, Cursor, Windsurf, OpenRouter and
-  Usage URLs are contacted directly from your Mac, and only that tool's own service.
-- Your connection list lives in `~/Library/Application Support/Brim/connections.json`. It
-  holds no secrets.
+- **Tokens are stored in your Mac's Keychain**, never in plain files. When Claude's OAuth
+  access token is refreshed, Brim updates Claude Code's own Keychain item (same service name)
+  in-process so the secret never appears on process argv.
+- **Cursor / Windsurf:** connecting without a pasted token reuses that editor's local session
+  from `state.vscdb` (allowlisted keys only), then copies it into Brim's Keychain so the DB
+  is not re-read every refresh.
+- **Network:** log-based tools never touch the network. Built-in account tools only call an
+  allowlisted HTTPS host for that tool. Custom Usage URLs must be `https://` (no cleartext
+  `http://`). Brim trusts macOS system roots (no certificate pinning — see security notes in
+  the engineering review deliverable).
+- Your connection list lives in `~/Library/Application Support/Brim/connections.json`
+  (mode `600`). It holds no secrets.
+- Custom log folders must resolve under your home directory; symlink escapes are refused.
 
 ## Troubleshooting
 

@@ -26,6 +26,10 @@ public enum ConnectorError: LocalizedError {
 /// Fetches plan and allowance usage for account-based connections. Credentials come from a token
 /// the user saved for the connection (Keychain) or, when there is none, from the tool's own
 /// sign-in on this Mac. Nothing is sent anywhere except the tool's own service.
+///
+/// Cursor/Windsurf auto-connect **reuses session secrets** from each editor's local
+/// `state.vscdb` (see `VSCodeState`). On first successful read, Brim copies the secret into
+/// Brim's own Keychain and prefers that copy so the editor DB is not re-read every refresh.
 public enum AccountFetcher {
     public static func fetch(_ connection: Connection) async throws -> AccountUsage {
         let saved = Keychain.read(connection.id)
@@ -38,11 +42,39 @@ public enum AccountFetcher {
             }
             return try await copilot(token: token)
         case .cursor:
-            var usage = try await cursor(token: saved ?? VSCodeState.value(app: "Cursor", key: "cursorAuth/accessToken"))
-            // Only Cursor's own sign-in says whose it is; a pasted token may be another account.
-            if saved == nil { usage.accountLabel = VSCodeState.value(app: "Cursor", key: "cursorAuth/cachedEmail") }
-            return usage
-        case .windsurf: return try await windsurf(apiKey: saved ?? VSCodeState.windsurfAPIKey())
+            let fromEditor = saved == nil
+            let token = saved ?? VSCodeState.cursorAccessToken()
+            do {
+                var usage = try await cursor(token: token)
+                // Only Cursor's own sign-in says whose it is; a pasted token may be another account.
+                if fromEditor {
+                    usage.accountLabel = VSCodeState.cursorEmail()
+                    if let token, !token.isEmpty { Keychain.save(token, for: connection.id) }
+                }
+                return usage
+            } catch ConnectorError.unauthorized where saved != nil {
+                // Stale Keychain copy — drop it, re-read the editor DB once, retry.
+                Keychain.delete(connection.id)
+                let retry = VSCodeState.cursorAccessToken()
+                var usage = try await cursor(token: retry)
+                usage.accountLabel = VSCodeState.cursorEmail()
+                if let retry, !retry.isEmpty { Keychain.save(retry, for: connection.id) }
+                return usage
+            }
+        case .windsurf:
+            let fromEditor = saved == nil
+            let apiKey = saved ?? VSCodeState.windsurfAPIKey()
+            do {
+                let usage = try await windsurf(apiKey: apiKey)
+                if fromEditor, let apiKey, !apiKey.isEmpty { Keychain.save(apiKey, for: connection.id) }
+                return usage
+            } catch ConnectorError.unauthorized where saved != nil {
+                Keychain.delete(connection.id)
+                let retry = VSCodeState.windsurfAPIKey()
+                let usage = try await windsurf(apiKey: retry)
+                if let retry, !retry.isEmpty { Keychain.save(retry, for: connection.id) }
+                return usage
+            }
         case .openrouter: return try await openRouter(key: saved)
         case .customEndpoint: return try await endpoint(connection, token: saved)
         case .claude, .codex, .customLogs:
@@ -96,7 +128,7 @@ public enum AccountFetcher {
         }
         guard let userID, !userID.isEmpty else { throw ConnectorError.needsToken(tokenHelp(for: .cursor)) }
         let help = "Cursor didn't accept the sign-in. Open Cursor and sign in again."
-        let membership = VSCodeState.value(app: "Cursor", key: "cursorAuth/stripeMembershipType")
+        let membership = VSCodeState.cursorMembership()
 
         var summary = URLRequest(url: URL(string: "https://cursor.com/api/usage-summary")!)
         summary.setValue("WorkosCursorSessionToken=\(cookieValue)", forHTTPHeaderField: "Cookie")
@@ -138,15 +170,16 @@ public enum AccountFetcher {
 
     private static func endpoint(_ connection: Connection, token: String?) async throws -> AccountUsage {
         typealias O = Connection.Option
-        guard let url = URL(string: connection.option(O.url)), url.scheme == "https" || url.scheme == "http" else {
-            throw ConnectorError.needsToken("Set the usage URL (https://…) for \(connection.name).")
+        guard let url = URL(string: connection.option(O.url)), url.scheme == "https" else {
+            throw ConnectorError.needsToken("Set an https:// usage URL for \(connection.name). Cleartext http:// is not allowed.")
         }
         var request = URLRequest(url: url)
         let header = connection.option(O.authHeader)
         if let token, !token.isEmpty, !header.isEmpty {
             request.setValue((connection.options[O.authPrefix] ?? "") + token, forHTTPHeaderField: header)
         }
-        let data = try await send(request, service: connection.name, help: "\(connection.name) didn't accept the token.")
+        let data = try await send(request, service: connection.name, help: "\(connection.name) didn't accept the token.",
+                                  hostPolicy: .httpsOnly)
         let reader = EndpointUsage(
             usedPath: connection.option(O.usedPath), limitPath: connection.option(O.limitPath),
             planPath: connection.option(O.planPath), resetPath: connection.option(O.resetPath),
@@ -158,18 +191,55 @@ public enum AccountFetcher {
         return usage
     }
 
-    private static func send(_ request: URLRequest, service: String, help: String) async throws -> Data {
+    private static func send(_ request: URLRequest, service: String, help: String,
+                             hostPolicy: TrustedHosts.Policy = .allowlist) async throws -> Data {
         var request = request
         request.timeoutInterval = 20
         if request.value(forHTTPHeaderField: "User-Agent") == nil {
             request.setValue("Brim/0.2 (macOS)", forHTTPHeaderField: "User-Agent")
         }
+        try TrustedHosts.validate(request.url, policy: hostPolicy)
         let (data, response) = try await URLSession.shared.data(for: request)
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         switch status {
         case 200..<300: return data
         case 401, 403: throw ConnectorError.unauthorized(help)
         default: throw ConnectorError.http(status)
+        }
+    }
+}
+
+/// Hostnames Brim's built-in connectors may contact. Certificate **pinning** is not implemented:
+/// pins break when vendors rotate certificates, and Brim ships with zero third-party deps and no
+/// pin-update channel. Instead we require HTTPS, allowlist built-in hosts, and rely on macOS
+/// App Transport Security / system trust roots (same model as Safari).
+enum TrustedHosts {
+    enum Policy {
+        /// Built-in tool hosts must match the allowlist (system TLS trust; no SPKI pin store).
+        case allowlist
+        /// Custom endpoints: HTTPS only; hostname is user-chosen.
+        case httpsOnly
+    }
+
+    static let builtIn: Set<String> = [
+        "api.github.com",
+        "github.com",
+        "cursor.com",
+        "server.codeium.com",
+        "openrouter.ai",
+        "api.anthropic.com",
+        "platform.claude.com",
+    ]
+
+    static func validate(_ url: URL?, policy: Policy) throws {
+        guard let url, let scheme = url.scheme?.lowercased(), let host = url.host?.lowercased() else {
+            throw ConnectorError.unexpectedResponse("the service")
+        }
+        guard scheme == "https" else {
+            throw ConnectorError.needsToken("Only https:// URLs are allowed.")
+        }
+        if policy == .allowlist, !builtIn.contains(host) {
+            throw ConnectorError.unexpectedResponse(host)
         }
     }
 }
@@ -276,7 +346,9 @@ public enum GitHubDeviceFlow {
     }
 
     private static func post(_ url: String, _ form: [String: String]) async throws -> [String: Any] {
-        var request = URLRequest(url: URL(string: url)!)
+        guard let parsed = URL(string: url) else { throw Failure.unexpected }
+        try TrustedHosts.validate(parsed, policy: .allowlist)
+        var request = URLRequest(url: parsed)
         request.httpMethod = "POST"
         request.timeoutInterval = 20
         request.setValue("application/json", forHTTPHeaderField: "Accept")
@@ -294,10 +366,27 @@ public enum GitHubDeviceFlow {
 }
 
 /// Reads values from a VS Code-based editor's local state database (Cursor, Windsurf), read-only.
+///
+/// Only an allowlisted set of keys is read. Session tokens enter process memory briefly for the
+/// account fetch and, when auto-connecting, are copied into Brim's Keychain so subsequent
+/// refreshes do not re-open the editor DB. Tokens are never logged.
 public enum VSCodeState {
     private static let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
+    /// Keys Brim is willing to read from an editor `state.vscdb`. Do not broaden without review.
+    public static let allowedKeys: Set<String> = [
+        "cursorAuth/accessToken",
+        "cursorAuth/cachedEmail",
+        "cursorAuth/stripeMembershipType",
+        "windsurfAuthStatus",
+    ]
+
+    public static func cursorAccessToken() -> String? { value(app: "Cursor", key: "cursorAuth/accessToken") }
+    public static func cursorEmail() -> String? { value(app: "Cursor", key: "cursorAuth/cachedEmail") }
+    public static func cursorMembership() -> String? { value(app: "Cursor", key: "cursorAuth/stripeMembershipType") }
+
     public static func value(app: String, key: String) -> String? {
+        guard allowedKeys.contains(key) else { return nil }
         let path = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/Application Support/\(app)/User/globalStorage/state.vscdb").path
         guard FileManager.default.fileExists(atPath: path) else { return nil }
@@ -329,11 +418,13 @@ public enum VSCodeState {
               let data = raw.data(using: .utf8),
               let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
         else { return nil }
-        return object["apiKey"] as? String
+        // Keep only the apiKey field in memory; discard the rest of the auth blob.
+        let key = object["apiKey"] as? String
+        return key.flatMap { $0.isEmpty ? nil : $0 }
     }
 }
 
-/// Tokens the user pasted, one Keychain item per connection.
+/// Tokens the user pasted (or copied once from an editor DB), one Keychain item per connection.
 public enum Keychain {
     public static let service = "com.brim.app.connections"
     /// Where AI Island, Brim's old name, kept the same tokens.
@@ -352,16 +443,26 @@ public enum Keychain {
         return String(data: data, encoding: .utf8)
     }
 
-    public static func save(_ value: String, for account: String) {
-        delete(account)
-        let item: [String: Any] = [
+    @discardableResult
+    public static func save(_ value: String, for account: String) -> Bool {
+        let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
-            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock,
-            kSecValueData as String: Data(value.utf8),
         ]
-        SecItemAdd(item as CFDictionary, nil)
+        let attributes: [String: Any] = [
+            kSecValueData as String: Data(value.utf8),
+            kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
+        ]
+        let updated = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
+        if updated == errSecSuccess { return true }
+        if updated != errSecItemNotFound {
+            delete(account)
+        }
+        var item = query
+        item[kSecValueData as String] = Data(value.utf8)
+        item[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+        return SecItemAdd(item as CFDictionary, nil) == errSecSuccess
     }
 
     public static func delete(_ account: String, service: String = service) {
@@ -373,8 +474,15 @@ public enum Keychain {
         SecItemDelete(query as CFDictionary)
     }
 
+    /// Existence check without returning the secret.
     public static func has(_ account: String) -> Bool {
-        read(account) != nil
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+            kSecMatchLimit as String: kSecMatchLimitOne,
+        ]
+        return SecItemCopyMatching(query as CFDictionary, nil) == errSecSuccess
     }
 
     /// Moves tokens saved under the old service name to the current one.

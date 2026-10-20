@@ -88,8 +88,11 @@ public struct Connection: Codable, Equatable, Identifiable, Sendable {
         guard let format = logFormat else { return nil }
         let custom = option(Option.path)
         if !custom.isEmpty {
-            let expanded = custom.hasPrefix("~") ? home.path + custom.dropFirst() : custom
-            return LogSource(format: format, roots: [URL(fileURLWithPath: expanded)])
+            // Custom roots must resolve under $HOME and must not symlink-escape (see LogPath).
+            guard let root = LogPath.sanitizeRoot(custom, home: home) else {
+                return LogSource(format: format, roots: [])
+            }
+            return LogSource(format: format, roots: [root])
         }
         if kind == .customLogs { return LogSource(format: format, roots: []) }
         let configDir = option(Option.configDir)

@@ -509,3 +509,87 @@ final class OverlappingLogRootTests: XCTestCase {
         XCTAssertEqual(UsageSnapshot(tools: [main, core], generatedAt: Date()).todayTokens, main.today.total + core.today.total)
     }
 }
+
+final class LogPathTests: XCTestCase {
+    func testSanitizeRootAcceptsHomeRelativeAndRejectsOutside() throws {
+        let home = FileManager.default.temporaryDirectory.appendingPathComponent("brim-home-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: home) }
+        try FileManager.default.createDirectory(at: home.appendingPathComponent("logs"), withIntermediateDirectories: true)
+
+        let ok = try XCTUnwrap(LogPath.sanitizeRoot(home.appendingPathComponent("logs").path, home: home))
+        XCTAssertTrue(LogPath.isInside(ok, home: home))
+
+        XCTAssertNil(LogPath.sanitizeRoot("/tmp/brim-outside-\(UUID().uuidString)", home: home))
+        XCTAssertNil(LogPath.sanitizeRoot("", home: home))
+    }
+
+    func testSanitizeRootRefusesSymlinkEscape() throws {
+        let home = FileManager.default.temporaryDirectory.appendingPathComponent("brim-home-\(UUID().uuidString)")
+        let outside = FileManager.default.temporaryDirectory.appendingPathComponent("brim-out-\(UUID().uuidString)")
+        defer {
+            try? FileManager.default.removeItem(at: home)
+            try? FileManager.default.removeItem(at: outside)
+        }
+        try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
+        let link = home.appendingPathComponent("escape")
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: outside)
+        XCTAssertNil(LogPath.sanitizeRoot(link.path, home: home))
+    }
+
+    func testJsonlFilesSkipSymlinkEscape() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("brim-logs-\(UUID().uuidString)")
+        let outside = FileManager.default.temporaryDirectory.appendingPathComponent("brim-secret-\(UUID().uuidString)")
+        defer {
+            try? FileManager.default.removeItem(at: root)
+            try? FileManager.default.removeItem(at: outside)
+        }
+        let fm = FileManager.default
+        try fm.createDirectory(at: root.appendingPathComponent("proj"), withIntermediateDirectories: true)
+        try fm.createDirectory(at: outside, withIntermediateDirectories: true)
+        try "inside".write(to: root.appendingPathComponent("proj/ok.jsonl"), atomically: true, encoding: .utf8)
+        try "secret".write(to: outside.appendingPathComponent("leak.jsonl"), atomically: true, encoding: .utf8)
+        try fm.createSymbolicLink(at: root.appendingPathComponent("proj/leak.jsonl"),
+                                  withDestinationURL: outside.appendingPathComponent("leak.jsonl"))
+
+        let files = UsageEngine.jsonlFiles(under: root)
+        XCTAssertEqual(files.map(\.url.lastPathComponent), ["ok.jsonl"])
+    }
+}
+
+final class StatusLineBridgeHardeningTests: XCTestCase {
+    func testBridgeScriptRedactsToRateLimitsOnly() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let support = root.appendingPathComponent("support")
+        let setup = ClaudeStatusLineSetup(supportDirectory: support,
+                                          settingsURL: root.appendingPathComponent("claude/settings.json"))
+        try setup.connect()
+        let script = try String(contentsOf: setup.scriptURL, encoding: .utf8)
+        XCTAssertTrue(script.contains("plutil -extract rate_limits"))
+        XCTAssertFalse(script.contains("printf '%s' \"$INPUT\" > \"$DIR/claude-statusline.json"))
+
+        let input = #"{"session_id":"secret-session","transcript_path":"/tmp/x","rate_limits":{"five_hour":{"used_percentage":9}}}"#
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/sh")
+        process.arguments = [setup.scriptURL.path]
+        let stdin = Pipe()
+        process.standardInput = stdin
+        process.standardOutput = Pipe()
+        process.standardError = Pipe()
+        try process.run()
+        stdin.fileHandleForWriting.write(Data(input.utf8))
+        try stdin.fileHandleForWriting.close()
+        process.waitUntilExit()
+        XCTAssertEqual(process.terminationStatus, 0)
+
+        let saved = try Data(contentsOf: setup.dataURL)
+        let object = try XCTUnwrap(JSON.object(saved))
+        XCTAssertEqual(object.keys.sorted(), ["rate_limits"])
+        XCTAssertNil(object["session_id"])
+        XCTAssertNil(object["transcript_path"])
+        let attrs = try FileManager.default.attributesOfItem(atPath: setup.dataURL.path)
+        let mode = attrs[.posixPermissions] as? NSNumber
+        XCTAssertEqual(mode?.intValue ?? 0, 0o600)
+    }
+}

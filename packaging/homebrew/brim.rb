@@ -26,6 +26,10 @@ class Brim < Formula
       Connect tools from the terminal:
         brim add claude
         brim status
+
+      This formula builds from source (HEAD). Prefer a release tag/commit pin when
+      installing via scripts; the app is not Apple-notarized yet — first open may need
+      right-click → Open (Gatekeeper).
     EOS
   end
 

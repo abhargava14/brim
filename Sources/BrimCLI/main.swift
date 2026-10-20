@@ -80,9 +80,12 @@ func runBlocking<T>(_ body: @escaping @Sendable () async -> T) -> T {
     return box.value!
 }
 
-/// A token from --token, --token-stdin, or a hidden prompt when `ask` is true and we're in a terminal.
+/// A token from --token-stdin, a hidden prompt, or (discouraged) --token on argv.
 func readToken(ask: Bool, label: String) -> String? {
-    if let token = option("token") { return token }
+    if let token = option("token") {
+        fputs("warning: --token puts the secret on process argv; prefer --token-stdin or the prompt.\n", stderr)
+        return token
+    }
     if flag("token-stdin") {
         return readLine(strippingNewline: true)?.trimmingCharacters(in: .whitespacesAndNewlines)
     }
@@ -423,7 +426,7 @@ func printHelp() {
       --url URL          Usage URL (custom)
       --used P --limit P JSON paths to used / limit values, e.g. data.usage (custom)
       --header H --prefix P --label L --plan-path P --reset P   (custom)
-      --token T | --token-stdin   Save a token in the Keychain (prompted if needed)
+      --token-stdin | --token T   Save a token in the Keychain (prefer --token-stdin; --token warns)
 
     \(bold("EXAMPLES"))
       brim add claude
