@@ -260,7 +260,7 @@ public struct ToolSnapshot: Equatable, Sendable, Identifiable {
     public var sessions: [SessionUsage] = []
     /// Set when `planWindows` is an older reading, e.g. an idle Claude account's.
     public var limitsAsOf: Date?
-    /// Why limits are old or missing, e.g. "Open Claude Code to refresh".
+    /// Why limits are old or missing, e.g. "Open Claude Code once to refresh".
     public var limitsNote: String?
 
     public init(id: String, kind: ToolKind, name: String) {

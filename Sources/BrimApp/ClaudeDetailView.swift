@@ -130,7 +130,7 @@ struct ClaudeLimitRow: View {
     }
 }
 
-/// "as of 2h ago · Open Claude Code to refresh", or why there are no limits.
+/// "as of 2h ago · Open Claude Code once to refresh", or why there are no limits.
 struct ClaudeLimitsNote: View {
     let tool: ToolSnapshot
 

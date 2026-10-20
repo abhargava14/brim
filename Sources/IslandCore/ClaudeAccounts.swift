@@ -144,11 +144,14 @@ public enum ClaudeAccounts {
 /// The part of Claude Code's Keychain item Brim uses. Never printed: `description` is redacted.
 public struct ClaudeCredentials: Equatable, Sendable, CustomStringConvertible {
     public let accessToken: String
+    /// Present when Claude Code stored an OAuth refresh token; used to renew the access token.
+    public let refreshToken: String?
     public let expiresAt: Date?
     public let subscriptionType: String?
 
-    public init(accessToken: String, expiresAt: Date?, subscriptionType: String?) {
+    public init(accessToken: String, refreshToken: String? = nil, expiresAt: Date?, subscriptionType: String?) {
         self.accessToken = accessToken
+        self.refreshToken = refreshToken
         self.expiresAt = expiresAt
         self.subscriptionType = subscriptionType
     }
@@ -159,7 +162,12 @@ public struct ClaudeCredentials: Equatable, Sendable, CustomStringConvertible {
               let token = JSON.string(oauth, "accessToken")
         else { return nil }
         let expires = JSON.double(oauth, "expiresAt").map { Date(timeIntervalSince1970: $0 > 100_000_000_000 ? $0 / 1000 : $0) }
-        return ClaudeCredentials(accessToken: token, expiresAt: expires, subscriptionType: JSON.string(oauth, "subscriptionType"))
+        return ClaudeCredentials(
+            accessToken: token,
+            refreshToken: JSON.string(oauth, "refreshToken"),
+            expiresAt: expires,
+            subscriptionType: JSON.string(oauth, "subscriptionType")
+        )
     }
 
     public func isExpired(now: Date = Date()) -> Bool {
@@ -168,4 +176,52 @@ public struct ClaudeCredentials: Equatable, Sendable, CustomStringConvertible {
     }
 
     public var description: String { "ClaudeCredentials(<redacted>)" }
+}
+
+/// Fresh tokens from Claude Code's OAuth refresh (`POST …/v1/oauth/token`).
+public struct ClaudeOAuthTokens: Equatable, Sendable, CustomStringConvertible {
+    public let accessToken: String
+    public let refreshToken: String?
+    /// Seconds until the access token expires (typically 28800 = 8h).
+    public let expiresIn: TimeInterval
+
+    public init(accessToken: String, refreshToken: String?, expiresIn: TimeInterval) {
+        self.accessToken = accessToken
+        self.refreshToken = refreshToken
+        self.expiresIn = expiresIn
+    }
+
+    /// Parses Anthropic's token response. Fixtures must use redacted placeholders, never real tokens.
+    public static func parse(_ data: Data) -> ClaudeOAuthTokens? {
+        guard let root = JSON.object(data),
+              let access = JSON.string(root, "access_token"),
+              let expires = JSON.double(root, "expires_in"), expires > 0
+        else { return nil }
+        return ClaudeOAuthTokens(
+            accessToken: access,
+            refreshToken: JSON.string(root, "refresh_token"),
+            expiresIn: expires
+        )
+    }
+
+    public var description: String { "ClaudeOAuthTokens(<redacted>, expiresIn: \(Int(expiresIn))s)" }
+}
+
+/// Updates Claude Code's Keychain JSON in place after a refresh, preserving `mcpOAuth` and other fields.
+public enum ClaudeCredentialsJSON {
+    /// Writes the new access (and rotated refresh) token into `keychainJSON`. `expiresAt` is stored
+    /// as Unix milliseconds, matching Claude Code.
+    public static func applying(_ tokens: ClaudeOAuthTokens, to keychainJSON: Data, now: Date = Date()) -> Data? {
+        guard var root = JSON.object(keychainJSON),
+              var oauth = root["claudeAiOauth"] as? [String: Any]
+        else { return nil }
+        oauth["accessToken"] = tokens.accessToken
+        if let refresh = tokens.refreshToken { oauth["refreshToken"] = refresh }
+        oauth["expiresAt"] = (now.timeIntervalSince1970 + tokens.expiresIn) * 1000
+        root["claudeAiOauth"] = oauth
+        guard JSONSerialization.isValidJSONObject(root),
+              let data = try? JSONSerialization.data(withJSONObject: root, options: [.sortedKeys])
+        else { return nil }
+        return data
+    }
 }

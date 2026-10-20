@@ -112,7 +112,7 @@ public enum ClaudeLimits {
         public var windows: [PlanWindow]
         /// Set when the windows are an older reading.
         public var asOf: Date?
-        /// Why the limits are old or missing, e.g. "Open Claude Code to refresh".
+        /// Why the limits are old or missing, e.g. "Open Claude Code once to refresh".
         public var note: String?
     }
 

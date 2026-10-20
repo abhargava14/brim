@@ -61,10 +61,10 @@ final class ClaudeUsageTests: XCTestCase {
     func testOldReadingShownUntilItResets() {
         let fetched = now.addingTimeInterval(-7_200)
         let cached = ClaudeLimitsCache.Reading(windows: [window("5h", 64, resetsIn: -0.5), window("Week", 41, resetsIn: 30)], fetchedAt: fetched)
-        let resolved = ClaudeLimits.resolve(live: nil, statusLine: [], cached: cached, failure: "Sign-in expired. Open Claude Code to refresh.", now: now)
+        let resolved = ClaudeLimits.resolve(live: nil, statusLine: [], cached: cached, failure: "Sign-in expired and couldn't be renewed. Open Claude Code once to refresh.", now: now)
         XCTAssertEqual(resolved.windows.map(\.label), ["Week"], "the 5h reading already reset, so it no longer holds")
         XCTAssertEqual(resolved.asOf, fetched)
-        XCTAssertEqual(resolved.note, "Sign-in expired. Open Claude Code to refresh.")
+        XCTAssertEqual(resolved.note, "Sign-in expired and couldn't be renewed. Open Claude Code once to refresh.")
     }
 
     func testNeverGuessesWhenNothingIsKnown() {
@@ -167,12 +167,47 @@ final class ClaudeAccountTests: XCTestCase {
         let json = #"{"claudeAiOauth":{"accessToken":"sk-ant-oat01-SECRET","refreshToken":"sk-ant-ort01-SECRET","expiresAt":1800000000000,"scopes":["user:profile"],"subscriptionType":"team"},"mcpOAuth":{}}"#
         let credentials = try XCTUnwrap(ClaudeCredentials.parse(Data(json.utf8)))
         XCTAssertEqual(credentials.accessToken, "sk-ant-oat01-SECRET")
+        XCTAssertEqual(credentials.refreshToken, "sk-ant-ort01-SECRET")
         XCTAssertEqual(credentials.expiresAt, Date(timeIntervalSince1970: 1_800_000_000))
         XCTAssertEqual(credentials.subscriptionType, "team")
         XCTAssertTrue(credentials.isExpired(now: Date(timeIntervalSince1970: 1_800_000_000)))
         XCTAssertFalse(credentials.isExpired(now: Date(timeIntervalSince1970: 1_799_990_000)))
         XCTAssertFalse("\(credentials)".contains("SECRET"))
         XCTAssertNil(ClaudeCredentials.parse(Data(#"{"mcpOAuth":{}}"#.utf8)))
+    }
+
+    func testOAuthRefreshResponseIsParsedAndAppliedWithoutLeakingSecrets() throws {
+        // Redacted fixture shaped like Claude Code's token refresh answer (expires_in = 8h).
+        let response = #"""
+        {"access_token":"sk-ant-oat01-NEWACCESS","refresh_token":"sk-ant-ort01-NEWREFRESH",
+         "expires_in":28800,"token_type":"Bearer"}
+        """#
+        let tokens = try XCTUnwrap(ClaudeOAuthTokens.parse(Data(response.utf8)))
+        XCTAssertEqual(tokens.accessToken, "sk-ant-oat01-NEWACCESS")
+        XCTAssertEqual(tokens.refreshToken, "sk-ant-ort01-NEWREFRESH")
+        XCTAssertEqual(tokens.expiresIn, 28_800)
+        XCTAssertFalse("\(tokens)".contains("NEWACCESS"))
+        XCTAssertFalse("\(tokens)".contains("NEWREFRESH"))
+
+        let existing = #"""
+        {"mcpOAuth":{"keep":true},"claudeAiOauth":{"accessToken":"sk-ant-oat01-OLD",
+         "refreshToken":"sk-ant-ort01-OLD","expiresAt":1000,"scopes":["user:profile"],
+         "subscriptionType":"team","refreshTokenExpiresAt":9999999999999}}
+        """#
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let updated = try XCTUnwrap(ClaudeCredentialsJSON.applying(tokens, to: Data(existing.utf8), now: now))
+        let text = String(decoding: updated, as: UTF8.self)
+        XCTAssertTrue(text.contains("sk-ant-oat01-NEWACCESS"))
+        XCTAssertTrue(text.contains("sk-ant-ort01-NEWREFRESH"))
+        XCTAssertFalse(text.contains("sk-ant-oat01-OLD"))
+        XCTAssertFalse(text.contains("sk-ant-ort01-OLD"))
+        XCTAssertTrue(text.contains("\"keep\":true"), "mcpOAuth and other fields must be preserved")
+        XCTAssertTrue(text.contains("team"))
+        let credentials = try XCTUnwrap(ClaudeCredentials.parse(updated))
+        XCTAssertEqual(credentials.accessToken, "sk-ant-oat01-NEWACCESS")
+        XCTAssertEqual(credentials.refreshToken, "sk-ant-ort01-NEWREFRESH")
+        XCTAssertEqual(try XCTUnwrap(credentials.expiresAt).timeIntervalSince1970, 1_800_028_800, accuracy: 0.5)
+        XCTAssertNil(ClaudeOAuthTokens.parse(Data(#"{"error":"invalid_grant"}"#.utf8)))
     }
 
     func testConnectionFollowsItsConfigFolder() {

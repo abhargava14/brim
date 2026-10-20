@@ -41,8 +41,8 @@ public enum ClaudeUsageError: LocalizedError {
     public var errorDescription: String? {
         switch self {
         case .notSignedIn: return "Not signed in to Claude Code in this folder."
-        case .expired: return "Sign-in expired. Open Claude Code to refresh."
-        case .rejected: return "Claude didn't accept the sign-in. Open Claude Code to refresh."
+        case .expired: return "Sign-in expired and couldn't be renewed. Open Claude Code once to refresh."
+        case .rejected: return "Claude didn't accept the sign-in. Open Claude Code once to refresh."
         case .http(let code): return "Claude's usage service returned an error (HTTP \(code))."
         case .unexpected: return "Claude's usage service answered in a format Brim doesn't understand yet."
         }
@@ -50,18 +50,45 @@ public enum ClaudeUsageError: LocalizedError {
 }
 
 /// Reads an account's plan limits from Anthropic, the same request Claude Code's `/usage` makes.
-/// Uses the access token Claude Code keeps in the Keychain, read at call time and never stored,
-/// refreshed or logged. Nothing is sent anywhere but api.anthropic.com.
+///
+/// Uses the OAuth tokens Claude Code keeps in the Keychain. When the ~8h access token is stale,
+/// Brim refreshes it the same way Claude Code does (`POST https://platform.claude.com/v1/oauth/token`
+/// with Claude Code's public client id) and writes the rotated tokens back to that Keychain item
+/// so Claude Code stays in sync. Usage itself is still only requested from `api.anthropic.com`.
+/// Tokens are never logged.
 public enum ClaudeUsageFetcher {
-    static let url = URL(string: "https://api.anthropic.com/api/oauth/usage?at_wall=1&skip_spend=1")!
+    static let usageURL = URL(string: "https://api.anthropic.com/api/oauth/usage?at_wall=1&skip_spend=1")!
+    /// Claude Code's current OAuth token endpoint (not api.anthropic.com — that host serves usage/profile).
+    static let tokenURL = URL(string: "https://platform.claude.com/v1/oauth/token")!
+    /// Claude Code's public native OAuth client id.
+    static let clientID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
+
+    /// Serializes refresh single-flight bookkeeping off the async executor (NSLock isn't async-safe).
+    private static let refreshGate = DispatchQueue(label: "com.brim.claude-oauth-refresh")
+    private static var refreshWaiters: [String: [CheckedContinuation<Result<ClaudeCredentials, Error>, Never>]] = [:]
 
     public static func fetch(_ account: ClaudeAccount, now: Date = Date()) async throws -> [PlanWindow] {
-        guard let credentials = credentials(for: account) else { throw ClaudeUsageError.notSignedIn }
-        guard !credentials.isExpired(now: now) else { throw ClaudeUsageError.expired }
+        let stored = try await validCredentials(for: account, now: now)
+        do {
+            return try await requestUsage(accessToken: stored.accessToken)
+        } catch ClaudeUsageError.rejected {
+            // Access token rejected mid-life — refresh once and retry.
+            let renewed = try await refreshCredentials(for: account, force: true)
+            return try await requestUsage(accessToken: renewed.accessToken)
+        }
+    }
 
-        var request = URLRequest(url: url)
+    /// Credentials that are usable now: refresh when the access token is past (or within 60s of) expiry.
+    static func validCredentials(for account: ClaudeAccount, now: Date = Date()) async throws -> ClaudeCredentials {
+        guard let item = ClaudeCodeKeychain.read(for: account) else { throw ClaudeUsageError.notSignedIn }
+        if !item.credentials.isExpired(now: now) { return item.credentials }
+        return try await refreshCredentials(for: account, force: false)
+    }
+
+    private static func requestUsage(accessToken: String) async throws -> [PlanWindow] {
+        var request = URLRequest(url: usageURL)
         request.timeoutInterval = 20
-        request.setValue("Bearer \(credentials.accessToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         request.setValue("oauth-2025-04-20", forHTTPHeaderField: "anthropic-beta")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue("Brim/0.2 (macOS)", forHTTPHeaderField: "User-Agent")
@@ -75,23 +102,148 @@ public enum ClaudeUsageFetcher {
         }
     }
 
-    /// Claude Code's own Keychain item for the account's folder. Read with `/usr/bin/security`,
-    /// as Claude Code does, so macOS doesn't ask the user to approve Brim for the item.
+    /// Refreshes the account's OAuth tokens and writes them back to Claude Code's Keychain item.
+    /// Concurrent callers for the same Keychain service share one in-flight refresh so two Brim
+    /// timers can't rotate the same refresh token against each other.
+    static func refreshCredentials(for account: ClaudeAccount, force: Bool) async throws -> ClaudeCredentials {
+        guard let item = ClaudeCodeKeychain.read(for: account) else { throw ClaudeUsageError.notSignedIn }
+        if !force, !item.credentials.isExpired() { return item.credentials }
+        guard item.credentials.refreshToken != nil else { throw ClaudeUsageError.expired }
+
+        let service = item.service
+        return try await withCheckedContinuation { (continuation: CheckedContinuation<Result<ClaudeCredentials, Error>, Never>) in
+            refreshGate.async {
+                if refreshWaiters[service] != nil {
+                    refreshWaiters[service, default: []].append(continuation)
+                    return
+                }
+                refreshWaiters[service] = [continuation]
+                Task {
+                    let result: Result<ClaudeCredentials, Error>
+                    do {
+                        result = .success(try await performRefresh(account: account, service: service, force: force))
+                    } catch {
+                        result = .failure(error)
+                    }
+                    refreshGate.async {
+                        let waiters = refreshWaiters.removeValue(forKey: service) ?? []
+                        for waiter in waiters { waiter.resume(returning: result) }
+                    }
+                }
+            }
+        }.get()
+    }
+
+    private static func performRefresh(account: ClaudeAccount, service: String, force: Bool) async throws -> ClaudeCredentials {
+        // Re-read under the single-flight so a concurrent Claude Code refresh wins without a fight.
+        guard let latest = ClaudeCodeKeychain.read(service: service) ?? ClaudeCodeKeychain.read(for: account) else {
+            throw ClaudeUsageError.notSignedIn
+        }
+        if !force, !latest.credentials.isExpired() { return latest.credentials }
+        guard let refreshToken = latest.credentials.refreshToken else { throw ClaudeUsageError.expired }
+
+        let tokens = try await requestTokenRefresh(refreshToken: refreshToken)
+        guard let updatedJSON = ClaudeCredentialsJSON.applying(tokens, to: latest.raw) else {
+            throw ClaudeUsageError.unexpected
+        }
+        // Refresh tokens rotate: write back before using, or Claude Code's copy goes stale.
+        guard ClaudeCodeKeychain.write(service: latest.service, data: updatedJSON) else {
+            throw ClaudeUsageError.expired
+        }
+        guard let credentials = ClaudeCredentials.parse(updatedJSON) else { throw ClaudeUsageError.unexpected }
+        return credentials
+    }
+
+    /// Exchanges a refresh token the way Claude Code does. Response body is parsed then discarded;
+    /// tokens are never logged.
+    static func requestTokenRefresh(refreshToken: String) async throws -> ClaudeOAuthTokens {
+        var request = URLRequest(url: tokenURL)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 30
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("Brim/0.2 (macOS)", forHTTPHeaderField: "User-Agent")
+        let body: [String: String] = [
+            "grant_type": "refresh_token",
+            "refresh_token": refreshToken,
+            "client_id": clientID
+        ]
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        let (data, response) = try await URLSession.shared.data(for: request)
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        switch status {
+        case 200..<300:
+            guard let tokens = ClaudeOAuthTokens.parse(data) else { throw ClaudeUsageError.unexpected }
+            return tokens
+        case 400, 401, 403:
+            throw ClaudeUsageError.expired
+        default:
+            throw ClaudeUsageError.http(status)
+        }
+    }
+
+    /// Claude Code's own Keychain item for the account's folder.
     public static func credentials(for account: ClaudeAccount) -> ClaudeCredentials? {
-        let user = ProcessInfo.processInfo.environment["USER"].flatMap { $0.isEmpty ? nil : $0 } ?? NSUserName()
+        ClaudeCodeKeychain.read(for: account)?.credentials
+    }
+}
+
+/// Read/write Claude Code's generic-password Keychain item via `/usr/bin/security`, matching how
+/// Claude Code itself stores credentials so macOS doesn't ask the user to approve Brim separately.
+enum ClaudeCodeKeychain {
+    struct Item {
+        var service: String
+        var credentials: ClaudeCredentials
+        var raw: Data
+    }
+
+    static var accountName: String {
+        ProcessInfo.processInfo.environment["USER"].flatMap { $0.isEmpty ? nil : $0 } ?? NSUserName()
+    }
+
+    static func read(for account: ClaudeAccount) -> Item? {
         for service in account.keychainServices {
-            let process = Process()
-            process.executableURL = URL(fileURLWithPath: "/usr/bin/security")
-            process.arguments = ["find-generic-password", "-a", user, "-s", service, "-w"]
-            let output = Pipe()
-            process.standardOutput = output
-            process.standardError = Pipe()
-            do { try process.run() } catch { return nil }
-            let data = output.fileHandleForReading.readDataToEndOfFile()
-            process.waitUntilExit()
-            if process.terminationStatus == 0, let credentials = ClaudeCredentials.parse(data) { return credentials }
+            if let item = read(service: service) { return item }
         }
         return nil
+    }
+
+    static func read(service: String) -> Item? {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/security")
+        process.arguments = ["find-generic-password", "-a", accountName, "-s", service, "-w"]
+        let output = Pipe()
+        process.standardOutput = output
+        process.standardError = Pipe()
+        do { try process.run() } catch { return nil }
+        let data = output.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        guard process.terminationStatus == 0, let credentials = ClaudeCredentials.parse(data) else { return nil }
+        return Item(service: service, credentials: credentials, raw: data)
+    }
+
+    /// Updates the existing item (`-U`). Returns false if `security` fails — caller must not keep
+    /// using a rotated refresh token that never made it to the Keychain.
+    static func write(service: String, data: Data) -> Bool {
+        guard let password = String(data: data, encoding: .utf8) else { return false }
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/security")
+        // Password is passed as an argument (same as common CLI tools); never logged by Brim.
+        process.arguments = ["add-generic-password", "-a", accountName, "-s", service, "-U", "-w", password]
+        process.standardOutput = Pipe()
+        process.standardError = Pipe()
+        do { try process.run() } catch { return false }
+        process.waitUntilExit()
+        return process.terminationStatus == 0
+    }
+}
+
+private extension Result {
+    func get() throws -> Success {
+        switch self {
+        case .success(let value): return value
+        case .failure(let error): throw error
+        }
     }
 }
 
