@@ -82,7 +82,7 @@ curl -fsSL https://raw.githubusercontent.com/abhargava14/brim/v0.3.0/install.sh 
 chmod +x install-brim.sh
 ./install-brim.sh
 # or explicit: BRIM_REF=v0.3.0 ./install-brim.sh
-# or: BRIM_COMMIT=3f712624237927d8ee6287e33c6f1eb0efb11e69 ./install-brim.sh
+# or: BRIM_COMMIT=1a4698c2519b0f58fc5805252caf636dcd3d6295 ./install-brim.sh
 ```
 
 When a GitHub release publishes `install.sh.sha256` / `Brim.dmg.sha256`, verify before running:
