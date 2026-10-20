@@ -197,6 +197,8 @@ struct ToolGlyph: View {
     var mood: GlyphMood = .idle
     var size: CGFloat = 11
     var playful = true
+    /// Attention hop (-3pt). Off in compact wings so glyph + value stay on one centerline.
+    var bounce = true
     /// Custom connections show the first letter of this name instead of a logo.
     var name: String?
 
@@ -251,7 +253,7 @@ struct ToolGlyph: View {
     }
 
     private var offsetY: CGFloat {
-        guard animated else { return 0 }
+        guard animated, bounce else { return 0 }
         return mood == .attention && phase ? -3 : 0
     }
 
