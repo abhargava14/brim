@@ -497,12 +497,34 @@ case "add":
         case .failure(let error): fail(error.localizedDescription)
         }
     }
+    // Probe options before writing so a duplicate Claude email fails without adding a row.
+    var probe = Connection(kind: kind)
+    if let newAccount { probe.options[Connection.Option.configDir] = newAccount.configDir.path }
+    let namedByUser = arguments.contains("--name")
+    applyOptions(to: &probe)
+    if kind == .claude {
+        let email = newAccount?.email
+            ?? probe.claudeConfigDir().flatMap { ClaudeAccounts.account(configDir: $0).email }
+        let candidateDir = probe.claudeConfigDir() ?? newAccount?.configDir
+        if let email,
+           let existing = ClaudeDuplicateEmail.existing(email: email, in: file.connections),
+           ClaudeDuplicateEmail.isDuplicate(email: email, candidateConfigDir: candidateDir, against: existing) {
+            fail(ClaudeDuplicateEmail.userMessage(email: email))
+        }
+    }
     var connection = file.add(kind)
     if let newAccount { connection.options[Connection.Option.configDir] = newAccount.configDir.path }
-    let namedByUser = arguments.contains("--name")
-    applyOptions(to: &connection)
-    if kind == .claude, !namedByUser, let dir = connection.claudeConfigDir(), !connection.option(Connection.Option.configDir).isEmpty {
-        connection.name = ClaudeAccounts.account(configDir: dir).suggestedName
+    connection.options.merge(probe.options) { _, new in new }
+    connection.planID = probe.planID
+    if namedByUser { connection.name = probe.name }
+    if kind == .claude {
+        if let email = newAccount?.email
+            ?? connection.claudeConfigDir().flatMap({ ClaudeAccounts.account(configDir: $0).email }) {
+            connection.options[Connection.Option.accountEmail] = AccountEmail.normalize(email)
+        }
+        if !namedByUser, let dir = connection.claudeConfigDir(), !connection.option(Connection.Option.configDir).isEmpty {
+            connection.name = ClaudeAccounts.account(configDir: dir).suggestedName
+        }
     }
     let needsToken = kind == .openrouter || (kind == .customEndpoint && arguments.contains("--token-stdin"))
     if let token = readToken(ask: needsToken, label: "\(kind.displayName) token") {

@@ -339,7 +339,7 @@ public enum ClaudeAccountSetupError: LocalizedError, Equatable {
         switch self {
         case .notInstalled: return "To finish Claude sign-in, install Claude Code once from claude.com/claude-code (Brim uses its browser sign-in; you don't need the Terminal)."
         case .cancelled: return "Sign-in cancelled."
-        case .duplicateEmail(let email): return "A Claude account for \(email) is already connected."
+        case .duplicateEmail(let email): return ClaudeDuplicateEmail.userMessage(email: email)
         case .failed(let reason): return reason
         }
     }

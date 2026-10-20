@@ -272,58 +272,22 @@ final class AppSettings: ObservableObject {
 
     // MARK: - Duplicate emails
 
-    /// Existing connection whose auth email matches (normalized), optionally excluding one id.
+    /// Existing Claude connection whose auth email matches (normalized), optionally excluding one id.
     func connection(withEmail email: String?, kind: ToolKind? = nil, excluding id: String? = nil) -> Connection? {
-        guard let email, !email.isEmpty else { return nil }
-        let needle = AccountEmail.normalize(email)
-        return connections.first { connection in
-            if let id, connection.id == id { return false }
-            if let kind, connection.kind != kind { return false }
-            if let stored = connection.accountEmail, stored == needle { return true }
-            if connection.kind == .claude, let dir = connection.claudeConfigDir() {
-                let live = ClaudeAccounts.account(configDir: dir).email
-                return AccountEmail.matches(live, needle)
-            }
-            return false
-        }
+        // Only Claude is gated by auth email today.
+        if let kind, kind != .claude { return nil }
+        return ClaudeDuplicateEmail.existing(email: email, in: connections, excluding: id)
     }
 
-    /// On launch: collapse same-email Claude connections to one (prefer enabled + stored email + token).
-    /// Returns how many duplicates were removed.
+    /// On launch: collapse same-email Claude connections to one (prefer enabled + stored email).
+    /// Callers must show `collapsedEmails` to the user — never silent.
     @discardableResult
-    func dedupeClaudeConnectionsByEmail() -> Int {
-        var byEmail: [String: [Connection]] = [:]
-        for connection in connections where connection.kind == .claude {
-            let email = connection.accountEmail
-                ?? ClaudeAccounts.account(configDir: connection.claudeConfigDir() ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude")).email.flatMap(AccountEmail.normalize)
-            guard let email, !email.isEmpty else { continue }
-            byEmail[email, default: []].append(connection)
-        }
-        var removeIDs = Set<String>()
-        for (_, group) in byEmail where group.count > 1 {
-            let keeper = group.max { a, b in
-                // Prefer enabled, then one with a stored email option, then stable id.
-                if a.isEnabled != b.isEnabled { return !a.isEnabled && b.isEnabled }
-                let aEmail = a.accountEmail != nil
-                let bEmail = b.accountEmail != nil
-                if aEmail != bEmail { return !aEmail && bEmail }
-                return a.id > b.id
-            }!
-            for connection in group where connection.id != keeper.id {
-                removeIDs.insert(connection.id)
-            }
-            // Ensure keeper remembers the email.
-            if var kept = connections.first(where: { $0.id == keeper.id }), kept.accountEmail == nil,
-               let email = byEmail.first(where: { $0.value.contains(where: { $0.id == keeper.id }) })?.key {
-                kept.options[Connection.Option.accountEmail] = email
-                if let index = connections.firstIndex(where: { $0.id == kept.id }) {
-                    connections[index] = kept
-                }
-            }
-        }
-        guard !removeIDs.isEmpty else { return 0 }
-        connections.removeAll { removeIDs.contains($0.id) }
-        if removeIDs.contains(pinnedID) { pinnedID = "" }
-        return removeIDs.count
+    func dedupeClaudeConnectionsByEmail() -> ClaudeDuplicateEmail.DedupeResult {
+        let result = ClaudeDuplicateEmail.dedupe(connections)
+        guard result.removedCount > 0 else { return result }
+        let removed = Set(connections.map(\.id)).subtracting(result.connections.map(\.id))
+        connections = result.connections
+        if removed.contains(pinnedID) { pinnedID = "" }
+        return result
     }
 }

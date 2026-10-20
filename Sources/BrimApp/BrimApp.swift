@@ -30,8 +30,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         ClaudeAccountHook.install()
-        // Collapse same-email Claude connections left over from older builds.
-        _ = settings.dedupeClaudeConnectionsByEmail()
+        // Collapse same-email Claude connections left over from older builds — and tell the user.
+        let dedupe = settings.dedupeClaudeConnectionsByEmail()
         setUpStatusItem()
         island = IslandController(
             model: model, settings: settings, setup: setup,
@@ -40,6 +40,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             addAccount: { [weak self] in self?.openAddAccount($0) }
         )
         model.start()
+
+        if dedupe.removedCount > 0 {
+            // Once per launch when leftovers are collapsed — never silent delete.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                Self.reportCollapsedDuplicates(dedupe)
+            }
+        }
 
         // First run: pick tools found on this Mac, then how the island should look.
         if !UserDefaults.standard.bool(forKey: "didOnboard") {
@@ -54,6 +61,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.openAddAccount(AddAccountRequest(kind: .claude))
             }
         }
+    }
+
+    /// Visible alert when launch dedupe removes duplicate Claude rows.
+    private static func reportCollapsedDuplicates(_ result: ClaudeDuplicateEmail.DedupeResult) {
+        let alert = NSAlert()
+        alert.messageText = result.removedCount == 1
+            ? "Duplicate Claude account removed"
+            : "Duplicate Claude accounts removed"
+        let lines = result.collapsedEmails.map { ClaudeDuplicateEmail.userMessage(email: $0) }
+        alert.informativeText = lines.joined(separator: "\n")
+            + "\n\nKept one connection per email. Sign in again only for a different Claude account."
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
     }
 
     // MARK: - Menu bar

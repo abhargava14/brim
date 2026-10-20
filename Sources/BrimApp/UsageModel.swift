@@ -193,6 +193,11 @@ final class UsageModel: ObservableObject {
         fetching.insert(connection.id)
         Task {
             let account = await Task.detached { ClaudeAccounts.account(configDir: configDir) }.value
+            // Email may arrive only after OAuth finishes writing `.claude.json` — check when known.
+            if self.adoptClaudeEmailIfNeeded(for: connection.id, email: account.email) != nil {
+                self.fetching.remove(connection.id)
+                return
+            }
             self.claudeAccounts[connection.id] = account
             do {
                 let windows = try await ClaudeUsageFetcher.fetch(account)
@@ -560,14 +565,22 @@ final class UsageModel: ObservableObject {
     }
 
     /// Adds a connection for a Claude account that just signed in (see `AddClaudeAccountView`).
-    /// Refuses a second connection for the same auth email.
+    /// Refuses a second connection for the same auth email (caller must show the error to the user).
     @discardableResult
     func addClaudeConnection(for account: ClaudeAccount) throws -> Connection {
-        if let email = account.email, let existing = settings.connection(withEmail: email, kind: .claude) {
+        if let email = account.email,
+           let existing = ClaudeDuplicateEmail.existing(email: email, in: settings.connections) {
             // Same folder → reconnect; different folder / duplicate sign-in → refuse.
-            if existing.claudeConfigDir()?.standardizedFileURL == account.configDir.standardizedFileURL {
+            if !ClaudeDuplicateEmail.isDuplicate(
+                email: email,
+                candidateConfigDir: account.configDir,
+                against: existing
+            ) {
+                var updated = existing
+                updated.options[Connection.Option.accountEmail] = AccountEmail.normalize(email)
+                settings.update(updated)
                 connect(existing.id)
-                return existing
+                return updated
             }
             throw ClaudeAccountSetupError.duplicateEmail(AccountEmail.normalize(email))
         }
@@ -590,6 +603,33 @@ final class UsageModel: ObservableObject {
         justConnected.insert(connection.id)
         fetchClaudeLimits(connection)
         return connection
+    }
+
+    /// When an email becomes known after OAuth/logs (was missing at add time), store it or refuse the duplicate.
+    /// Returns a user-visible message when this connection was removed as a duplicate.
+    @discardableResult
+    func adoptClaudeEmailIfNeeded(for connectionID: String, email: String?) -> String? {
+        guard let email, !email.isEmpty,
+              var connection = settings.connection(connectionID),
+              connection.kind == .claude
+        else { return nil }
+        let normalized = AccountEmail.normalize(email)
+        if connection.accountEmail == normalized { return nil }
+        if let other = ClaudeDuplicateEmail.existing(email: normalized, in: settings.connections, excluding: connectionID),
+           ClaudeDuplicateEmail.isDuplicate(email: normalized, candidateConfigDir: connection.claudeConfigDir(), against: other) {
+            // Late-discovered collision: keep the other connection, remove this one, tell the user.
+            settings.remove(connectionID)
+            claudeAccounts.removeValue(forKey: connectionID)
+            claudeLimits.removeValue(forKey: connectionID)
+            claudeErrors.removeValue(forKey: connectionID)
+            publish()
+            let message = ClaudeDuplicateEmail.userMessage(email: normalized)
+            ClaudeDuplicateEmailUI.report(message)
+            return message
+        }
+        connection.options[Connection.Option.accountEmail] = normalized
+        settings.update(connection)
+        return nil
     }
 
     func isWorking(_ tool: ToolSnapshot) -> Bool {
