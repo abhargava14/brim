@@ -2,7 +2,7 @@
 
 Short path for Terminal. Prefer the app for **Add Account…** (menu bar ✳ → Connections & Settings). CLI is best for install, status, and update.
 
-Current release: **[v0.3.0](https://github.com/abhargava14/brim/releases/tag/v0.3.0)** (`3f71262`). Needs macOS 13+ and `xcode-select --install` (builds from source).
+Current release: **[v0.3.0](https://github.com/abhargava14/brim/releases/tag/v0.3.0)** (`1a4698c`). Needs macOS 13+ and `xcode-select --install` (builds from source).
 
 ## 1. Install (pick one)
 
@@ -16,12 +16,12 @@ chmod +x install-brim.sh
 ./install-brim.sh
 ```
 
-The script’s built-in pin is v0.3.0 (`3f71262…`). To be explicit:
+The script’s built-in pin is v0.3.0 (`1a4698c…`). To be explicit:
 
 ```bash
 BRIM_REF=v0.3.0 ./install-brim.sh
 # or
-BRIM_COMMIT=3f712624237927d8ee6287e33c6f1eb0efb11e69 ./install-brim.sh
+BRIM_COMMIT=1a4698c2519b0f58fc5805252caf636dcd3d6295 ./install-brim.sh
 ```
 
 ### B. Homebrew
