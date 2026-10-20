@@ -234,8 +234,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     ) -> NSMenuItem {
         let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
         if bindTarget { item.target = self }
-        if let image = NSImage(systemSymbolName: symbol, accessibilityDescription: title) {
-            image.isTemplate = true
+        // Size the glyph for menu rows; leave system template rendering alone (mutating
+        // isTemplate on the shared system image can blank some symbols in the menu bar).
+        if let image = NSImage(systemSymbolName: symbol, accessibilityDescription: title)?.copy() as? NSImage {
+            image.size = NSSize(width: 16, height: 16)
             item.image = image
         }
         return item
