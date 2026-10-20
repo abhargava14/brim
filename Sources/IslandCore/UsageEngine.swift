@@ -15,14 +15,18 @@ public final class UsageEngine: @unchecked Sendable {
         var offset: UInt64 = 0
         var remainder = Data()
         var codex: CodexLogParser?
-        /// Last observed size/mtime; when `offset == size` and both match, the file is skipped.
+        /// Last observed size/mtime (whole seconds); when `offset == size` and both match, the file is skipped.
         var knownSize: UInt64 = 0
-        var knownModified: Date = .distantPast
+        var knownModifiedSeconds: Int64 = .min
 
         init(connectionID: String, format: LogFormat) {
             self.connectionID = connectionID
             self.format = format
             if format == .codex { codex = CodexLogParser() }
+        }
+
+        static func seconds(of date: Date) -> Int64 {
+            Int64(date.timeIntervalSince1970.rounded(.down))
         }
     }
 
@@ -129,7 +133,7 @@ public final class UsageEngine: @unchecked Sendable {
                 cursor.offset = 0
                 cursor.remainder = Data()
                 cursor.knownSize = 0
-                cursor.knownModified = .distantPast
+                cursor.knownModifiedSeconds = .min
                 if cursor.format == .codex { cursor.codex = CodexLogParser() }
             }
         }
@@ -169,12 +173,13 @@ public final class UsageEngine: @unchecked Sendable {
                 for (url, size, modified) in Self.jsonlFiles(under: root) {
                     let key = id + "|" + url.path
                     guard let cursor = cursors[key] else { continue }
+                    let modifiedSeconds = FileCursor.seconds(of: modified)
                     if size < cursor.offset {
                         truncated.insert(id)
                     } else if cursor.offset > 0,
                               cursor.offset == cursor.knownSize,
                               cursor.remainder.isEmpty,
-                              (size != cursor.knownSize || modified != cursor.knownModified),
+                              (size != cursor.knownSize || modifiedSeconds != cursor.knownModifiedSeconds),
                               size <= cursor.knownSize {
                         // Completed file was replaced in place (same or shorter length).
                         truncated.insert(id)
@@ -206,17 +211,18 @@ public final class UsageEngine: @unchecked Sendable {
                     if source.format == .claude, let session = Self.claudeSessionID(of: url) {
                         writes[session] = max(writes[session] ?? .distantPast, modified)
                     }
+                    let modifiedSeconds = FileCursor.seconds(of: modified)
                     if size < cursor.offset || truncated.contains(id) {
                         cursor.offset = 0
                         cursor.remainder = Data()
                         cursor.knownSize = 0
-                        cursor.knownModified = .distantPast
+                        cursor.knownModifiedSeconds = .min
                         if source.format == .codex { cursor.codex = CodexLogParser() }
                     }
                     // Completed and unchanged: skip open once cursors persist across restarts.
                     if size == cursor.offset,
                        size == cursor.knownSize,
-                       modified == cursor.knownModified,
+                       modifiedSeconds == cursor.knownModifiedSeconds,
                        cursor.remainder.isEmpty {
                         continue
                     }
@@ -225,7 +231,7 @@ public final class UsageEngine: @unchecked Sendable {
                         read(url, cursor: cursor)
                     }
                     cursor.knownSize = size
-                    cursor.knownModified = modified
+                    cursor.knownModifiedSeconds = modifiedSeconds
                 }
             }
             states[id, default: ConnectionState()].fileCount = count
@@ -243,7 +249,7 @@ public final class UsageEngine: @unchecked Sendable {
             cursor.offset = 0
             cursor.remainder = Data()
             cursor.knownSize = 0
-            cursor.knownModified = .distantPast
+            cursor.knownModifiedSeconds = .min
             if cursor.format == .codex { cursor.codex = CodexLogParser() }
         }
     }
@@ -501,12 +507,12 @@ public final class UsageEngine: @unchecked Sendable {
                     // Persist incomplete-line safety: offset is the last fully consumed byte.
                     cursor.offset = file.offset
                     cursor.knownSize = file.size
-                    cursor.knownModified = file.modified
+                    cursor.knownModifiedSeconds = file.modifiedSeconds
                 } else {
                     // Codex parser state is not on disk; re-scan and rely on seenKeys.
                     cursor.offset = 0
                     cursor.knownSize = 0
-                    cursor.knownModified = .distantPast
+                    cursor.knownModifiedSeconds = .min
                 }
                 cursors[key] = cursor
             }
@@ -533,7 +539,7 @@ public final class UsageEngine: @unchecked Sendable {
                 files[path] = FileCheckpoint(
                     offset: committed,
                     size: cursor.knownSize,
-                    modified: cursor.knownModified,
+                    modifiedSeconds: cursor.knownModifiedSeconds == .min ? 0 : cursor.knownModifiedSeconds,
                     format: cursor.format
                 )
             }

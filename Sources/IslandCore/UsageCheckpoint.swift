@@ -79,17 +79,53 @@ public struct ConnectionCheckpoint: Codable, Equatable, Sendable {
     }
 }
 
-public struct FileCheckpoint: Codable, Equatable, Sendable {
+public struct FileCheckpoint: Equatable, Sendable {
     public var offset: UInt64
     public var size: UInt64
-    public var modified: Date
+    /// Whole-second mtime so JSON round-trips match FileManager dates (sub-second precision is lost).
+    public var modifiedSeconds: Int64
     public var format: LogFormat
+
+    public var modified: Date { Date(timeIntervalSince1970: TimeInterval(modifiedSeconds)) }
 
     public init(offset: UInt64, size: UInt64, modified: Date, format: LogFormat) {
         self.offset = offset
         self.size = size
-        self.modified = modified
+        self.modifiedSeconds = Int64(modified.timeIntervalSince1970.rounded(.down))
         self.format = format
+    }
+
+    public init(offset: UInt64, size: UInt64, modifiedSeconds: Int64, format: LogFormat) {
+        self.offset = offset
+        self.size = size
+        self.modifiedSeconds = modifiedSeconds
+        self.format = format
+    }
+}
+
+extension FileCheckpoint: Codable {
+    enum CodingKeys: String, CodingKey { case offset, size, modified, modifiedSeconds, format }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        offset = try container.decode(UInt64.self, forKey: .offset)
+        size = try container.decode(UInt64.self, forKey: .size)
+        format = try container.decode(LogFormat.self, forKey: .format)
+        if let seconds = try container.decodeIfPresent(Int64.self, forKey: .modifiedSeconds) {
+            modifiedSeconds = seconds
+        } else if let date = try container.decodeIfPresent(Date.self, forKey: .modified) {
+            modifiedSeconds = Int64(date.timeIntervalSince1970.rounded(.down))
+        } else {
+            modifiedSeconds = 0
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(offset, forKey: .offset)
+        try container.encode(size, forKey: .size)
+        try container.encode(modifiedSeconds, forKey: .modifiedSeconds)
+        try container.encode(format, forKey: .format)
     }
 }
 

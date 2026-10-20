@@ -78,7 +78,7 @@ final class UsageCheckpointTests: XCTestCase {
         let stored = try XCTUnwrap(files.values.first { $0.size == size } ?? files[file.path] ?? files[file.standardizedFileURL.path])
         XCTAssertEqual(stored.offset, size)
         XCTAssertEqual(stored.size, size)
-        XCTAssertEqual(stored.modified.timeIntervalSince1970, modified.timeIntervalSince1970, accuracy: 1)
+        XCTAssertEqual(stored.modifiedSeconds, Int64(modified.timeIntervalSince1970.rounded(.down)))
     }
 
     func testPrunesSeenKeysAndPastSessionUsage() throws {
