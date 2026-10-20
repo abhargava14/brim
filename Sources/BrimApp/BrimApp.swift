@@ -202,7 +202,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     ) -> NSMenuItem {
         let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
         if bindTarget { item.target = self }
-        item.image = NSImage(systemSymbolName: symbol, accessibilityDescription: title)
+        if let image = NSImage(systemSymbolName: symbol, accessibilityDescription: title) {
+            image.isTemplate = true
+            item.image = image
+        }
         return item
     }
 

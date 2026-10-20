@@ -3,21 +3,21 @@ import SwiftUI
 
 // MARK: - Compact
 
+/// Default notch view: one connection at a time (glyph + primary metric). Hover/click expands for detail.
 struct CompactView: View {
     @ObservedObject var model: UsageModel
     @ObservedObject var state: IslandState
 
-    /// With more than two tools, the wings take turns every few seconds.
-    private static let pageSeconds: Double = 4
+    /// When several tools are connected, they take turns in the left wing.
+    private static let pageSeconds: Double = 6
 
     var body: some View {
         let tools = model.featuredTools
         TimelineView(.periodic(from: .now, by: Self.pageSeconds)) { context in
-            let pages = max(1, Int(ceil(Double(tools.count) / 2)))
-            // `featuredTools` puts urgent and working tools first; the pages keep turning regardless.
+            let pages = max(1, tools.count)
             let page = Int(context.date.timeIntervalSince1970 / Self.pageSeconds) % pages
-            let pair = Array(tools.dropFirst(page * 2).prefix(2))
-            content(pair, total: tools.count, page: page, pages: pages)
+            let tool = tools.isEmpty ? nil : tools[page]
+            content(tool, page: page, pages: pages)
                 .id(page)
                 .transition(.asymmetric(
                     insertion: .offset(y: 13).combined(with: .opacity).animation(.spring(response: 0.46, dampingFraction: 0.72)),
@@ -29,19 +29,14 @@ struct CompactView: View {
     }
 
     @ViewBuilder
-    private func content(_ pair: [ToolSnapshot], total: Int, page: Int, pages: Int) -> some View {
+    private func content(_ tool: ToolSnapshot?, page: Int, pages: Int) -> some View {
         HStack(spacing: state.hasNotch ? 0 : 12) {
-            wing(pair.first, alignment: .leading)
+            wing(tool, alignment: .leading)
             if state.hasNotch {
                 Spacer().frame(width: state.notchWidth)
             }
-            if pair.count > 1 {
-                wing(pair[1], alignment: .trailing)
-            } else if pages > 1 {
-                totalWing
-            } else {
-                detailWing(pair.first)
-            }
+            // Quiet right wing by default — no second tool, no token totals. Expand for detail.
+            quietWing
         }
         .padding(.horizontal, 4)
         .font(.system(size: 12, weight: .bold, design: .rounded))
@@ -49,7 +44,9 @@ struct CompactView: View {
         .foregroundStyle(.white)
         .frame(maxHeight: .infinity)
         .overlay(alignment: .bottom) {
-            if pages > 1 { PageDots(count: pages, current: page).padding(.bottom, 4) }
+            if pages > 1 {
+                PageDots(count: pages, current: page).padding(.bottom, 3)
+            }
         }
     }
 
@@ -77,6 +74,7 @@ struct CompactView: View {
                         .minimumScaleFactor(0.7)
                         .frame(height: Self.wingLineHeight, alignment: .center)
                         .layoutPriority(1)
+                    // Suffixes ("used", short names) only when the wing is wide enough — rare at idle 48pt.
                     if density == .full, let suffix = model.wingSuffix(for: tool) {
                         Suffix(text: suffix)
                             .frame(height: Self.wingLineHeight, alignment: .center)
@@ -97,6 +95,12 @@ struct CompactView: View {
         .frame(maxWidth: wingWidth(alignment), maxHeight: .infinity, alignment: .center)
     }
 
+    /// Empty right wing keeps the notch balanced without adding a second row of chrome.
+    private var quietWing: some View {
+        Color.clear
+            .frame(maxWidth: wingWidth(.trailing), maxHeight: .infinity)
+    }
+
     private func wingDensity(_ alignment: HorizontalAlignment) -> WingDensity {
         let width = alignment == .leading ? state.leftWingWidth(for: nil) : state.rightWingWidth(for: nil)
         return state.density(for: width)
@@ -106,45 +110,6 @@ struct CompactView: View {
         guard state.hasNotch else { return .infinity }
         let wing = alignment == .leading ? state.leftWingWidth(for: nil) : state.rightWingWidth(for: nil)
         return max(0, wing - 2)
-    }
-
-    /// With a single tool, the right wing shows today's tokens (or, for account tools, the
-    /// tightest window when the left wing doesn't already show it).
-    private func detailWing(_ tool: ToolSnapshot?) -> some View {
-        let density = wingDensity(.trailing)
-        return HStack(alignment: .center, spacing: 3) {
-            Spacer(minLength: 0)
-            if density == .iconOnly {
-                EmptyView()
-            } else if let tool, tool.hasTokenData {
-                RollingText(text: Format.tokens(tool.today.total))
-                    .frame(height: Self.wingLineHeight, alignment: .center)
-                if density == .full { Suffix(text: "today").frame(height: Self.wingLineHeight) }
-            } else if let tool, let window = tool.tightestWindow, model.compactValue(for: tool) != Format.percent(window.usedPercent) {
-                Text("\(window.label) \(Format.percent(window.usedPercent))")
-                    .foregroundStyle(valueColor(tool))
-                    .frame(height: Self.wingLineHeight, alignment: .center)
-                if density == .full { Suffix(text: "used").frame(height: Self.wingLineHeight) }
-            }
-        }
-        .lineLimit(1)
-        .frame(maxWidth: wingWidth(.trailing), maxHeight: .infinity, alignment: .center)
-    }
-
-    /// The odd last page of the carousel: today's total across every connection.
-    private var totalWing: some View {
-        let density = wingDensity(.trailing)
-        return HStack(alignment: .center, spacing: 3) {
-            Spacer(minLength: 0)
-            if density != .iconOnly {
-                RollingText(text: Format.tokens(model.snapshot.todayTokens))
-                    .foregroundStyle(.white.opacity(0.6))
-                    .frame(height: Self.wingLineHeight, alignment: .center)
-                if density == .full { Suffix(text: "today").frame(height: Self.wingLineHeight) }
-            }
-        }
-        .lineLimit(1)
-        .frame(maxWidth: wingWidth(.trailing), maxHeight: .infinity, alignment: .center)
     }
 
     private func valueColor(_ tool: ToolSnapshot) -> Color {
@@ -171,13 +136,12 @@ struct PageDots: View {
     let current: Int
 
     var body: some View {
-        HStack(spacing: 4) {
-            ForEach(0..<min(count, 8), id: \.self) { index in
+        HStack(spacing: 3) {
+            ForEach(0..<min(count, 6), id: \.self) { index in
                 Circle()
-                    .fill(Color.white.opacity(index == current ? 1 : 0.3))
-                    .frame(width: 4, height: 4)
+                    .fill(Color.white.opacity(index == current ? 0.85 : 0.22))
+                    .frame(width: 3, height: 3)
             }
         }
     }
 }
-
