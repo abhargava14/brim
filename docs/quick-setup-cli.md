@@ -2,7 +2,7 @@
 
 Short path for Terminal. Prefer the app for **Add Account…** (menu bar ✳ → Connections & Settings). CLI is best for install, status, and update.
 
-Current release: **[v0.2.1](https://github.com/abhargava14/brim/releases/tag/v0.2.1)** (`3b2c724`). Needs macOS 13+ and `xcode-select --install` (builds from source).
+Current release: **[v0.2.2](https://github.com/abhargava14/brim/releases/tag/v0.2.2)** (`cd84a2f`). Needs macOS 13+ and `xcode-select --install` (builds from source).
 
 ## 1. Install (pick one)
 
@@ -11,17 +11,17 @@ Current release: **[v0.2.1](https://github.com/abhargava14/brim/releases/tag/v0.
 Download the script from the **release tag** (not floating `main`), then run it. Do **not** pipe into `bash`.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/abhargava14/brim/v0.2.1/install.sh -o install-brim.sh
+curl -fsSL https://raw.githubusercontent.com/abhargava14/brim/v0.2.2/install.sh -o install-brim.sh
 chmod +x install-brim.sh
 ./install-brim.sh
 ```
 
-The script’s built-in pin is v0.2.1 (`3b2c724…`). To be explicit:
+The script’s built-in pin is v0.2.2 (`cd84a2f…`). To be explicit:
 
 ```bash
-BRIM_REF=v0.2.1 ./install-brim.sh
+BRIM_REF=v0.2.2 ./install-brim.sh
 # or
-BRIM_COMMIT=3b2c724d6326131aaf5ad69e8e5f71ae17e3b9ea ./install-brim.sh
+BRIM_COMMIT=cd84a2fca90373eeceda2c1994318e545862c150 ./install-brim.sh
 ```
 
 ### B. Homebrew
@@ -40,7 +40,7 @@ Prefer A or C if you want a release pin; Homebrew `--HEAD` tracks `main`.
 ```bash
 git clone https://github.com/abhargava14/brim.git
 cd brim
-git checkout v0.2.1
+git checkout v0.2.2
 ./scripts/build-app.sh --install
 ```
 
@@ -83,7 +83,7 @@ Or menu bar ✳ → **Check for Updates…**. Details: [how-to-update-brim.md](h
 ## 5. Verify
 
 ```bash
-brim --version              # expect 0.2.1
+brim --version              # expect 0.2.2
 which brim                  # e.g. ~/.local/bin/brim → …/Brim.app/Contents/Helpers/brim
 ls /Applications/Brim.app
 ```
