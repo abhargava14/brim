@@ -382,8 +382,8 @@ struct ClaudeStyleToggle: View {
 
 // MARK: - Adding a Claude account
 
-/// Signs another Claude account in (Claude Code's own browser sign-in, in its own config folder)
-/// and connects it. Self-contained, so it can sit in Settings, first run or the island's "+".
+/// Signs a Claude account in via browser OAuth and connects plan limits.
+/// Matches the branded Add Connection Claude step (primary sign-in; no folder jargon).
 struct AddClaudeAccountView: View {
     @ObservedObject var model: UsageModel
     var onDone: () -> Void = {}
@@ -395,67 +395,95 @@ struct AddClaudeAccountView: View {
         case failed(String)
     }
 
-    @State private var label = "personal"
+    @State private var label = ""
     @State private var phase = Phase.idle
     @State private var task: Task<Void, Never>?
     private let installed = ClaudeCode.executable() != nil
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 8) {
-                ToolGlyph(kind: .claude, mood: .idle, size: 18, playful: false, name: "Claude")
-                Text("Add a Claude account").font(.headline)
-            }
-            Text("Signs in with Claude Code's own browser sign-in, in a separate folder, so this account's limits and logs stay apart from your others. Brim never sees your password or token.")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-
-            if !installed {
-                Label("Claude Code isn't installed on this Mac. Install it from claude.com/claude-code, then try again.", systemImage: "exclamationmark.triangle.fill")
-                    .foregroundStyle(Brand.attention)
-            } else {
-                TextField("Name", text: $label, prompt: Text("personal"))
-                    .textFieldStyle(.roundedBorder)
-                    .disabled(phase != .idle && !isFailed)
-                Text("Folder: ~/\(ClaudeAccounts.newConfigDir(label: label).lastPathComponent)")
-                    .font(.caption.monospaced())
-                    .foregroundStyle(.secondary)
-            }
-
-            switch phase {
-            case .idle:
-                EmptyView()
-            case .signingIn(let url):
-                HStack(spacing: 8) {
-                    ProgressView().controlSize(.small)
-                    Text("Finish signing in in your browser…")
-                    if let url {
-                        Button("Open sign-in page") { NSWorkspace.shared.open(url) }.buttonStyle(.link)
+        ZStack {
+            AddChrome.backdrop
+            VStack(alignment: .leading, spacing: 16) {
+                HStack(spacing: 10) {
+                    GlyphTile(kind: .claude, name: "Claude")
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Brim")
+                            .font(.system(size: 11, weight: .heavy, design: .rounded))
+                            .foregroundStyle(Color.white.opacity(0.35))
+                            .tracking(0.8)
+                        Text("Add Claude").font(.system(size: 22, weight: .heavy, design: .rounded)).foregroundStyle(.white)
                     }
                 }
-            case .done(let name):
-                Label("\(name) connected", systemImage: "checkmark.circle.fill").foregroundStyle(Brand.good)
-            case .failed(let message):
-                Label(message, systemImage: "exclamationmark.triangle.fill").foregroundStyle(Brand.attention)
-            }
+                Text("Sign in to Claude to show plan limits (5-hour and weekly) in the notch. Works for accounts you use on claude.ai — not only Claude Code.")
+                    .font(AddChrome.bodyCopy)
+                    .foregroundStyle(Color.white.opacity(0.55))
+                    .fixedSize(horizontal: false, vertical: true)
 
-            HStack {
-                Spacer()
-                if case .signingIn = phase {
-                    Button("Cancel") { task?.cancel() }
-                } else if case .done = phase {
-                    Button("Done") { onDone() }.keyboardShortcut(.defaultAction)
+                if !installed {
+                    Label("Install Claude Code once so Brim can complete the browser sign-in. You won’t use the Terminal.", systemImage: "exclamationmark.triangle.fill")
+                        .font(AddChrome.caption)
+                        .foregroundStyle(Brand.attention)
+                        .fixedSize(horizontal: false, vertical: true)
                 } else {
-                    Button("Cancel") { onDone() }
-                    Button("Sign in with Claude…") { start() }
-                        .keyboardShortcut(.defaultAction)
-                        .disabled(!installed)
+                    TextField("Optional name", text: $label, prompt: Text("Work, personal…"))
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 14, weight: .medium, design: .rounded))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 10)
+                        .background(AddChrome.fieldBackground())
+                        .disabled(phase != .idle && !isFailed)
+                }
+
+                switch phase {
+                case .idle:
+                    EmptyView()
+                case .signingIn(let url):
+                    HStack(spacing: 8) {
+                        ProgressView().controlSize(.small)
+                        Text("Finish signing in in your browser…")
+                            .font(AddChrome.bodyCopy)
+                            .foregroundStyle(Color.white.opacity(0.6))
+                        if let url {
+                            Button("Open sign-in page") { NSWorkspace.shared.open(url) }
+                                .font(AddChrome.caption)
+                                .foregroundStyle(Color.white.opacity(0.7))
+                                .buttonStyle(.plain)
+                        }
+                    }
+                case .done(let name):
+                    Label("\(name) connected", systemImage: "checkmark.circle.fill")
+                        .font(AddChrome.bodyCopy)
+                        .foregroundStyle(Brand.good)
+                case .failed(let message):
+                    Label(message, systemImage: "exclamationmark.triangle.fill")
+                        .font(AddChrome.caption)
+                        .foregroundStyle(Brand.attention)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                HStack(spacing: 10) {
+                    Spacer()
+                    if case .signingIn = phase {
+                        AddChrome.secondaryButton("Cancel") { task?.cancel() }
+                    } else if case .done = phase {
+                        AddChrome.primaryButton("Done", action: onDone)
+                    } else {
+                        AddChrome.secondaryButton("Cancel", action: onDone)
+                        if !installed {
+                            AddChrome.secondaryButton("Get Claude Code") {
+                                NSWorkspace.shared.open(URL(string: "https://claude.com/claude-code")!)
+                            }
+                        }
+                        AddChrome.primaryButton("Sign in with Claude…", enabled: installed, action: start)
+                    }
                 }
             }
+            .padding(28)
         }
-        .padding(20)
-        .frame(width: 420)
+        .frame(width: 460)
+        .preferredColorScheme(.dark)
+        .environment(\.colorScheme, .dark)
         .onDisappear { task?.cancel() }
     }
 
@@ -466,10 +494,10 @@ struct AddClaudeAccountView: View {
 
     private func start() {
         phase = .signingIn(nil)
-        let label = self.label
+        let label = self.label.trimmingCharacters(in: .whitespaces)
         task = Task {
             do {
-                let account = try await ClaudeAccountSetup.addAccount(label: label) { url in
+                let account = try await ClaudeAccountSetup.addAccount(label: label.isEmpty ? "Claude" : label) { url in
                     Task { @MainActor in if case .signingIn = phase { phase = .signingIn(url) } }
                 }
                 let connection = model.addClaudeConnection(for: account)

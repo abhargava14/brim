@@ -256,16 +256,17 @@ public enum ClaudeAccountSetupError: LocalizedError, Equatable {
 
     public var errorDescription: String? {
         switch self {
-        case .notInstalled: return "Claude Code isn't installed on this Mac. Install it from claude.com/claude-code, then try again."
+        case .notInstalled: return "To finish Claude sign-in, install Claude Code once from claude.com/claude-code (Brim uses its browser sign-in; you don't need the Terminal)."
         case .cancelled: return "Sign-in cancelled."
         case .failed(let reason): return reason
         }
     }
 }
 
-/// Signs another Claude account in to its own Claude Code config folder, using Claude Code's own
-/// `claude auth login`: it opens the browser, waits for the sign-in and stores the token in the
-/// Keychain itself. Brim never sees the password or the token. `~/.claude` is never touched.
+/// Signs a Claude account in via Anthropic's browser OAuth (`claude auth login --claudeai`).
+/// Opens the browser, waits for the sign-in, and lets Claude Code store the token in the Keychain.
+/// Brim never sees the password or the token. Uses a separate config folder so accounts don't mix;
+/// `~/.claude` is never touched. Plan limits come from Anthropic's usage API after sign-in.
 public enum ClaudeAccountSetup {
     /// Creates `~/.claude-<label>`, signs in there and returns the new account. `onSignInURL` gets
     /// the sign-in page in case the browser didn't open. Cancelling the task stops the sign-in
