@@ -218,6 +218,62 @@ final class ClaudeAccountTests: XCTestCase {
         XCTAssertFalse(AccountEmail.matches("", "a@x.com"))
     }
 
+    func testClaudeDuplicateEmailUserMessage() {
+        XCTAssertEqual(
+            ClaudeDuplicateEmail.userMessage(email: "  You@Example.COM "),
+            "A Claude account for you@example.com is already connected."
+        )
+    }
+
+    func testClaudeDuplicateDetectionAcrossDisplayNames() {
+        let home = URL(fileURLWithPath: "/Users/me")
+        var personal = Connection(id: "a", kind: .claude, name: "Claude · Personal")
+        personal.options[Connection.Option.accountEmail] = "Ada@Example.COM"
+        personal.options[Connection.Option.configDir] = "~/.claude-personal"
+        var code = Connection(id: "b", kind: .claude, name: "Claude Code")
+        code.options[Connection.Option.configDir] = "~/.claude-work"
+
+        // Same email via live folder lookup → duplicate even when names differ.
+        let found = ClaudeDuplicateEmail.existing(
+            email: " ada@example.com ",
+            in: [personal],
+            home: home,
+            liveEmail: { _ in nil }
+        )
+        XCTAssertEqual(found?.id, "a")
+
+        XCTAssertTrue(ClaudeDuplicateEmail.isDuplicate(
+            email: "ada@example.com",
+            candidateConfigDir: URL(fileURLWithPath: "/Users/me/.claude-work"),
+            against: personal,
+            home: home
+        ))
+        XCTAssertFalse(ClaudeDuplicateEmail.isDuplicate(
+            email: "ada@example.com",
+            candidateConfigDir: URL(fileURLWithPath: "/Users/me/.claude-personal"),
+            against: personal,
+            home: home
+        ), "same folder is reconnect, not a duplicate")
+        XCTAssertNil(ClaudeDuplicateEmail.existing(email: "other@example.com", in: [personal], home: home))
+        _ = code
+    }
+
+    func testClaudeDedupeCollapsesSameEmailAndReports() {
+        let home = URL(fileURLWithPath: "/Users/me")
+        var first = Connection(id: "keep", kind: .claude, name: "Claude · Personal", isEnabled: true)
+        first.options[Connection.Option.accountEmail] = "you@example.com"
+        var second = Connection(id: "drop", kind: .claude, name: "Claude Code", isEnabled: false)
+        second.options[Connection.Option.accountEmail] = "  YOU@example.com "
+        var other = Connection(id: "other", kind: .claude, name: "Claude · Work")
+        other.options[Connection.Option.accountEmail] = "work@example.com"
+
+        let result = ClaudeDuplicateEmail.dedupe([first, second, other], home: home, liveEmail: { _ in nil })
+        XCTAssertEqual(result.removedCount, 1)
+        XCTAssertEqual(result.collapsedEmails, ["you@example.com"])
+        XCTAssertEqual(Set(result.connections.map(\.id)), Set(["keep", "other"]))
+        XCTAssertEqual(result.connections.first { $0.id == "keep" }?.accountEmail, "you@example.com")
+    }
+
     func testConnectionFollowsItsConfigFolder() {
         let home = URL(fileURLWithPath: "/Users/me")
         var personal = Connection(kind: .claude, name: "Claude · Personal")

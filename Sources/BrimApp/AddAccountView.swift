@@ -24,6 +24,8 @@ struct AddAccountView: View {
     let done: () -> Void
     @State private var kind: ToolKind?
     @State private var found = Set<ToolKind>()
+    /// Surfaced when `finish` refuses a duplicate Claude email (must be visible, never silent).
+    @State private var finishProblem: String?
 
     init(model: UsageModel, settings: AppSettings, request: AddAccountRequest, done: @escaping () -> Void) {
         self.model = model
@@ -44,6 +46,13 @@ struct AddAccountView: View {
                     form(for: kind)
                 } else {
                     picker
+                }
+                if let finishProblem {
+                    Label(finishProblem, systemImage: "exclamationmark.triangle.fill")
+                        .font(AddChrome.caption)
+                        .foregroundStyle(Brand.attention)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, 12)
                 }
             }
             .padding(.horizontal, 28)
@@ -196,6 +205,7 @@ struct AddAccountView: View {
     }
 
     private func finish(_ options: [String: String], _ token: String?) {
+        finishProblem = nil
         var options = options
         if kind == .claude || existing?.kind == .claude {
             let probe = Connection(kind: .claude, options: options)
@@ -203,13 +213,17 @@ struct AddAccountView: View {
                 let account = ClaudeAccounts.account(configDir: dir)
                 if let email = account.email {
                     let normalized = AccountEmail.normalize(email)
-                    if let dup = settings.connection(withEmail: normalized, kind: .claude, excluding: existing?.id),
-                       dup.claudeConfigDir()?.standardizedFileURL != dir.standardizedFileURL {
-                        // Folder path tried to add an email that already has a connection.
+                    if let dup = ClaudeDuplicateEmail.existing(email: normalized, in: settings.connections, excluding: existing?.id),
+                       ClaudeDuplicateEmail.isDuplicate(email: normalized, candidateConfigDir: dir, against: dup) {
+                        finishProblem = ClaudeDuplicateEmail.userMessage(email: normalized)
                         return
                     }
                     options[Connection.Option.accountEmail] = normalized
                 }
+            } else if let email = options[Connection.Option.accountEmail],
+                      ClaudeDuplicateEmail.existing(email: email, in: settings.connections, excluding: existing?.id) != nil {
+                finishProblem = ClaudeDuplicateEmail.userMessage(email: email)
+                return
             }
         }
         if let existing {
@@ -380,6 +394,7 @@ private struct ClaudeSignIn: View {
                     .font(AddChrome.caption)
                     .foregroundStyle(Brand.attention)
                     .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("claude-duplicate-email")
             }
 
             DisclosureGroup(isExpanded: $showAdvanced) {
@@ -405,6 +420,12 @@ private struct ClaudeSignIn: View {
             }
             .tint(Color.white.opacity(0.45))
         }
+        .onAppear {
+            // QA / screenshot: BRIM_DEMO_DUP_EMAIL=you@example.com with BRIM_OPEN_ADD=1
+            if problem == nil, let demo = Self.demoDuplicateProblem {
+                problem = demo
+            }
+        }
     }
 
     private func signInClaude() {
@@ -418,15 +439,19 @@ private struct ClaudeSignIn: View {
         Task {
             do {
                 let account = try await add(label.isEmpty ? "Claude" : label)
-                if let email = account.email, let existing = settings.connection(withEmail: email, kind: .claude),
-                   existing.claudeConfigDir()?.standardizedFileURL != account.configDir.standardizedFileURL {
-                    problem = ClaudeAccountSetupError.duplicateEmail(AccountEmail.normalize(email)).errorDescription
-                        ?? "That Claude account is already connected."
+                // Check when email is known (after OAuth), including “Claude Code” vs “Claude · Personal”.
+                if let email = account.email,
+                   let existing = ClaudeDuplicateEmail.existing(email: email, in: settings.connections),
+                   ClaudeDuplicateEmail.isDuplicate(email: email, candidateConfigDir: account.configDir, against: existing) {
+                    problem = ClaudeDuplicateEmail.userMessage(email: email)
                     signingIn = false
                     return
                 }
                 _ = try model.addClaudeConnection(for: account)
                 done()
+            } catch let error as ClaudeAccountSetupError {
+                problem = error.errorDescription ?? error.localizedDescription
+                signingIn = false
             } catch {
                 problem = error.localizedDescription
                 signingIn = false
@@ -451,9 +476,10 @@ private struct ClaudeSignIn: View {
         let probe = Connection(kind: .claude, options: options)
         if let dir = probe.claudeConfigDir() {
             let account = ClaudeAccounts.account(configDir: dir)
-            if let email = account.email, let existing = settings.connection(withEmail: email, kind: .claude),
-               existing.claudeConfigDir()?.standardizedFileURL != dir.standardizedFileURL {
-                problem = ClaudeAccountSetupError.duplicateEmail(AccountEmail.normalize(email)).errorDescription
+            if let email = account.email,
+               let existing = ClaudeDuplicateEmail.existing(email: email, in: settings.connections),
+               ClaudeDuplicateEmail.isDuplicate(email: email, candidateConfigDir: dir, against: existing) {
+                problem = ClaudeDuplicateEmail.userMessage(email: email)
                 return
             }
             var options = options
@@ -464,6 +490,19 @@ private struct ClaudeSignIn: View {
             return
         }
         finish(options, nil)
+    }
+}
+
+// MARK: - QA / screenshot hook
+
+extension ClaudeSignIn {
+    /// `BRIM_DEMO_DUP_EMAIL=you@example.com` shows the visible duplicate error without a live OAuth loop.
+    fileprivate static var demoDuplicateProblem: String? {
+        guard let email = ProcessInfo.processInfo.environment["BRIM_DEMO_DUP_EMAIL"]?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+              !email.isEmpty
+        else { return nil }
+        return ClaudeDuplicateEmail.userMessage(email: email)
     }
 }
 
