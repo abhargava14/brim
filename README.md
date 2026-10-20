@@ -71,8 +71,7 @@ What each install path needs: [docs/mac-requirements.md](docs/mac-requirements.m
 **No Xcode. No Terminal. No developer tools.**
 
 1. Open the latest release: **[Download Brim (GitHub Releases)](https://github.com/abhargava14/brim/releases/latest)**
-2. Download **`Brim.dmg`**  
-   *(If that release page has no DMG yet, open the newest release that lists **Brim.dmg** — for example [v0.2.2](https://github.com/abhargava14/brim/releases/tag/v0.2.2).)*
+2. Download **`Brim.dmg`**
 3. Open the DMG and drag **Brim** into **Applications**.
 4. Open Brim from Applications. If macOS blocks it (Gatekeeper): **right-click Brim → Open**, then **Open** again. Once is enough.
 
@@ -94,7 +93,7 @@ These paths **compile Brim on your Mac**. They need Apple's small **Command Line
 **Pinned install script** (pins a release; about a minute the first time):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/abhargava14/brim/v0.3.0/install.sh -o install-brim.sh
+curl -fsSL https://raw.githubusercontent.com/abhargava14/brim/v0.3.2/install.sh -o install-brim.sh
 chmod +x install-brim.sh
 ./install-brim.sh
 ```
@@ -104,7 +103,7 @@ chmod +x install-brim.sh
 ```bash
 git clone https://github.com/abhargava14/brim.git
 cd brim
-git checkout v0.3.0
+git checkout v0.3.2
 ./scripts/build-app.sh --install
 ```
 
