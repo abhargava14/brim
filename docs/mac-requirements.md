@@ -37,10 +37,11 @@ Use the DMG:
 ### If Mac says Brim can’t be opened
 
 Gatekeeper may block an unsigned/unnotarized DMG with **“Apple could not verify…”**. That’s
-**normal until notarization** — not malware. **Right‑click (or Control‑click) Brim → Open → Open**
-again (double‑click alone fails on recent macOS). Or **System Settings → Privacy & Security →
-Open Anyway**. Do **not** disable Gatekeeper system‑wide. Friend steps:
-[gatekeeper-friend-install.md](gatekeeper-friend-install.md). Notarization:
+**normal until notarization** — not malware. On Sonoma/Sequoia the dialog often has only
+**Done** / **Move to Bin**; use **System Settings → Privacy & Security → Open Anyway** after
+dragging Brim to Applications and clicking **Done** once. Optional: `xattr -cr /Applications/Brim.app`
+(clears quarantine; do not disable Gatekeeper). Right‑click → **Open** is for older macOS only.
+Friend steps: [gatekeeper-friend-install.md](gatekeeper-friend-install.md). Notarization:
 [notarization.md](notarization.md).
 
 That’s the supported path for everyone who isn’t compiling Brim themselves.

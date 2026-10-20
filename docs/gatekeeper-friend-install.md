@@ -8,30 +8,57 @@ Friends downloading **Brim.dmg** often see a dialog like:
 That message is **normal** for the current download until the app is signed with an **Apple
 Developer ID** and **notarized**. It does **not** mean Brim is malware.
 
-## What to do (about 30 seconds)
+On **macOS Sonoma / Sequoia**, that dialog often shows only **Done** / **Move to Bin** (no
+**Open** button). Right‑click → **Open** usually does nothing useful. Use **Open Anyway** in
+System Settings instead.
 
-Double‑clicking Brim alone usually fails on recent macOS. Use one of these instead.
+## What to do (about a minute)
 
-### Option A — Right‑click Open (recommended)
+### 1. Put Brim in Applications
 
-1. Open **Finder**.
-2. Go to **Applications**.
-3. **Right‑click** (or **Control‑click**) **Brim**.
-4. Choose **Open**.
-5. In the confirmation dialog, click **Open** again.
+Open the DMG and **drag Brim into `/Applications`**. Do not keep launching it only from the DMG
+window — Gatekeeper and later opens expect the copy in Applications.
 
-You only need this once for that install. After that, Brim opens like any other app.
+### 2. Try open once (records the block)
 
-### Option B — Privacy & Security
+Double‑click **Brim** in Applications (or open it once). When the “Apple could not verify…”
+dialog appears, click **Done** — **not** **Move to Bin**.
+
+### 3. Open Anyway (current macOS — use this)
 
 1. Open **System Settings**.
 2. Go to **Privacy & Security**.
-3. Scroll until you see a message that Brim was blocked.
-4. Click **Open Anyway**, and confirm if asked.
+3. Scroll down to the security messages.
+4. Find **“Brim was blocked…”** (or similar) and click **Open Anyway**.
+5. If macOS asks again, confirm with your password / Touch ID and **Open Anyway** a second time.
+
+After that, Brim should open like any other app.
+
+### 4. Optional Terminal fallback
+
+Only if **Open Anyway** still fails and you’re okay with Terminal. This clears the quarantine
+flag on the app copy; it does **not** turn Gatekeeper off for your Mac.
+
+```bash
+xattr -cr /Applications/Brim.app
+```
+
+Then open Brim again from Applications.
+
+### Older macOS only — right‑click Open
+
+On older macOS versions, the Gatekeeper dialog may still offer **Open**:
+
+1. In **Finder**, open **Applications**.
+2. **Right‑click** (or **Control‑click**) **Brim** → **Open**.
+3. In the confirmation dialog, click **Open** again.
+
+On Sonoma/Sequoia this is often ineffective — prefer **Open Anyway** above.
 
 ## What not to do
 
 - Do **not** turn off Gatekeeper or run commands that disable system security for all apps.
+- Do **not** click **Move to Bin** on the verify dialog if you still want to install Brim.
 - Do **not** download Brim from random mirrors — use the official
   [GitHub Releases](https://github.com/abhargava14/brim/releases/latest) **Brim.dmg**.
 
@@ -39,5 +66,8 @@ You only need this once for that install. After that, Brim opens like any other 
 
 The lasting fix is Apple **Developer ID** signing + **notarization**, then shipping that DMG on
 Releases. Steps and scripts are in [notarization.md](notarization.md)
-(`scripts/notarize.sh` and related build scripts in the repo). Until that ships, the right‑click
-**Open** workaround above is the expected path for friends.
+(`scripts/notarize.sh` and related build scripts in the repo). Until that ships, **Privacy &
+Security → Open Anyway** is the expected path for friends on current macOS.
+
+Also see the README section **If Mac says Brim can’t be opened** and
+[mac-requirements.md](mac-requirements.md).
