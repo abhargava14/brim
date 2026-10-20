@@ -305,12 +305,19 @@ public final class UsageEngine: @unchecked Sendable {
     }
 
     static func jsonlFiles(under root: URL) -> [(url: URL, size: UInt64, modified: Date)] {
-        let keys: [URLResourceKey] = [.isRegularFileKey, .fileSizeKey, .contentModificationDateKey]
-        guard let enumerator = FileManager.default.enumerator(at: root, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles]) else {
+        let resolvedRoot = root.resolvingSymlinksInPath().standardizedFileURL
+        let keys: [URLResourceKey] = [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey, .contentModificationDateKey]
+        guard let enumerator = FileManager.default.enumerator(
+            at: resolvedRoot,
+            includingPropertiesForKeys: keys,
+            options: [.skipsHiddenFiles]
+        ) else {
             return []
         }
         var files: [(url: URL, size: UInt64, modified: Date)] = []
         for case let url as URL in enumerator where url.pathExtension == "jsonl" {
+            // Refuse symlink escape: the resolved file must stay under the resolved root.
+            guard LogPath.isUnderRoot(url, root: resolvedRoot) else { continue }
             guard let values = try? url.resourceValues(forKeys: Set(keys)), values.isRegularFile == true else { continue }
             files.append((url: url, size: UInt64(values.fileSize ?? 0), modified: values.contentModificationDate ?? .distantPast))
         }

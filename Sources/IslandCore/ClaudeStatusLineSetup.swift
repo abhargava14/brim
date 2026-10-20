@@ -149,12 +149,29 @@ public struct ClaudeStatusLineSetup: Sendable {
         let dir = supportDirectory.path.replacingOccurrences(of: "'", with: "'\\''")
         return """
         #!/bin/sh
-        # Installed by Brim. Saves Claude Code's status line input so Brim can show your
-        # plan usage, then runs your previous status line command (if any) with the same input.
+        # Installed by Brim. Saves only the rate_limits Brim needs (not the full Claude Code
+        # status-line stdin, which can include paths and session metadata), then runs your
+        # previous status line command (if any) with the original input.
         DIR='\(dir)'
         INPUT=$(cat)
         mkdir -p "$DIR"
-        printf '%s' "$INPUT" > "$DIR/claude-statusline.json.tmp" && mv -f "$DIR/claude-statusline.json.tmp" "$DIR/claude-statusline.json"
+        umask 077
+        RAW="$(mktemp -t brim-statusline)"
+        trap 'rm -f "$RAW" "$DIR/claude-statusline.limits.tmp" "$DIR/claude-statusline.json.tmp"' EXIT
+        chmod 600 "$RAW"
+        printf '%s' "$INPUT" > "$RAW"
+        TMP="$DIR/claude-statusline.json.tmp"
+        if plutil -extract rate_limits json -o "$DIR/claude-statusline.limits.tmp" "$RAW" 2>/dev/null; then
+          printf '{"rate_limits":' > "$TMP"
+          cat "$DIR/claude-statusline.limits.tmp" >> "$TMP"
+          printf '}' >> "$TMP"
+        else
+          printf '{"rate_limits":{}}' > "$TMP"
+        fi
+        chmod 600 "$TMP"
+        mv -f "$TMP" "$DIR/claude-statusline.json"
+        rm -f "$RAW" "$DIR/claude-statusline.limits.tmp"
+        trap - EXIT
         if [ -s "$DIR/claude-statusline.previous" ]; then
           printf '%s' "$INPUT" | sh -c "$(cat "$DIR/claude-statusline.previous")"
         fi

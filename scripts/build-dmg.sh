@@ -1,8 +1,10 @@
 #!/bin/bash
 # Builds an unsigned Brim.dmg containing Brim.app and an Applications symlink.
-#   ./scripts/build-dmg.sh  -> build/Brim.dmg
+#   ./scripts/build-dmg.sh  -> build/Brim.dmg (+ build/Brim.dmg.sha256)
 #
 # Gatekeeper: right-click Brim.app → Open the first time (see README).
+# Notarization (when Developer ID credentials exist): see docs/notarization.md
+# and scripts/notarize.sh — this script does not sign or notarize.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -26,6 +28,9 @@ hdiutil create \
     -format UDZO \
     "$DMG"
 
+./scripts/checksum-artifact.sh "$DMG" --write
+
 echo "Built $DMG"
-echo "Unsigned — first open: right-click Brim → Open (Gatekeeper)."
+echo "Unsigned / not notarized — first open: right-click Brim → Open (Gatekeeper)."
+echo "Checksum: $(cat "${DMG}.sha256")"
 ls -lh "$DMG"

@@ -1,5 +1,6 @@
 import Foundation
 import IslandCore
+import Security
 
 // MARK: - Claude Code on this Mac
 
@@ -54,8 +55,9 @@ public enum ClaudeUsageError: LocalizedError {
 /// Uses the OAuth tokens Claude Code keeps in the Keychain. When the ~8h access token is stale,
 /// Brim refreshes it the same way Claude Code does (`POST https://platform.claude.com/v1/oauth/token`
 /// with Claude Code's public client id) and writes the rotated tokens back to that Keychain item
-/// so Claude Code stays in sync. Usage itself is still only requested from `api.anthropic.com`.
-/// Tokens are never logged.
+/// so Claude Code stays in sync. Brim therefore **mutates Claude Code's Keychain item** (same
+/// service/account names Claude Code uses). Usage itself is still only requested from
+/// `api.anthropic.com`. Tokens are never logged and never passed on process argv.
 public enum ClaudeUsageFetcher {
     static let usageURL = URL(string: "https://api.anthropic.com/api/oauth/usage?at_wall=1&skip_spend=1")!
     /// Claude Code's current OAuth token endpoint (not api.anthropic.com — that host serves usage/profile).
@@ -86,6 +88,7 @@ public enum ClaudeUsageFetcher {
     }
 
     private static func requestUsage(accessToken: String) async throws -> [PlanWindow] {
+        do { try TrustedHosts.validate(usageURL, policy: .allowlist) } catch { throw ClaudeUsageError.unexpected }
         var request = URLRequest(url: usageURL)
         request.timeoutInterval = 20
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
@@ -157,6 +160,7 @@ public enum ClaudeUsageFetcher {
     /// Exchanges a refresh token the way Claude Code does. Response body is parsed then discarded;
     /// tokens are never logged.
     static func requestTokenRefresh(refreshToken: String) async throws -> ClaudeOAuthTokens {
+        do { try TrustedHosts.validate(tokenURL, policy: .allowlist) } catch { throw ClaudeUsageError.unexpected }
         var request = URLRequest(url: tokenURL)
         request.httpMethod = "POST"
         request.timeoutInterval = 30
@@ -188,8 +192,13 @@ public enum ClaudeUsageFetcher {
     }
 }
 
-/// Read/write Claude Code's generic-password Keychain item via `/usr/bin/security`, matching how
-/// Claude Code itself stores credentials so macOS doesn't ask the user to approve Brim separately.
+/// Read/write Claude Code's generic-password Keychain item.
+///
+/// **Write** always uses Security.framework (`SecItemUpdate` / `SecItemAdd`) so the credential
+/// JSON never appears on process argv (`ps`, audit tools). Brim mutates the same service/account
+/// names Claude Code uses so Claude Code stays signed in after a refresh.
+/// **Read** tries Security.framework first, then `/usr/bin/security find-generic-password -w`
+/// (print password to stdout — the secret is not on argv) for ACL parity with Claude Code.
 enum ClaudeCodeKeychain {
     struct Item {
         var service: String
@@ -209,8 +218,13 @@ enum ClaudeCodeKeychain {
     }
 
     static func read(service: String) -> Item? {
+        if let data = readViaSecurityFramework(service: service),
+           let credentials = ClaudeCredentials.parse(data) {
+            return Item(service: service, credentials: credentials, raw: data)
+        }
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/security")
+        // `-w` on find-generic-password means "print password to stdout", not "password follows".
         process.arguments = ["find-generic-password", "-a", accountName, "-s", service, "-w"]
         let output = Pipe()
         process.standardOutput = output
@@ -222,19 +236,37 @@ enum ClaudeCodeKeychain {
         return Item(service: service, credentials: credentials, raw: data)
     }
 
-    /// Updates the existing item (`-U`). Returns false if `security` fails — caller must not keep
-    /// using a rotated refresh token that never made it to the Keychain.
+    /// Updates the existing item in-process. Returns false if the write fails — caller must not
+    /// keep using a rotated refresh token that never made it to the Keychain.
+    ///
+    /// Never shells out with `-w <password>`: that put the full OAuth JSON on process argv.
     static func write(service: String, data: Data) -> Bool {
-        guard let password = String(data: data, encoding: .utf8) else { return false }
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/security")
-        // Password is passed as an argument (same as common CLI tools); never logged by Brim.
-        process.arguments = ["add-generic-password", "-a", accountName, "-s", service, "-U", "-w", password]
-        process.standardOutput = Pipe()
-        process.standardError = Pipe()
-        do { try process.run() } catch { return false }
-        process.waitUntilExit()
-        return process.terminationStatus == 0
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: accountName,
+        ]
+        let attributes: [String: Any] = [kSecValueData as String: data]
+        let updated = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
+        if updated == errSecSuccess { return true }
+        guard updated == errSecItemNotFound else { return false }
+        var item: [String: Any] = query
+        item[kSecValueData as String] = data
+        item[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+        return SecItemAdd(item as CFDictionary, nil) == errSecSuccess
+    }
+
+    private static func readViaSecurityFramework(service: String) -> Data? {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: accountName,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne,
+        ]
+        var item: CFTypeRef?
+        guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess else { return nil }
+        return item as? Data
     }
 }
 

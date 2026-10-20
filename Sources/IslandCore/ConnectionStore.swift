@@ -34,8 +34,10 @@ public struct ConnectionStore: Sendable {
     }
 
     public func save(_ file: ConnectionFile) throws {
-        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let fm = FileManager.default
+        try fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try Self.encoder.encode(file).write(to: url, options: .atomic)
+        try? fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
     }
 
     /// When the file last changed, to notice edits made by the other side (app or CLI).
