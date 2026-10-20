@@ -4,8 +4,8 @@ import IslandServices
 import ServiceManagement
 import SwiftUI
 
-/// Calm light app window: sidebar + page content. Replaces the old General / Connections / Island
-/// tabbed preferences sheet. Layout inspired by Wispr Flow’s lightness — not a feature clone.
+/// Primary Brim app window: dark sidebar + page content (Overview / Connections / Island / Settings).
+/// Replaces the old tabbed preferences sheet. Chrome matches the island / Add Connection aesthetic.
 struct AppShellView: View {
     @ObservedObject var model: UsageModel
     @ObservedObject var settings: AppSettings
@@ -48,11 +48,14 @@ struct AppShellView: View {
         HStack(spacing: 0) {
             sidebar
                 .frame(width: 220)
-            Divider().opacity(0.35)
+            Rectangle()
+                .fill(BrimChrome.hairline)
+                .frame(width: 1)
             main
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .background(AppShellChrome.canvas)
+        .background(BrimChrome.canvas)
+        .preferredColorScheme(.dark)
         .frame(minWidth: 860, minHeight: 560)
         .sheet(item: $adding) { request in
             AddAccountView(model: model, settings: settings, request: request) { adding = nil }
@@ -75,11 +78,11 @@ struct AppShellView: View {
                     .frame(width: 22, height: 22)
                 Text("Brim")
                     .font(.system(size: 18, weight: .semibold, design: .rounded))
-                    .foregroundStyle(AppShellChrome.ink)
+                    .foregroundStyle(BrimChrome.ink)
                 Spacer()
                 Text("v\(BrimVersion.string)")
                     .font(.system(size: 11, weight: .medium, design: .rounded))
-                    .foregroundStyle(AppShellChrome.muted)
+                    .foregroundStyle(BrimChrome.muted)
             }
             .padding(.horizontal, 20)
             .padding(.top, 28)
@@ -99,24 +102,24 @@ struct AppShellView: View {
                     adding = AddAccountRequest()
                 } label: {
                     Label("Add Account…", systemImage: "person.badge.plus")
-                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                        .font(.system(size: 13, weight: .bold, design: .rounded))
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 10)
-                        .background(Capsule().fill(AppShellChrome.ink.opacity(0.92)))
-                        .foregroundStyle(.white)
+                        .background(Capsule().fill(BrimChrome.ctaFill))
+                        .foregroundStyle(BrimChrome.ctaLabel)
                 }
                 .buttonStyle(.plain)
 
                 Text("Plan limits show how much is used.")
                     .font(.system(size: 11, weight: .medium, design: .rounded))
-                    .foregroundStyle(AppShellChrome.muted)
+                    .foregroundStyle(BrimChrome.muted)
                     .padding(.horizontal, 4)
             }
             .padding(.horizontal, 12)
             .padding(.bottom, 20)
         }
-        .background(AppShellChrome.sidebar)
+        .background(BrimChrome.sidebar)
     }
 
     private func sidebarRow(_ item: AppPage) -> some View {
@@ -131,9 +134,9 @@ struct AppShellView: View {
                 .padding(.vertical, 9)
                 .background(
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(selected ? AppShellChrome.card : Color.clear)
+                        .fill(selected ? BrimChrome.selected : Color.clear)
                 )
-                .foregroundStyle(selected ? AppShellChrome.ink : AppShellChrome.muted)
+                .foregroundStyle(selected ? BrimChrome.ink : BrimChrome.muted)
         }
         .buttonStyle(.plain)
     }
@@ -146,7 +149,7 @@ struct AppShellView: View {
             VStack(alignment: .leading, spacing: 18) {
                 Text(page.title)
                     .font(.system(size: 26, weight: .semibold, design: .rounded))
-                    .foregroundStyle(AppShellChrome.ink)
+                    .foregroundStyle(BrimChrome.ink)
                     .padding(.bottom, 4)
 
                 switch page {
@@ -159,7 +162,7 @@ struct AppShellView: View {
             .padding(28)
             .frame(maxWidth: 720, alignment: .leading)
         }
-        .background(AppShellChrome.canvas)
+        .background(BrimChrome.canvas)
     }
 
     // MARK: Overview
@@ -169,14 +172,14 @@ struct AppShellView: View {
             AppShellCard {
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Usage today")
-                        .font(AppShellChrome.section)
-                        .foregroundStyle(AppShellChrome.muted)
+                        .font(BrimChrome.section)
+                        .foregroundStyle(BrimChrome.muted)
                     Text("\(Format.tokens(model.snapshot.todayTokens)) tokens")
                         .font(.system(size: 28, weight: .semibold, design: .rounded))
-                        .foregroundStyle(AppShellChrome.ink)
+                        .foregroundStyle(BrimChrome.ink)
                     Text("\(settings.enabledConnections.count) of \(settings.connections.count) accounts connected")
-                        .font(AppShellChrome.body)
-                        .foregroundStyle(AppShellChrome.muted)
+                        .font(BrimChrome.body)
+                        .foregroundStyle(BrimChrome.muted)
                 }
             }
 
@@ -184,14 +187,12 @@ struct AppShellView: View {
                 AppShellCard {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Nothing connected yet")
-                            .font(AppShellChrome.headline)
+                            .font(BrimChrome.headline)
                         Text("Add Claude, Codex, Cursor, Copilot or another tool. Claude plan limits come from Anthropic after Sign in with Claude — no log folder required.")
-                            .font(AppShellChrome.body)
-                            .foregroundStyle(AppShellChrome.muted)
+                            .font(BrimChrome.body)
+                            .foregroundStyle(BrimChrome.muted)
                             .fixedSize(horizontal: false, vertical: true)
-                        Button("Add Account…") { adding = AddAccountRequest() }
-                            .buttonStyle(.borderedProminent)
-                            .tint(AppShellChrome.ink)
+                        BrimChrome.primaryButton("Add Account…") { adding = AddAccountRequest() }
                     }
                 }
             } else {
@@ -201,21 +202,21 @@ struct AppShellView: View {
                             ToolGlyph(kind: tool.kind, mood: .idle, size: 16, playful: false, name: tool.name)
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(tool.name)
-                                    .font(AppShellChrome.headline)
+                                    .font(BrimChrome.headline)
                                 if let account = model.accountLabel(for: tool.id) {
                                     Text(account)
-                                        .font(AppShellChrome.caption)
-                                        .foregroundStyle(AppShellChrome.muted)
+                                        .font(BrimChrome.caption)
+                                        .foregroundStyle(BrimChrome.muted)
                                 }
                                 if tool.hasData {
                                     let parts = tool.planWindows.map { "\($0.label) \(Format.used($0))" }
                                     Text(parts.isEmpty ? model.compactValue(for: tool) : parts.joined(separator: " · "))
-                                        .font(AppShellChrome.body)
-                                        .foregroundStyle(AppShellChrome.ink)
+                                        .font(BrimChrome.body)
+                                        .foregroundStyle(BrimChrome.ink)
                                 } else {
                                     Text(tool.statusMessage ?? "Connecting…")
-                                        .font(AppShellChrome.body)
-                                        .foregroundStyle(AppShellChrome.muted)
+                                        .font(BrimChrome.body)
+                                        .foregroundStyle(BrimChrome.muted)
                                 }
                             }
                             Spacer()
@@ -234,8 +235,8 @@ struct AppShellView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     if settings.connections.isEmpty {
                         Text("Nothing connected yet. Add Claude, Codex, Cursor, Copilot or any other tool.")
-                            .font(AppShellChrome.body)
-                            .foregroundStyle(AppShellChrome.muted)
+                            .font(BrimChrome.body)
+                            .foregroundStyle(BrimChrome.muted)
                     }
                     ForEach($settings.connections) { $connection in
                         ConnectionRow(
@@ -266,10 +267,10 @@ struct AppShellView: View {
                 HStack(alignment: .top) {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Claude plan limits")
-                            .font(AppShellChrome.headline)
+                            .font(BrimChrome.headline)
                         Text(claudeStatusText)
-                            .font(AppShellChrome.caption)
-                            .foregroundStyle(AppShellChrome.muted)
+                            .font(BrimChrome.caption)
+                            .foregroundStyle(BrimChrome.muted)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     Spacer()
@@ -283,8 +284,8 @@ struct AppShellView: View {
             }
 
             Text("Tokens stay in your Keychain. The same email can’t be added twice.")
-                .font(AppShellChrome.caption)
-                .foregroundStyle(AppShellChrome.muted)
+                .font(BrimChrome.caption)
+                .foregroundStyle(BrimChrome.muted)
         }
     }
 
@@ -313,8 +314,8 @@ struct AppShellView: View {
                     }
                     if settings.placementMovedForCrowding {
                         Text("Moved below the menu bar — other status icons left too little room next to the notch. Choose “Around the notch” to try again.")
-                            .font(AppShellChrome.caption)
-                            .foregroundStyle(AppShellChrome.muted)
+                            .font(BrimChrome.caption)
+                            .foregroundStyle(BrimChrome.muted)
                     }
                     Picker("With nothing connected", selection: $settings.emptyIsland) {
                         ForEach(EmptyIsland.allCases) { mode in
@@ -329,8 +330,8 @@ struct AppShellView: View {
                     if settings.useNotchAnyway {
                         HStack {
                             Text("Using the notch even though another app is there.")
-                                .font(AppShellChrome.caption)
-                                .foregroundStyle(AppShellChrome.muted)
+                                .font(BrimChrome.caption)
+                                .foregroundStyle(BrimChrome.muted)
                             Spacer()
                             Button("Stop overriding") { settings.useNotchAnyway = false }
                                 .controlSize(.small)
@@ -372,8 +373,8 @@ struct AppShellView: View {
             }
 
             Text("The notch stays minimal by default — one metric at a time. Expand for detail.")
-                .font(AppShellChrome.caption)
-                .foregroundStyle(AppShellChrome.muted)
+                .font(BrimChrome.caption)
+                .foregroundStyle(BrimChrome.muted)
         }
     }
 
@@ -410,10 +411,10 @@ struct AppShellView: View {
                 HStack(alignment: .top) {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("brim command")
-                            .font(AppShellChrome.headline)
+                            .font(BrimChrome.headline)
                         Text(cliMessage ?? "Optional. Installs into ~/.local/bin when possible — no Mac password. Lets you run brim status in Terminal.")
-                            .font(AppShellChrome.caption)
-                            .foregroundStyle(AppShellChrome.muted)
+                            .font(BrimChrome.caption)
+                            .foregroundStyle(BrimChrome.muted)
                             .textSelection(.enabled)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -430,10 +431,10 @@ struct AppShellView: View {
                 HStack {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Updates")
-                            .font(AppShellChrome.headline)
+                            .font(BrimChrome.headline)
                         Text("Check GitHub Releases for a newer Brim. Quit/reopen alone is not an update path.")
-                            .font(AppShellChrome.caption)
-                            .foregroundStyle(AppShellChrome.muted)
+                            .font(BrimChrome.caption)
+                            .foregroundStyle(BrimChrome.muted)
                     }
                     Spacer()
                     Button("Check for Updates…") {
@@ -453,19 +454,7 @@ struct AppShellView: View {
     }
 }
 
-// MARK: - Chrome
-
-private enum AppShellChrome {
-    static let canvas = Color(nsColor: NSColor(calibratedWhite: 0.96, alpha: 1))
-    static let sidebar = Color(nsColor: NSColor(calibratedRed: 0.96, green: 0.94, blue: 0.90, alpha: 1))
-    static let card = Color.white
-    static let ink = Color(nsColor: NSColor(calibratedWhite: 0.12, alpha: 1))
-    static let muted = Color(nsColor: NSColor(calibratedWhite: 0.45, alpha: 1))
-    static let section = Font.system(size: 12, weight: .semibold, design: .rounded)
-    static let headline = Font.system(size: 15, weight: .semibold, design: .rounded)
-    static let body = Font.system(size: 13, weight: .medium, design: .rounded)
-    static let caption = Font.system(size: 11, weight: .medium, design: .rounded)
-}
+// MARK: - Cards
 
 private struct AppShellCard<Content: View>: View {
     @ViewBuilder var content: Content
@@ -474,10 +463,14 @@ private struct AppShellCard<Content: View>: View {
         content
             .padding(16)
             .frame(maxWidth: .infinity, alignment: .leading)
+            .foregroundStyle(BrimChrome.ink)
             .background(
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(AppShellChrome.card)
-                    .shadow(color: .black.opacity(0.04), radius: 8, y: 2)
+                    .fill(BrimChrome.card)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .strokeBorder(BrimChrome.hairline, lineWidth: 1)
+                    )
             )
     }
 }

@@ -4,7 +4,7 @@ import IslandServices
 import SwiftUI
 
 // Connection rows + optional `brim` CLI linker used by AppShellView.
-// The old tabbed Settings sheet was removed in favour of the light app shell.
+// The old tabbed Settings sheet was removed in favour of the dark sidebar app shell.
 
 // MARK: - One connection
 

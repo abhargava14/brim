@@ -244,7 +244,7 @@ struct AddAccountView: View {
 enum AddChrome {
     static var backdrop: some View {
         ZStack {
-            Color.black
+            BrimChrome.canvas
             RadialGradient(
                 colors: [Color(red: 0.85, green: 0.47, blue: 0.34).opacity(0.18), .clear],
                 center: .topLeading, startRadius: 20, endRadius: 320
@@ -262,17 +262,8 @@ enum AddChrome {
     }
 
     static func primaryButton(_ title: String, enabled: Bool = true, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(title)
-                .font(.system(size: 13, weight: .bold, design: .rounded))
-                .foregroundStyle(enabled ? Color.black : Color.white.opacity(0.35))
-                .padding(.horizontal, 16)
-                .padding(.vertical, 9)
-                .background(Capsule().fill(enabled ? Color.white : Color.white.opacity(0.12)))
-        }
-        .buttonStyle(.plain)
-        .disabled(!enabled)
-        .keyboardShortcut(.defaultAction)
+        BrimChrome.primaryButton(title, enabled: enabled, action: action)
+            .keyboardShortcut(.defaultAction)
     }
 
     static func secondaryButton(_ title: String, action: @escaping () -> Void) -> some View {
