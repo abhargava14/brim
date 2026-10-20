@@ -113,17 +113,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         header.isEnabled = false
         menu.addItem(header)
         menu.addItem(.separator())
-        menu.addItem(withTitle: "Add Account…", action: #selector(addAccountFromMenu), keyEquivalent: "").target = self
+        menu.addItem(menuItem("Add Account…", action: #selector(addAccountFromMenu), symbol: "person.badge.plus"))
         if !settings.connections.isEmpty {
-            menu.addItem(withTitle: "Connect All", action: #selector(connectAll), keyEquivalent: "").target = self
+            menu.addItem(menuItem("Connect All", action: #selector(connectAll), symbol: "link"))
         }
-        menu.addItem(withTitle: "Settings…", action: #selector(openSettings), keyEquivalent: ",").target = self
+        menu.addItem(menuItem("Settings…", action: #selector(openSettings), key: ",", symbol: "gearshape"))
         let show = NSMenuItem(title: "Show Island", action: #selector(showEmptyIsland), keyEquivalent: "")
         show.state = settings.showIsland && settings.emptyIsland == .small ? .on : .off
         show.target = self
         menu.addItem(show)
         menu.addItem(.separator())
-        menu.addItem(withTitle: "Quit Brim", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        menu.addItem(menuItem("Quit Brim", action: #selector(NSApplication.terminate(_:)), key: "q", symbol: "xmark.square", bindTarget: false))
         return menu
     }
 
@@ -165,12 +165,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 note.isEnabled = false
                 menu.addItem(note)
             }
-            let anyway = NSMenuItem(
-                title: settings.useNotchAnyway ? "Stop Using Notch Anyway" : "Use Notch Anyway",
-                action: #selector(toggleUseNotchAnyway), keyEquivalent: ""
-            )
-            anyway.target = self
-            menu.addItem(anyway)
+            let anywayTitle = settings.useNotchAnyway ? "Stop Using Notch Anyway" : "Use Notch Anyway"
+            let anywaySymbol = settings.useNotchAnyway ? "rectangle.portrait.arrowtriangle.2.outward" : "rectangle.portrait.arrowtriangle.2.inward"
+            menu.addItem(menuItem(anywayTitle, action: #selector(toggleUseNotchAnyway), symbol: anywaySymbol))
             menu.addItem(.separator())
         }
 
@@ -183,13 +180,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         playful.target = self
         menu.addItem(playful)
         menu.addItem(.separator())
-        menu.addItem(withTitle: "Refresh", action: #selector(refreshNow), keyEquivalent: "r").target = self
-        menu.addItem(withTitle: "Add Account…", action: #selector(addAccountFromMenu), keyEquivalent: "").target = self
-        menu.addItem(withTitle: "Disconnect All", action: #selector(disconnectAll), keyEquivalent: "").target = self
-        menu.addItem(withTitle: "Settings…", action: #selector(openSettings), keyEquivalent: ",").target = self
+        menu.addItem(menuItem("Refresh", action: #selector(refreshNow), key: "r", symbol: "arrow.clockwise"))
+        menu.addItem(menuItem("Add Account…", action: #selector(addAccountFromMenu), symbol: "person.badge.plus"))
+        menu.addItem(menuItem("Disconnect All", action: #selector(disconnectAll), symbol: "person.crop.circle.badge.minus"))
+        menu.addItem(menuItem("Settings…", action: #selector(openSettings), key: ",", symbol: "gearshape"))
         menu.addItem(.separator())
-        menu.addItem(withTitle: "Quit Brim", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        menu.addItem(menuItem("Quit Brim", action: #selector(NSApplication.terminate(_:)), key: "q", symbol: "xmark.square", bindTarget: false))
         return menu
+    }
+
+    /// Action row with a leading SF Symbol, matching the system Settings / Quit icon style.
+    /// Quit keeps `bindTarget: false` so `terminate:` walks the responder chain to NSApp.
+    private func menuItem(
+        _ title: String,
+        action: Selector,
+        key: String = "",
+        symbol: String,
+        bindTarget: Bool = true
+    ) -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
+        if bindTarget { item.target = self }
+        item.image = NSImage(systemSymbolName: symbol, accessibilityDescription: title)
+        return item
     }
 
     @objc private func toggleIsland() {
