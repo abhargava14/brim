@@ -39,6 +39,10 @@ tests and run. Then polish.
 7. **Minimal fixes.** When something doesn't compile, fix it the smallest way that keeps the
    intent. Don't rewrite files or restructure the architecture to make an error go away.
 8. Match the existing code style: short doc comments, plain names, no heavy abstraction.
+9. **No Keychain / Mac login password dialogs during agent work.** Never run interactive OAuth,
+   `brim status`, or Keychain unlock demos. Install with
+   `./scripts/build-app.sh --copy-only` (copy `.app` + CLI links only — do **not** `open` the app).
+   Background refresh must soft-fail when Keychain is locked (`kSecUseAuthenticationUIFail`).
 
 ## 3. Prerequisites (check, don't assume)
 
@@ -200,8 +204,9 @@ For each one the user has:
 ## 9. Phase 5: package it
 
 ```bash
-./scripts/build-app.sh            # build/Brim.app with Contents/Helpers/brim
-./scripts/build-app.sh --install  # copies to /Applications, links brim, launches it
+./scripts/build-app.sh              # build/Brim.app with Contents/Helpers/brim
+./scripts/build-app.sh --copy-only  # agents: copy to /Applications + link CLI; do not launch
+./scripts/build-app.sh --install    # copies to /Applications, links brim, launches it
 ```
 
 - [ ] The app launches from /Applications, with no Dock icon (LSUIElement).
