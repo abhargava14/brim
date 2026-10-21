@@ -232,23 +232,16 @@ struct AppShellView: View {
         }
     }
 
-    /// Chunks tools into rows of up to 3; each HStack stretches cards to equal height.
+    /// Chunks tools into rows of up to 3; PreferenceKey lifts every card to the tallest in that row.
     private func overviewEqualHeightRows(_ tools: [ToolSnapshot]) -> some View {
         let columns = 3
         let rows: [[ToolSnapshot]] = stride(from: 0, to: tools.count, by: columns).map {
             Array(tools[$0..<min($0 + columns, tools.count)])
         }
         return VStack(alignment: .leading, spacing: 12) {
-            ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
-                HStack(alignment: .top, spacing: 12) {
-                    ForEach(row) { tool in
-                        overviewToolCard(tool)
-                    }
-                    if row.count < columns {
-                        ForEach(0..<(columns - row.count), id: \.self) { _ in
-                            Color.clear.frame(maxWidth: .infinity)
-                        }
-                    }
+            ForEach(Array(rows.enumerated()), id: \.offset) { index, row in
+                OverviewEqualHeightRow(rowIndex: index, tools: row) { tool in
+                    overviewToolCard(tool)
                 }
             }
         }
@@ -559,10 +552,47 @@ private struct AppShellNavButtonStyle: ButtonStyle {
     }
 }
 
+// MARK: - Equal-height Overview rows
+
+/// Measures each card’s ideal height, then forces every card in the row to that max.
+private struct OverviewEqualHeightRow<Card: View>: View {
+    let rowIndex: Int
+    let tools: [ToolSnapshot]
+    @ViewBuilder var card: (ToolSnapshot) -> Card
+    @State private var rowHeight: CGFloat = 0
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            ForEach(tools) { tool in
+                card(tool)
+                    .frame(maxWidth: .infinity, minHeight: rowHeight > 0 ? rowHeight : nil, alignment: .topLeading)
+                    .background(
+                        GeometryReader { geo in
+                            Color.clear.preference(key: OverviewCardHeightKey.self, value: geo.size.height)
+                        }
+                    )
+            }
+            if tools.count < 3 {
+                ForEach(0..<(3 - tools.count), id: \.self) { _ in
+                    Color.clear.frame(maxWidth: .infinity)
+                }
+            }
+        }
+        .onPreferenceChange(OverviewCardHeightKey.self) { rowHeight = $0 }
+    }
+}
+
+private struct OverviewCardHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
 // MARK: - Cards
 
 private struct AppShellCard<Content: View>: View {
-    /// When true (Overview tool grid), fill the grid cell so siblings in a row share one height.
+    /// When true (Overview tool grid), fill any minHeight the equal-height row assigns.
     var fillHeight: Bool = false
     @ViewBuilder var content: Content
 
