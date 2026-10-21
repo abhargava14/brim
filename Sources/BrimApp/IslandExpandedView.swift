@@ -103,34 +103,33 @@ struct ExpandedView: View {
     }
 
     /// Dashed Add tile — same Add Account flow as the menu / Connections.
-    /// Explicit `rowHeight` makes the dashed frame match cards; Spacers center `+` / “Add”
-    /// inside that frame (Layout’s tall proposal alone does not expand the tile).
+    /// `rowHeight` sizes the dashed frame to the card row; label is `.position`’d at the
+    /// frame’s geometric center (ZStack / Spacer / overlay alignment all stayed top-biased).
     private var addTile: some View {
         let height = rowHeight > 0 ? rowHeight : nil
-        return VStack(spacing: 0) {
-            Spacer(minLength: 0)
-            VStack(spacing: 8) {
-                Image(systemName: "plus")
-                    .font(.system(size: 16, weight: .bold))
-                Text("Add")
-                    .font(.system(size: 12, weight: .heavy, design: .rounded))
+        return RoundedRectangle(cornerRadius: addRadius, style: .continuous)
+            .strokeBorder(Color.white.opacity(0.35), style: StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
+            .frame(width: addWidth, height: height)
+            .overlay {
+                GeometryReader { geo in
+                    VStack(spacing: 8) {
+                        Image(systemName: "plus")
+                            .font(.system(size: 16, weight: .bold))
+                        Text("Add")
+                            .font(.system(size: 12, weight: .heavy, design: .rounded))
+                    }
+                    .foregroundStyle(.white.opacity(0.85))
+                    .position(x: geo.size.width / 2, y: geo.size.height / 2)
+                }
             }
-            .foregroundStyle(.white.opacity(0.85))
-            Spacer(minLength: 0)
-        }
-        .frame(width: addWidth, height: height)
-        .overlay {
-            RoundedRectangle(cornerRadius: addRadius, style: .continuous)
-                .strokeBorder(Color.white.opacity(0.35), style: StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
-        }
-        .contentShape(RoundedRectangle(cornerRadius: addRadius, style: .continuous))
-        .onTapGesture { addAccount(AddAccountRequest()) }
-        .onHover { hovering in
-            if hovering { NSCursor.pointingHand.push() } else { NSCursor.pop() }
-        }
-        .help("Add Account…")
-        .accessibilityAddTraits(.isButton)
-        .accessibilityLabel("Add Account")
+            .contentShape(RoundedRectangle(cornerRadius: addRadius, style: .continuous))
+            .onTapGesture { addAccount(AddAccountRequest()) }
+            .onHover { hovering in
+                if hovering { NSCursor.pointingHand.push() } else { NSCursor.pop() }
+            }
+            .help("Add Account…")
+            .accessibilityAddTraits(.isButton)
+            .accessibilityLabel("Add Account")
     }
 
     private func syncGeometry() {
