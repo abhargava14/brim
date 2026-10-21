@@ -1,6 +1,5 @@
 import Foundation
 import IslandCore
-import LocalAuthentication
 import Security
 
 // MARK: - Claude Code on this Mac
@@ -42,7 +41,9 @@ public enum ClaudeUsageError: LocalizedError {
 
     public var errorDescription: String? {
         switch self {
-        case .notSignedIn: return "Not signed in to Claude. Use Sign in with Claude… in Brim."
+        case .notSignedIn:
+            // Soft-fail path: Keychain locked/ACL after rebuild — keep last plan windows; no Mac password sheet.
+            return "Reconnect Claude in Brim (Sign in with Claude…). Brim never asks for your Mac login password."
         case .expired: return "Sign-in expired and couldn't be renewed. Sign in with Claude again in Brim."
         case .rejected: return "Claude didn't accept the sign-in. Sign in with Claude again in Brim."
         case .http(let code): return "Claude's usage service returned an error (HTTP \(code))."
@@ -202,11 +203,13 @@ public enum ClaudeUsageFetcher {
 /// binary than Brim.app, so macOS Keychain ACL treats it as untrusted and asks for the **login
 /// password** on every refresh. Even in-process `SecItemCopyMatching` against Claude Code's
 /// item can re-prompt after rebuilds. Brim therefore:
-/// 1. Copies the OAuth JSON into `com.brim.app.connections` once (Allow / Allow Always is OK).
+/// 1. Copies the OAuth JSON into `com.brim.app.connections` once (explicit Sign-in only).
 /// 2. Reads and refreshes that Brim-owned item forever after — no password loops.
 /// 3. Soft-syncs rotated tokens back to Claude Code's item with authentication UI suppressed
 ///    (`kSecUseAuthenticationUIFail`) so a denied ACL never pops a dialog.
 /// 4. Never uses the `security` CLI.
+/// 5. Refresh / launch / island / poll always Fail-UI; if Keychain is blocked, soft-fail and
+///    keep last-known plan windows via `ClaudeLimits.resolve`.
 enum ClaudeCodeKeychain {
     struct Item {
         var service: String
@@ -224,8 +227,9 @@ enum ClaudeCodeKeychain {
         Keychain.claudeOAuthAccount(for: account.key)
     }
 
-    /// Prefer Brim-owned credentials. Optionally import from Claude Code's Keychain once.
+    /// Prefer Brim-owned credentials. Optionally silent-import from Claude Code when ACL already allows.
     /// - Parameter allowPrompt: only `true` during an explicit Sign-in / Import (one-time Allow sheet).
+    ///   Refresh / UsageCollector / launch always pass `false`.
     static func read(for account: ClaudeAccount, allowPrompt: Bool = false) -> Item? {
         if let item = readBrimOwned(for: account) { return item }
         for service in account.keychainServices {
@@ -243,7 +247,9 @@ enum ClaudeCodeKeychain {
         readClaudeCodeItem(service: service, allowPrompt: false)
     }
 
-    /// After browser OAuth via Claude Code, copy the new Keychain item into Brim (may show one Allow).
+    /// After browser OAuth via Claude Code, copy the new Keychain item into Brim.
+    /// May show one Keychain **Allow** sheet (user-initiated Sign-in only — never from a timer).
+    /// Never shells out to `/usr/bin/security`. Soft-fails if the user cancels.
     @discardableResult
     static func importAfterSignIn(for account: ClaudeAccount) -> Bool {
         read(for: account, allowPrompt: true) != nil
@@ -263,7 +269,7 @@ enum ClaudeCodeKeychain {
         guard Keychain.saveData(data, for: brimKey) else { return false }
         // Soft sync so Claude Code stays signed in when its ACL already trusts Brim.
         for name in account.keychainServices {
-            if writeClaudeCodeItem(service: name, data: data, allowPrompt: false) { break }
+            if writeClaudeCodeItem(service: name, data: data) { break }
         }
         return true
     }
@@ -275,20 +281,19 @@ enum ClaudeCodeKeychain {
     }
 
     @discardableResult
-    private static func writeClaudeCodeItem(service: String, data: Data, allowPrompt: Bool) -> Bool {
+    private static func writeClaudeCodeItem(service: String, data: Data) -> Bool {
         var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: accountName,
         ]
-        if !allowPrompt {
-            query[kSecUseAuthenticationContext as String] = silentAuthContext()
-        }
+        // Always Fail-UI — never pop a sheet from OAuth refresh soft-sync.
+        KeychainSilence.denyInteraction(&query)
         let attributes: [String: Any] = [kSecValueData as String: data]
         let updated = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
         if updated == errSecSuccess { return true }
-        // Do not SecItemAdd into Claude Code's namespace without a prompt path — that can create a
-        // parallel item Claude Code won't read. Soft-fail when ACL denies.
+        // Do not SecItemAdd into Claude Code's namespace — that can create a parallel item Claude
+        // Code won't read. Soft-fail when ACL denies.
         return false
     }
 
@@ -302,19 +307,12 @@ enum ClaudeCodeKeychain {
         ]
         if !allowPrompt {
             // Fail closed instead of asking for the login password on a timer tick.
-            query[kSecUseAuthenticationContext as String] = silentAuthContext()
+            KeychainSilence.denyInteraction(&query)
         }
         var item: CFTypeRef?
         let status = SecItemCopyMatching(query as CFDictionary, &item)
         guard status == errSecSuccess else { return nil }
         return item as? Data
-    }
-
-    /// LAContext with interaction forbidden — Keychain calls fail instead of showing a password sheet.
-    private static func silentAuthContext() -> LAContext {
-        let context = LAContext()
-        context.interactionNotAllowed = true
-        return context
     }
 }
 
@@ -366,7 +364,7 @@ public enum ClaudeAccountSetup {
             guard status == 0 else { throw ClaudeAccountSetupError.failed("Claude Code couldn't finish signing in. Try again.") }
             let account = signedInAccount(claude: claude, configDir: configDir, home: home)
             guard account.isSignedIn else { throw ClaudeAccountSetupError.failed("Claude Code didn't report a signed-in account.") }
-            // One-time Keychain Allow sheet is OK here; afterwards Brim uses its own item.
+            // User-initiated Sign-in may show one Keychain Allow; refresh paths never prompt.
             _ = ClaudeCodeKeychain.importAfterSignIn(for: account)
             return account
         } catch {

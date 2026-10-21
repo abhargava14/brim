@@ -330,8 +330,11 @@ not API keys.
 `~/.local/bin` to your PATH:
 `echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc`, then open a new terminal.
 
-**macOS asks whether Brim can use a Keychain item.** That happens once if you saved a token
-from the terminal. Choose **Always Allow**.
+**Brim never asks for your Mac login password** on refresh, launch, or island open. If a
+Keychain item is locked or ACL-blocked (common after rebuilding an ad-hoc-signed app), Brim
+soft-fails: last-known Claude plan windows stay on screen and the card asks you to **reconnect**
+via Sign in with Claude… A one-time Keychain **Allow** sheet can still appear during that
+explicit Sign-in — not on the background timer.
 
 ## Uninstall
 

@@ -1,7 +1,24 @@
 import Foundation
 import IslandCore
+import LocalAuthentication
 import Security
 import SQLite3
+
+/// Shared Keychain policy: never present login-password or Allow sheets from timers / launch / poll.
+/// Callers soft-fail (`nil` / `false`) when the item is locked or ACL-denied.
+enum KeychainSilence {
+    /// Applies `kSecUseAuthenticationUIFail` + an `LAContext` with `interactionNotAllowed`.
+    static func denyInteraction(_ query: inout [String: Any]) {
+        query[kSecUseAuthenticationUI as String] = kSecUseAuthenticationUIFail
+        query[kSecUseAuthenticationContext as String] = context()
+    }
+
+    static func context() -> LAContext {
+        let context = LAContext()
+        context.interactionNotAllowed = true
+        return context
+    }
+}
 
 // MARK: - Errors
 
@@ -427,6 +444,10 @@ public enum VSCodeState {
 /// Tokens the user pasted (or copied once from an editor DB), one Keychain item per connection.
 /// Also stores Claude OAuth JSON under `claude.oauth.<account.key>` so Brim never needs to shell
 /// out to `/usr/bin/security` or re-prompt for Claude Code's Keychain ACL on every refresh.
+///
+/// Every `SecItem*` call sets `kSecUseAuthenticationUIFail` + `interactionNotAllowed`. If the
+/// login keychain is locked or an ACL would need a sheet after an ad-hoc re-sign, the call
+/// soft-fails — refresh keeps last-known plan windows and the UI asks to reconnect.
 public enum Keychain {
     public static let service = "com.brim.app.connections"
     /// Where AI Island, Brim's old name, kept the same tokens.
@@ -442,13 +463,14 @@ public enum Keychain {
     }
 
     public static func readData(_ account: String, service: String = service) -> Data? {
-        let query: [String: Any] = [
+        var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
             kSecReturnData as String: true,
             kSecMatchLimit as String: kSecMatchLimitOne,
         ]
+        KeychainSilence.denyInteraction(&query)
         var item: CFTypeRef?
         guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess, let data = item as? Data else { return nil }
         return data
@@ -461,11 +483,12 @@ public enum Keychain {
 
     @discardableResult
     public static func saveData(_ data: Data, for account: String) -> Bool {
-        let query: [String: Any] = [
+        var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
         ]
+        KeychainSilence.denyInteraction(&query)
         let attributes: [String: Any] = [
             kSecValueData as String: data,
             kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
@@ -482,22 +505,24 @@ public enum Keychain {
     }
 
     public static func delete(_ account: String, service: String = service) {
-        let query: [String: Any] = [
+        var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
         ]
+        KeychainSilence.denyInteraction(&query)
         SecItemDelete(query as CFDictionary)
     }
 
-    /// Existence check without returning the secret.
+    /// Existence check without returning the secret (still Fail-UI — never pops a sheet).
     public static func has(_ account: String) -> Bool {
-        let query: [String: Any] = [
+        var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
             kSecMatchLimit as String: kSecMatchLimitOne,
         ]
+        KeychainSilence.denyInteraction(&query)
         return SecItemCopyMatching(query as CFDictionary, nil) == errSecSuccess
     }
 

@@ -1,7 +1,9 @@
 #!/bin/bash
 # Builds "Brim.app" (with the brim command inside it) from the Swift package.
-#   ./scripts/build-app.sh            -> build/Brim.app
-#   ./scripts/build-app.sh --install  -> also copies it to /Applications, links `brim` and launches the app
+#   ./scripts/build-app.sh              -> build/Brim.app
+#   ./scripts/build-app.sh --install    -> copies to /Applications, links `brim`, launches the app
+#   ./scripts/build-app.sh --copy-only  -> copies to /Applications + links CLI; does NOT launch,
+#                                         does NOT run oauth/status. For agents / Keychain-safe installs.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -54,7 +56,8 @@ codesign --force --sign - "$APP/Contents/Helpers/brim"
 codesign --force --sign - "$APP"
 echo "Built $APP"
 
-if [[ "${1:-}" == "--install" ]]; then
+MODE="${1:-}"
+if [[ "$MODE" == "--install" || "$MODE" == "--copy-only" ]]; then
     pkill -x Brim 2>/dev/null || true
     pkill -x AIIsland 2>/dev/null || true
     rm -rf "/Applications/$APP_NAME.app" "/Applications/AI Island.app"
@@ -70,6 +73,10 @@ if [[ "${1:-}" == "--install" ]]; then
         ln -sf "$CLI" /usr/local/bin/ai-island
     fi
     echo "Linked $BIN/brim (and the old name, ai-island). Make sure $BIN is on your PATH."
-    open "/Applications/$APP_NAME.app"
     echo "Installed to /Applications/$APP_NAME.app"
+    if [[ "$MODE" == "--install" ]]; then
+        open "/Applications/$APP_NAME.app"
+    else
+        echo "Copy-only: app not launched (no oauth / brim status / Keychain reads)."
+    fi
 fi
