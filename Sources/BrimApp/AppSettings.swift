@@ -65,6 +65,28 @@ enum ClaudeCardStyle: String, CaseIterable, Identifiable {
     }
 }
 
+/// Expanded island connection presentation (design v2 · 1a Cards / 1b Strip).
+enum ExpandedLayout: String, CaseIterable, Identifiable {
+    case cards
+    case strip
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .cards: return "Cards"
+        case .strip: return "Strip"
+        }
+    }
+
+    var detail: String {
+        switch self {
+        case .cards: return "Full detail per connection; row scrolls past four."
+        case .strip: return "One column each; seven fit without scrolling."
+        }
+    }
+}
+
 /// When another app already draws in the notch.
 enum NotchConflictPolicy: String, CaseIterable, Identifiable {
     case moveToMenuBar
@@ -160,6 +182,11 @@ final class AppSettings: ObservableObject {
         didSet { defaults.set(claudeCardStyle.rawValue, forKey: "claudeCardStyle") }
     }
 
+    /// Expanded island: Cards (wide) or Strip (narrow columns). Design v2 live prototype.
+    @Published var expandedLayout: ExpandedLayout {
+        didSet { defaults.set(expandedLayout.rawValue, forKey: "expandedLayout") }
+    }
+
     /// What to do when another app already draws in the notch.
     @Published var notchConflict: NotchConflictPolicy {
         didSet { defaults.set(notchConflict.rawValue, forKey: "notchConflict") }
@@ -178,7 +205,7 @@ final class AppSettings: ObservableObject {
     private static let keys = ["showIsland", "placement", "hideInFullScreen", "showInMenuBar", "compactMetric",
                                "expandOnHover", "playful", "pinnedID", "refreshSeconds", "didOnboard",
                                "emptyIsland", "showAccountEmails", "placementMovedForCrowding", "claudeCardStyle",
-                               "notchConflict", "useNotchAnyway", "pendingIslandTip"]
+                               "expandedLayout", "notchConflict", "useNotchAnyway", "pendingIslandTip"]
 
     init() {
         Self.copyLegacyDefaults(into: defaults)
@@ -201,6 +228,7 @@ final class AppSettings: ObservableObject {
         showAccountEmails = defaults.object(forKey: "showAccountEmails") as? Bool ?? true
         // Short Claude cards by default (minimal island).
         claudeCardStyle = defaults.string(forKey: "claudeCardStyle").flatMap(ClaudeCardStyle.init(rawValue:)) ?? .short
+        expandedLayout = defaults.string(forKey: "expandedLayout").flatMap(ExpandedLayout.init(rawValue:)) ?? .cards
         notchConflict = defaults.string(forKey: "notchConflict").flatMap(NotchConflictPolicy.init(rawValue:)) ?? .moveToMenuBar
         useNotchAnyway = defaults.bool(forKey: "useNotchAnyway")
         pendingIslandTip = defaults.bool(forKey: "pendingIslandTip")

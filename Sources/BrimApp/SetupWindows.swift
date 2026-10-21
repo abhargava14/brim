@@ -49,8 +49,7 @@ final class SetupWindows: NSObject, ObservableObject, NSWindowDelegate {
         return window
     }
 
-    /// Add Connection and the primary app shell share dark Brim chrome (island aesthetic).
-    /// First run stays a system window.
+    /// App shell, Add Connection, and first-run share dark Brim chrome (design v2).
     private func style(_ window: NSWindow, for kind: Kind) {
         switch kind {
         case .addAccount:
@@ -61,7 +60,7 @@ final class SetupWindows: NSObject, ObservableObject, NSWindowDelegate {
             if !window.styleMask.contains(.fullSizeContentView) {
                 window.styleMask.insert(.fullSizeContentView)
             }
-        case .settings:
+        case .settings, .firstRun:
             window.appearance = NSAppearance(named: .darkAqua)
             window.backgroundColor = BrimChrome.windowBackground
             window.titlebarAppearsTransparent = true
@@ -69,12 +68,6 @@ final class SetupWindows: NSObject, ObservableObject, NSWindowDelegate {
             if !window.styleMask.contains(.fullSizeContentView) {
                 window.styleMask.insert(.fullSizeContentView)
             }
-        case .firstRun:
-            window.appearance = nil
-            window.backgroundColor = .windowBackgroundColor
-            window.titlebarAppearsTransparent = false
-            window.titleVisibility = .visible
-            window.styleMask.remove(.fullSizeContentView)
         }
     }
 }

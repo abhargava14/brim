@@ -23,6 +23,18 @@ public enum Format {
         "\(window.detail ?? percent(window.usedPercent)) used"
     }
 
+    /// Display name for a plan / model window. Claude scopes get “Week · …” titles.
+    public static func windowLabel(_ window: PlanWindow, kind: ToolKind? = nil) -> String {
+        if kind == .claude { return ClaudeUsageResponse.title(for: window) }
+        return window.label
+    }
+
+    /// Every plan window with “used” labeling — never collapsed to the tightest alone.
+    /// Example: `Cursor models 100% used · Other models 10% used`.
+    public static func allUsed(_ windows: [PlanWindow], kind: ToolKind? = nil) -> String {
+        windows.map { "\(windowLabel($0, kind: kind)) \(used($0))" }.joined(separator: " · ")
+    }
+
     /// Time until `date`: `45m`, `2h 10m`, `3d 4h`.
     public static func countdown(to date: Date, now: Date = Date()) -> String {
         let minutes = max(0, Int((date.timeIntervalSince(now) / 60).rounded(.up)))

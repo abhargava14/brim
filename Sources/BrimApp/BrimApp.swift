@@ -139,12 +139,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// Hover summary when the bar itself is icon-only (or as a fallback tooltip).
+    /// Lists every plan window per tool — never only the tightest %.
     private func statusItemTooltip() -> String {
         let tools = model.featuredTools.filter(\.hasData)
         guard !tools.isEmpty else { return "Brim" }
         let parts = tools.prefix(4).map { tool -> String in
-            if let window = tool.tightestWindow {
-                return "\(tool.name) \(Format.used(window))"
+            if !tool.planWindows.isEmpty {
+                return "\(tool.name): \(Format.allUsed(tool.planWindows, kind: tool.kind))"
             }
             return "\(tool.name) \(Format.tokens(tool.today.total))"
         }

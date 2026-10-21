@@ -26,7 +26,7 @@ struct ConnectionRow: View {
             HStack(spacing: 8) {
                 ToolGlyph(kind: connection.kind, mood: justConnected ? .celebrate : .idle, size: 13, playful: model.settings.playful, name: connection.name)
                     .frame(width: 18)
-                VStack(alignment: .leading, spacing: 1) {
+                VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
                         Text(connection.name)
                         if connection.kind.isExperimental {
@@ -50,6 +50,13 @@ struct ConnectionRow: View {
                     }
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    if let tool = model.snapshot[connection.id], !tool.displayPlanWindows.isEmpty {
+                        Text(Format.allUsed(tool.displayPlanWindows, kind: tool.kind))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(3)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
                 Spacer()
                 Toggle("", isOn: Binding(
@@ -93,6 +100,18 @@ struct ConnectionRow: View {
     @ViewBuilder
     private var details: some View {
         VStack(alignment: .leading, spacing: 10) {
+            if let tool = model.snapshot[connection.id], !tool.displayPlanWindows.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Plan usage")
+                        .font(BrimChrome.caption)
+                        .foregroundStyle(BrimChrome.muted)
+                    PlanWindowsList(windows: tool.displayPlanWindows, kind: tool.kind, style: .app, showBars: true)
+                }
+                .padding(10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(BrimChrome.card))
+            }
+
             TextField("Name", text: $connection.name)
 
             Picker("Plan", selection: $connection.planID) {

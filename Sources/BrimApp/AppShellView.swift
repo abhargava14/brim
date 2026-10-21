@@ -194,13 +194,13 @@ struct AppShellView: View {
         VStack(alignment: .leading, spacing: 14) {
             AppShellCard {
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("Usage today")
+                    Text("Today")
                         .font(BrimChrome.section)
                         .foregroundStyle(BrimChrome.muted)
                     Text(model.snapshot.usageTodayHeadline)
-                        .font(.system(size: 28, weight: .semibold, design: .rounded))
+                        .font(.system(size: 28, weight: .heavy, design: .rounded))
                         .foregroundStyle(BrimChrome.ink)
-                    Text("\(settings.enabledConnections.count) of \(settings.connections.count) accounts connected")
+                    Text("\(settings.enabledConnections.count) connected")
                         .font(BrimChrome.body)
                         .foregroundStyle(BrimChrome.muted)
                 }
@@ -208,10 +208,17 @@ struct AppShellView: View {
 
             if model.featuredTools.isEmpty {
                 AppShellCard {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Nothing connected yet")
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack(spacing: 8) {
+                            ForEach([ToolKind.claude, .codex, .copilot, .cursor, .windsurf, .openrouter]) { kind in
+                                ToolGlyph(kind: kind, mood: .dim, size: 14, playful: false)
+                                    .frame(width: 28, height: 28)
+                                    .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.white.opacity(0.06)))
+                            }
+                        }
+                        Text("Connect your AIs")
                             .font(BrimChrome.headline)
-                        Text("Add Claude, Codex, Cursor, Copilot or another tool. Claude plan limits come from Anthropic after Sign in with Claude — no log folder required.")
+                        Text("See tokens and plan limits for each tool in the notch.")
                             .font(BrimChrome.body)
                             .foregroundStyle(BrimChrome.muted)
                             .fixedSize(horizontal: false, vertical: true)
@@ -219,34 +226,72 @@ struct AppShellView: View {
                     }
                 }
             } else {
-                ForEach(model.featuredTools) { tool in
-                    AppShellCard {
-                        HStack(alignment: .top, spacing: 12) {
-                            ToolGlyph(kind: tool.kind, mood: .idle, size: 16, playful: false, name: tool.name)
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(tool.name)
-                                    .font(BrimChrome.headline)
-                                if let account = model.accountLabel(for: tool.id) {
-                                    Text(account)
-                                        .font(BrimChrome.caption)
-                                        .foregroundStyle(BrimChrome.muted)
-                                }
-                                if tool.hasData {
-                                    let parts = tool.planWindows.map { "\($0.label) \(Format.used($0))" }
-                                    Text(parts.isEmpty ? model.compactValue(for: tool) : parts.joined(separator: " · "))
-                                        .font(BrimChrome.body)
-                                        .foregroundStyle(BrimChrome.ink)
-                                } else {
-                                    Text(tool.statusMessage ?? "Connecting…")
-                                        .font(BrimChrome.body)
-                                        .foregroundStyle(BrimChrome.muted)
-                                }
-                            }
-                            Spacer()
-                        }
-                    }
+                // HStack rows (not LazyVGrid): siblings share the tallest card's height.
+                overviewEqualHeightRows(model.featuredTools)
+            }
+        }
+    }
+
+    /// Chunks tools into rows of up to 3; PreferenceKey lifts every card to the tallest in that row.
+    private func overviewEqualHeightRows(_ tools: [ToolSnapshot]) -> some View {
+        let columns = 3
+        let rows: [[ToolSnapshot]] = stride(from: 0, to: tools.count, by: columns).map {
+            Array(tools[$0..<min($0 + columns, tools.count)])
+        }
+        return VStack(alignment: .leading, spacing: 12) {
+            ForEach(Array(rows.enumerated()), id: \.offset) { index, row in
+                OverviewEqualHeightRow(rowIndex: index, tools: row) { tool in
+                    overviewToolCard(tool)
                 }
             }
+        }
+    }
+
+    private func overviewToolCard(_ tool: ToolSnapshot) -> some View {
+        let err = tool.statusMessage != nil && !tool.hasData
+        let windows = tool.displayPlanWindows
+        return AppShellCard(fillHeight: true) {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 8) {
+                    ToolGlyph(kind: tool.kind, mood: err ? .dim : .idle, size: 15, playful: false, name: tool.name)
+                    Text(tool.name)
+                        .font(BrimChrome.headline)
+                        .lineLimit(1)
+                    Spacer(minLength: 0)
+                    if model.isWorking(tool) {
+                        Circle().fill(tool.kind.tint).frame(width: 6, height: 6)
+                    }
+                }
+                // Fixed email slot so cards without an account still match row height rhythm.
+                Text(model.accountLabel(for: tool.id) ?? " ")
+                    .font(BrimChrome.caption)
+                    .foregroundStyle(model.accountLabel(for: tool.id) == nil ? .clear : BrimChrome.muted)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                if err {
+                    Text(tool.statusMessage ?? "Signed out")
+                        .font(BrimChrome.body)
+                        .foregroundStyle(Color.orange)
+                } else if !windows.isEmpty {
+                    // Every window — Cursor dual pools, Claude Fable + Week · all models, etc.
+                    PlanWindowsList(windows: windows, kind: tool.kind, style: .app, showBars: true)
+                } else if tool.hasData {
+                    Text(model.compactValue(for: tool))
+                        .font(.system(size: 22, weight: .heavy, design: .rounded))
+                        .foregroundStyle(BrimChrome.ink)
+                    if tool.hasTokenData {
+                        Text("tokens today")
+                            .font(BrimChrome.caption)
+                            .foregroundStyle(BrimChrome.muted)
+                    }
+                } else {
+                    Text(tool.statusMessage ?? "Connecting…")
+                        .font(BrimChrome.caption)
+                        .foregroundStyle(BrimChrome.muted)
+                }
+                Spacer(minLength: 0)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
     }
 
@@ -368,6 +413,17 @@ struct AppShellView: View {
 
             AppShellCard {
                 Form {
+                    Section("Expanded layout") {
+                        Picker("Connections", selection: $settings.expandedLayout) {
+                            ForEach(ExpandedLayout.allCases) { layout in
+                                Text(layout.title).tag(layout)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        Text(settings.expandedLayout.detail)
+                            .font(BrimChrome.caption)
+                            .foregroundStyle(BrimChrome.muted)
+                    }
                     Section("Compact island") {
                         Toggle("Expand when the pointer is over it", isOn: $settings.expandOnHover)
                         Toggle("Playful animations (confetti, bouncing icons)", isOn: $settings.playful)
@@ -393,7 +449,7 @@ struct AppShellView: View {
                 .scrollContentBackground(.hidden)
             }
 
-            Text("The notch stays minimal by default — one metric at a time. Expand for detail.")
+            Text("Compact pairs take turns every 4s. Expand for Cards or Strip detail.")
                 .font(BrimChrome.caption)
                 .foregroundStyle(BrimChrome.muted)
         }
@@ -496,15 +552,54 @@ private struct AppShellNavButtonStyle: ButtonStyle {
     }
 }
 
+// MARK: - Equal-height Overview rows
+
+/// Measures each card’s ideal height, then forces every card in the row to that max.
+private struct OverviewEqualHeightRow<Card: View>: View {
+    let rowIndex: Int
+    let tools: [ToolSnapshot]
+    @ViewBuilder var card: (ToolSnapshot) -> Card
+    @State private var rowHeight: CGFloat = 0
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            ForEach(tools) { tool in
+                card(tool)
+                    .frame(maxWidth: .infinity, minHeight: rowHeight > 0 ? rowHeight : nil, alignment: .topLeading)
+                    .background(
+                        GeometryReader { geo in
+                            Color.clear.preference(key: OverviewCardHeightKey.self, value: geo.size.height)
+                        }
+                    )
+            }
+            if tools.count < 3 {
+                ForEach(0..<(3 - tools.count), id: \.self) { _ in
+                    Color.clear.frame(maxWidth: .infinity)
+                }
+            }
+        }
+        .onPreferenceChange(OverviewCardHeightKey.self) { rowHeight = $0 }
+    }
+}
+
+private struct OverviewCardHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
 // MARK: - Cards
 
 private struct AppShellCard<Content: View>: View {
+    /// When true (Overview tool grid), fill any minHeight the equal-height row assigns.
+    var fillHeight: Bool = false
     @ViewBuilder var content: Content
 
     var body: some View {
         content
             .padding(16)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(maxWidth: .infinity, maxHeight: fillHeight ? .infinity : nil, alignment: .topLeading)
             .foregroundStyle(BrimChrome.ink)
             .background(
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
@@ -514,5 +609,6 @@ private struct AppShellCard<Content: View>: View {
                             .strokeBorder(BrimChrome.hairline, lineWidth: 1)
                     )
             )
+            .frame(maxWidth: .infinity, maxHeight: fillHeight ? .infinity : nil, alignment: .topLeading)
     }
 }
