@@ -94,29 +94,32 @@ struct ExpandedView: View {
     }
 
     /// Dashed Add tile — same Add Account flow as the menu / Connections.
-    /// ZStack centers `+` / “Add” in the equal-height card; whole tile is the hit target.
+    /// Clear scaffold fills the equal-height slot; overlay centers `+` / “Add”.
     private var addTile: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: addRadius, style: .continuous)
-                .strokeBorder(Color.white.opacity(0.35), style: StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
-            VStack(spacing: 8) {
-                Image(systemName: "plus")
-                    .font(.system(size: 16, weight: .bold))
-                Text("Add")
-                    .font(.system(size: 12, weight: .heavy, design: .rounded))
+        Color.clear
+            .frame(width: addWidth)
+            .frame(maxHeight: .infinity)
+            .overlay {
+                VStack(spacing: 8) {
+                    Image(systemName: "plus")
+                        .font(.system(size: 16, weight: .bold))
+                    Text("Add")
+                        .font(.system(size: 12, weight: .heavy, design: .rounded))
+                }
+                .foregroundStyle(.white.opacity(0.85))
             }
-            .foregroundStyle(.white.opacity(0.85))
-        }
-        .frame(width: addWidth)
-        .frame(maxHeight: .infinity)
-        .contentShape(RoundedRectangle(cornerRadius: addRadius, style: .continuous))
-        .onTapGesture { addAccount(AddAccountRequest()) }
-        .onHover { hovering in
-            if hovering { NSCursor.pointingHand.push() } else { NSCursor.pop() }
-        }
-        .help("Add Account…")
-        .accessibilityAddTraits(.isButton)
-        .accessibilityLabel("Add Account")
+            .background(
+                RoundedRectangle(cornerRadius: addRadius, style: .continuous)
+                    .strokeBorder(Color.white.opacity(0.35), style: StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
+            )
+            .contentShape(RoundedRectangle(cornerRadius: addRadius, style: .continuous))
+            .onTapGesture { addAccount(AddAccountRequest()) }
+            .onHover { hovering in
+                if hovering { NSCursor.pointingHand.push() } else { NSCursor.pop() }
+            }
+            .help("Add Account…")
+            .accessibilityAddTraits(.isButton)
+            .accessibilityLabel("Add Account")
     }
 
     private func syncGeometry() {
