@@ -226,9 +226,28 @@ struct AppShellView: View {
                     }
                 }
             } else {
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 200), spacing: 12)], spacing: 12) {
-                    ForEach(model.featuredTools) { tool in
+                // HStack rows (not LazyVGrid): siblings share the tallest card's height.
+                overviewEqualHeightRows(model.featuredTools)
+            }
+        }
+    }
+
+    /// Chunks tools into rows of up to 3; each HStack stretches cards to equal height.
+    private func overviewEqualHeightRows(_ tools: [ToolSnapshot]) -> some View {
+        let columns = 3
+        let rows: [[ToolSnapshot]] = stride(from: 0, to: tools.count, by: columns).map {
+            Array(tools[$0..<min($0 + columns, tools.count)])
+        }
+        return VStack(alignment: .leading, spacing: 12) {
+            ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                HStack(alignment: .top, spacing: 12) {
+                    ForEach(row) { tool in
                         overviewToolCard(tool)
+                    }
+                    if row.count < columns {
+                        ForEach(0..<(columns - row.count), id: \.self) { _ in
+                            Color.clear.frame(maxWidth: .infinity)
+                        }
                     }
                 }
             }
@@ -238,7 +257,7 @@ struct AppShellView: View {
     private func overviewToolCard(_ tool: ToolSnapshot) -> some View {
         let err = tool.statusMessage != nil && !tool.hasData
         let windows = tool.displayPlanWindows
-        return AppShellCard {
+        return AppShellCard(fillHeight: true) {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 8) {
                     ToolGlyph(kind: tool.kind, mood: err ? .dim : .idle, size: 15, playful: false, name: tool.name)
@@ -250,13 +269,12 @@ struct AppShellView: View {
                         Circle().fill(tool.kind.tint).frame(width: 6, height: 6)
                     }
                 }
-                if let account = model.accountLabel(for: tool.id) {
-                    Text(account)
-                        .font(BrimChrome.caption)
-                        .foregroundStyle(BrimChrome.muted)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                }
+                // Fixed email slot so cards without an account still match row height rhythm.
+                Text(model.accountLabel(for: tool.id) ?? " ")
+                    .font(BrimChrome.caption)
+                    .foregroundStyle(model.accountLabel(for: tool.id) == nil ? .clear : BrimChrome.muted)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
                 if err {
                     Text(tool.statusMessage ?? "Signed out")
                         .font(BrimChrome.body)
@@ -278,7 +296,9 @@ struct AppShellView: View {
                         .font(BrimChrome.caption)
                         .foregroundStyle(BrimChrome.muted)
                 }
+                Spacer(minLength: 0)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
     }
 
@@ -542,12 +562,14 @@ private struct AppShellNavButtonStyle: ButtonStyle {
 // MARK: - Cards
 
 private struct AppShellCard<Content: View>: View {
+    /// When true (Overview tool grid), fill the grid cell so siblings in a row share one height.
+    var fillHeight: Bool = false
     @ViewBuilder var content: Content
 
     var body: some View {
         content
             .padding(16)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(maxWidth: .infinity, maxHeight: fillHeight ? .infinity : nil, alignment: .topLeading)
             .foregroundStyle(BrimChrome.ink)
             .background(
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
@@ -557,5 +579,6 @@ private struct AppShellCard<Content: View>: View {
                             .strokeBorder(BrimChrome.hairline, lineWidth: 1)
                     )
             )
+            .frame(maxWidth: .infinity, maxHeight: fillHeight ? .infinity : nil, alignment: .topLeading)
     }
 }
