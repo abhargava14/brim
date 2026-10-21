@@ -103,29 +103,34 @@ struct ExpandedView: View {
     }
 
     /// Dashed Add tile — same Add Account flow as the menu / Connections.
-    /// Explicit `rowHeight` sizes the dashed border; overlay centers `+` / “Add”.
+    /// Fixed `rowHeight` frame + overlays so `+` / “Add” stay geometrically centered
+    /// (ZStack alone was still top-biased once EqualHeightHStack proposed a tall slot).
     private var addTile: some View {
         let height = rowHeight > 0 ? rowHeight : nil
-        return ZStack {
-            RoundedRectangle(cornerRadius: addRadius, style: .continuous)
-                .strokeBorder(Color.white.opacity(0.35), style: StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
-            VStack(spacing: 8) {
-                Image(systemName: "plus")
-                    .font(.system(size: 16, weight: .bold))
-                Text("Add")
-                    .font(.system(size: 12, weight: .heavy, design: .rounded))
+        return Color.clear
+            .frame(width: addWidth, height: height)
+            .overlay {
+                RoundedRectangle(cornerRadius: addRadius, style: .continuous)
+                    .strokeBorder(Color.white.opacity(0.35), style: StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
             }
-            .foregroundStyle(.white.opacity(0.85))
-        }
-        .frame(width: addWidth, height: height)
-        .contentShape(RoundedRectangle(cornerRadius: addRadius, style: .continuous))
-        .onTapGesture { addAccount(AddAccountRequest()) }
-        .onHover { hovering in
-            if hovering { NSCursor.pointingHand.push() } else { NSCursor.pop() }
-        }
-        .help("Add Account…")
-        .accessibilityAddTraits(.isButton)
-        .accessibilityLabel("Add Account")
+            .overlay {
+                VStack(spacing: 8) {
+                    Image(systemName: "plus")
+                        .font(.system(size: 16, weight: .bold))
+                    Text("Add")
+                        .font(.system(size: 12, weight: .heavy, design: .rounded))
+                }
+                .foregroundStyle(.white.opacity(0.85))
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+            }
+            .contentShape(RoundedRectangle(cornerRadius: addRadius, style: .continuous))
+            .onTapGesture { addAccount(AddAccountRequest()) }
+            .onHover { hovering in
+                if hovering { NSCursor.pointingHand.push() } else { NSCursor.pop() }
+            }
+            .help("Add Account…")
+            .accessibilityAddTraits(.isButton)
+            .accessibilityLabel("Add Account")
     }
 
     private func syncGeometry() {
