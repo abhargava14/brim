@@ -164,7 +164,6 @@ struct WideConnectionCard: View {
     @ObservedObject var model: UsageModel
     let addAccount: (AddAccountRequest) -> Void
 
-    private var lead: Double { tool.tightestWindow?.usedPercent ?? 0 }
     private var isError: Bool { tool.statusMessage != nil && !tool.hasData }
     private var working: Bool { model.isWorking(tool) }
     private var title: String { tool.name.split(separator: "·").first.map { String($0).trimmingCharacters(in: .whitespaces) } ?? tool.name }
@@ -172,6 +171,7 @@ struct WideConnectionCard: View {
         guard model.snapshot.tools.filter({ $0.kind == tool.kind }).count > 1 else { return nil }
         return model.wingSuffix(for: tool)
     }
+    private var windows: [PlanWindow] { tool.displayPlanWindows }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 9) {
@@ -194,19 +194,10 @@ struct WideConnectionCard: View {
                 }
             }
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(isError ? "Signed out" : "\(Format.percent(lead))")
-                    .font(.system(size: 26, weight: .heavy, design: .rounded))
-                    .foregroundStyle(isError ? Brand.attention : (lead >= 80 ? PlanBar.color(for: lead) : .white))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
-                Text(pctLabel)
-                    .font(.system(size: 11, weight: .bold, design: .rounded))
-                    .foregroundStyle(.white.opacity(0.6))
-                    .lineLimit(1)
-            }
-
             if isError {
+                Text("Signed out")
+                    .font(.system(size: 22, weight: .heavy, design: .rounded))
+                    .foregroundStyle(Brand.attention)
                 Button {
                     addAccount(AddAccountRequest(connectionID: tool.id))
                 } label: {
@@ -218,27 +209,19 @@ struct WideConnectionCard: View {
                         .foregroundStyle(Brand.attention)
                 }
                 .buttonStyle(.plain)
+            } else if !windows.isEmpty {
+                // Every plan / model window — never a single tightest %.
+                PlanWindowsList(windows: windows, kind: tool.kind, style: .island, showBars: true)
+            } else if tool.hasTokenData {
+                Text(Format.tokens(tool.today.total))
+                    .font(.system(size: 26, weight: .heavy, design: .rounded))
+                Text("tokens today")
+                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.6))
             } else {
-                VStack(spacing: 6) {
-                    GeometryReader { geo in
-                        ZStack(alignment: .leading) {
-                            Capsule().fill(Color.white.opacity(0.1))
-                            Capsule()
-                                .fill(PlanBar.color(for: lead))
-                                .frame(width: max(4, geo.size.width * min(lead, 100) / 100))
-                        }
-                    }
-                    .frame(height: 6)
-                    HStack {
-                        Text(secondLine)
-                            .foregroundStyle(.white.opacity(0.6))
-                        Spacer(minLength: 4)
-                        Text(resetLine)
-                            .foregroundStyle(.white.opacity(0.35))
-                    }
-                    .font(.system(size: 10.5, weight: .bold, design: .rounded))
-                    .lineLimit(1)
-                }
+                Text("Connected")
+                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.6))
             }
 
             HStack(spacing: 6) {
@@ -264,29 +247,6 @@ struct WideConnectionCard: View {
         .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Color.white.opacity(0.07)))
     }
 
-    private var pctLabel: String {
-        if isError { return tool.statusMessage ?? "Sign in" }
-        if let window = tool.tightestWindow { return window.label }
-        if tool.hasTokenData { return "tokens today" }
-        return "usage"
-    }
-
-    private var secondLine: String {
-        let windows = tool.planWindows
-        if windows.count >= 2 {
-            return "\(windows[1].label) \(Format.percent(windows[1].usedPercent))"
-        }
-        if let window = tool.tightestWindow, let detail = window.detail, !detail.isEmpty {
-            return detail
-        }
-        return tool.hasTokenData ? Format.tokens(tool.today.total) : "—"
-    }
-
-    private var resetLine: String {
-        guard let reset = tool.tightestWindow?.resetsAt else { return "" }
-        return Format.reset(reset)
-    }
-
     private var footLine: String {
         if working { return tool.sessions.first?.project ?? "Working" }
         if tool.hasTokenData { return "\(Format.tokens(tool.today.total)) today" }
@@ -302,9 +262,9 @@ struct StripConnectionCard: View {
     @ObservedObject var model: UsageModel
     let addAccount: (AddAccountRequest) -> Void
 
-    private var lead: Double { tool.tightestWindow?.usedPercent ?? 0 }
     private var isError: Bool { tool.statusMessage != nil && !tool.hasData }
     private var working: Bool { model.isWorking(tool) }
+    private var windows: [PlanWindow] { tool.displayPlanWindows }
     private var stripTitle: String {
         var name = tool.name.replacingOccurrences(of: "GitHub ", with: "")
         if let short = model.wingSuffix(for: tool), model.snapshot.tools.filter({ $0.kind == tool.kind }).count > 1 {
@@ -326,24 +286,19 @@ struct StripConnectionCard: View {
                 .font(.system(size: 11, weight: .bold, design: .rounded))
                 .foregroundStyle(.white.opacity(0.6))
                 .lineLimit(1)
-            Text(isError ? "Sign in" : Format.percent(lead))
-                .font(.system(size: 20, weight: .heavy, design: .rounded))
-                .foregroundStyle(isError ? Brand.attention : (lead >= 80 ? PlanBar.color(for: lead) : .white))
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-            GeometryReader { geo in
-                ZStack(alignment: .leading) {
-                    Capsule().fill(Color.white.opacity(0.1))
-                    Capsule()
-                        .fill(PlanBar.color(for: lead))
-                        .frame(width: isError ? 0 : max(3, geo.size.width * min(lead, 100) / 100))
-                }
+            if isError {
+                Text("Sign in")
+                    .font(.system(size: 16, weight: .heavy, design: .rounded))
+                    .foregroundStyle(Brand.attention)
+                Text("expired")
+                    .font(.system(size: 10.5, weight: .bold, design: .rounded))
+                    .foregroundStyle(Brand.attention)
+            } else if !windows.isEmpty {
+                PlanWindowsList(windows: windows, kind: tool.kind, style: .strip)
+            } else {
+                Text(tool.hasTokenData ? Format.tokens(tool.today.total) : "—")
+                    .font(.system(size: 16, weight: .heavy, design: .rounded))
             }
-            .frame(height: 4)
-            Text(subLine)
-                .font(.system(size: 10.5, weight: .bold, design: .rounded))
-                .foregroundStyle(isError ? Brand.attention : .white.opacity(0.35))
-                .lineLimit(1)
         }
         .padding(.horizontal, 9)
         .padding(.top, 13)
@@ -354,14 +309,6 @@ struct StripConnectionCard: View {
         .onTapGesture {
             if isError { addAccount(AddAccountRequest(connectionID: tool.id)) }
         }
-    }
-
-    private var subLine: String {
-        if isError { return "expired" }
-        if let reset = tool.tightestWindow?.resetsAt {
-            return Format.reset(reset).replacingOccurrences(of: "resets ", with: "").replacingOccurrences(of: "in ", with: "")
-        }
-        return tool.hasTokenData ? Format.tokens(tool.today.total) : "—"
     }
 }
 

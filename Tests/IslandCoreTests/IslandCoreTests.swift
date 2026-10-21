@@ -328,9 +328,26 @@ final class AccountUsageTests: XCTestCase {
         XCTAssertEqual(usage.windows.map(\.label), ["Cursor models", "Other models"])
         XCTAssertEqual(Format.used(usage.windows[0]), "3% used")
         XCTAssertEqual(Format.used(usage.windows[1]), "64% used")
+        // Never collapse dual pools to the tightest alone.
+        XCTAssertEqual(
+            Format.allUsed(usage.windows),
+            "Cursor models 3% used · Other models 64% used"
+        )
         XCTAssertEqual(usage.windows.max(by: { $0.usedPercent < $1.usedPercent })?.label, "Other models")
         XCTAssertNotNil(usage.windows[0].resetsAt)
         XCTAssertEqual(Format.used(PlanWindow(label: "Premium", usedPercent: 70.7, resetsAt: nil, detail: "212 / 300")), "212 / 300 used")
+    }
+
+    func testClaudeAllUsedListsEveryScopedWindow() {
+        let windows = [
+            PlanWindow(label: "5h", usedPercent: 12, resetsAt: nil),
+            PlanWindow(label: "Week", usedPercent: 40, resetsAt: nil),
+            PlanWindow(label: "Fable", usedPercent: 100, resetsAt: nil, model: "Fable"),
+        ]
+        XCTAssertEqual(
+            Format.allUsed(windows, kind: .claude),
+            "Current session 12% used · Week · all models 40% used · Week · Fable 100% used"
+        )
     }
 
     func testAccountLabelsComeFromTheToolsOwnResponse() throws {

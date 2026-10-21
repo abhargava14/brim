@@ -236,8 +236,8 @@ struct AppShellView: View {
     }
 
     private func overviewToolCard(_ tool: ToolSnapshot) -> some View {
-        let lead = tool.tightestWindow?.usedPercent ?? 0
         let err = tool.statusMessage != nil && !tool.hasData
+        let windows = tool.displayPlanWindows
         return AppShellCard {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 8) {
@@ -250,21 +250,29 @@ struct AppShellView: View {
                         Circle().fill(tool.kind.tint).frame(width: 6, height: 6)
                     }
                 }
-                Text(err ? "Signed out" : Format.percent(lead))
-                    .font(.system(size: 24, weight: .heavy, design: .rounded))
-                    .foregroundStyle(err ? Color.orange : BrimChrome.ink)
                 if let account = model.accountLabel(for: tool.id) {
                     Text(account)
                         .font(BrimChrome.caption)
                         .foregroundStyle(BrimChrome.muted)
                         .lineLimit(1)
                         .truncationMode(.middle)
+                }
+                if err {
+                    Text(tool.statusMessage ?? "Signed out")
+                        .font(BrimChrome.body)
+                        .foregroundStyle(Color.orange)
+                } else if !windows.isEmpty {
+                    // Every window — Cursor dual pools, Claude Fable + Week · all models, etc.
+                    PlanWindowsList(windows: windows, kind: tool.kind, style: .app, showBars: true)
                 } else if tool.hasData {
-                    let parts = tool.planWindows.prefix(2).map { "\($0.label) \(Format.used($0))" }
-                    Text(parts.isEmpty ? model.compactValue(for: tool) : parts.joined(separator: " · "))
-                        .font(BrimChrome.caption)
-                        .foregroundStyle(BrimChrome.muted)
-                        .lineLimit(2)
+                    Text(model.compactValue(for: tool))
+                        .font(.system(size: 22, weight: .heavy, design: .rounded))
+                        .foregroundStyle(BrimChrome.ink)
+                    if tool.hasTokenData {
+                        Text("tokens today")
+                            .font(BrimChrome.caption)
+                            .foregroundStyle(BrimChrome.muted)
+                    }
                 } else {
                     Text(tool.statusMessage ?? "Connecting…")
                         .font(BrimChrome.caption)
