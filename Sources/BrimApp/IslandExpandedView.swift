@@ -12,6 +12,8 @@ struct ExpandedView: View {
     let openSettings: () -> Void
     let addAccount: (AddAccountRequest) -> Void
     @State private var appeared = false
+    /// Shared row height from `EqualHeightHStack` — locks Add’s dashed frame to card height.
+    @State private var rowHeight: CGFloat = 0
 
     private var tools: [ToolSnapshot] { model.featuredTools }
     private var isStrip: Bool { settings.expandedLayout == .strip }
@@ -51,6 +53,13 @@ struct ExpandedView: View {
 
                     addTile
                 }
+                .background(
+                    GeometryReader { geo in
+                        Color.clear
+                            .onAppear { rowHeight = geo.size.height }
+                            .onChange(of: geo.size.height) { rowHeight = $0 }
+                    }
+                )
                 .padding(.trailing, 4)
                 .fixedSize(horizontal: false, vertical: true)
             }
@@ -94,10 +103,11 @@ struct ExpandedView: View {
     }
 
     /// Dashed Add tile — same Add Account flow as the menu / Connections.
-    /// Spacers collapse during EqualHeightHStack ideal measure, then expand equally
-    /// when the row proposes the tall card height — keeping `+` / “Add” mid-tile.
+    /// Explicit `rowHeight` makes the dashed frame match cards; Spacers center `+` / “Add”
+    /// inside that frame (Layout’s tall proposal alone does not expand the tile).
     private var addTile: some View {
-        VStack(spacing: 0) {
+        let height = rowHeight > 0 ? rowHeight : nil
+        return VStack(spacing: 0) {
             Spacer(minLength: 0)
             VStack(spacing: 8) {
                 Image(systemName: "plus")
@@ -108,7 +118,7 @@ struct ExpandedView: View {
             .foregroundStyle(.white.opacity(0.85))
             Spacer(minLength: 0)
         }
-        .frame(width: addWidth)
+        .frame(width: addWidth, height: height)
         .overlay {
             RoundedRectangle(cornerRadius: addRadius, style: .continuous)
                 .strokeBorder(Color.white.opacity(0.35), style: StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
