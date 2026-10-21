@@ -87,9 +87,11 @@ struct IslandView: View {
             }
         )
         .contentShape(Rectangle())
+        // Only toggle expand while compact — when expanded, buttons (Add, Sign in, …) must receive the click.
         .onTapGesture {
-            if model.event != nil && !state.isExpanded { model.dismissEvent() }
-            if !state.expansionLocked { state.isExpanded.toggle() }
+            guard !state.isExpanded, !state.expansionLocked else { return }
+            if model.event != nil { model.dismissEvent() }
+            state.isExpanded = true
         }
         .animation(.spring(response: 0.38, dampingFraction: 0.82), value: state.isExpanded)
         .animation(.spring(response: 0.38, dampingFraction: 0.82), value: model.event?.id)

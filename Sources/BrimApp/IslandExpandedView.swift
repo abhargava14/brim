@@ -11,7 +11,8 @@ struct ExpandedView: View {
     let openSettings: () -> Void
     let addAccount: (AddAccountRequest) -> Void
     @State private var appeared = false
-    @State private var adding = false
+    /// Shared height for connection cards + Add tile (PreferenceKey).
+    @State private var rowHeight: CGFloat = 0
 
     private var tools: [ToolSnapshot] { model.featuredTools }
     private var isStrip: Bool { settings.expandedLayout == .strip }
@@ -37,7 +38,9 @@ struct ExpandedView: View {
                                     WideConnectionCard(tool: tool, model: model, addAccount: addAccount)
                                 }
                             }
-                            .frame(width: cardWidth)
+                            .frame(width: cardWidth, alignment: .top)
+                            .fillEqualHeight(rowHeight)
+                            .reportEqualHeight()
                             .opacity(appeared ? 1 : 0)
                             .offset(y: appeared ? 0 : -10)
                             .scaleEffect(appeared ? 1 : 0.98, anchor: .top)
@@ -60,13 +63,11 @@ struct ExpandedView: View {
                 )
 
                 addTile
+                    .frame(width: addWidth, alignment: .center)
+                    .fillEqualHeight(rowHeight, alignment: .center)
+                    .reportEqualHeight()
             }
-            .frame(maxHeight: 240)
-
-            if adding {
-                addPicker
-                    .transition(.opacity.combined(with: .move(edge: .top)))
-            }
+            .onPreferenceChange(EqualHeightPreferenceKey.self) { rowHeight = $0 }
         }
         .padding(.horizontal, 12)
         .padding(.bottom, 12)
@@ -75,8 +76,14 @@ struct ExpandedView: View {
             appeared = true
             syncGeometry()
         }
-        .onChange(of: tools.count) { _ in syncGeometry() }
-        .onChange(of: settings.expandedLayout) { _ in syncGeometry() }
+        .onChange(of: tools.count) { _ in
+            rowHeight = 0
+            syncGeometry()
+        }
+        .onChange(of: settings.expandedLayout) { _ in
+            rowHeight = 0
+            syncGeometry()
+        }
     }
 
     private var header: some View {
@@ -96,59 +103,29 @@ struct ExpandedView: View {
         .monospacedDigit()
     }
 
+    /// Dashed Add tile — opens the same Add Account window as the menu / app shell.
     private var addTile: some View {
         Button {
-            withAnimation(.spring(response: 0.34, dampingFraction: 0.82)) { adding.toggle() }
+            addAccount(AddAccountRequest())
         } label: {
             VStack(spacing: 8) {
                 Image(systemName: "plus")
                     .font(.system(size: 16, weight: .bold))
-                    .rotationEffect(.degrees(adding ? 45 : 0))
-                Text(adding ? "Close" : "Add")
+                Text("Add")
                     .font(.system(size: 12, weight: .heavy, design: .rounded))
+                Spacer(minLength: 0)
             }
-            .frame(width: addWidth, height: isStrip ? 128 : 168)
+            .padding(.vertical, 14)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .foregroundStyle(.white.opacity(0.85))
             .background(
                 RoundedRectangle(cornerRadius: addRadius, style: .continuous)
-                    .strokeBorder(Color.white.opacity(0.35), style: StrokeStyle(lineWidth: 1.5, dash: adding ? [] : [4, 3]))
-                    .background(
-                        RoundedRectangle(cornerRadius: addRadius, style: .continuous)
-                            .fill(adding ? Color.white.opacity(0.1) : Color.clear)
-                    )
+                    .strokeBorder(Color.white.opacity(0.35), style: StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
             )
+            .contentShape(RoundedRectangle(cornerRadius: addRadius, style: .continuous))
         }
         .buttonStyle(.plain)
-    }
-
-    private var addPicker: some View {
-        let kinds: [ToolKind] = [.claude, .codex, .cursor, .copilot, .windsurf, .openrouter]
-        return ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(kinds) { kind in
-                    let already = settings.connections.contains { $0.kind == kind }
-                    Button {
-                        addAccount(AddAccountRequest(kind: kind))
-                        adding = false
-                    } label: {
-                        VStack(spacing: 6) {
-                            ToolGlyph(kind: kind, mood: .idle, size: 16, playful: settings.playful)
-                            Text(kind.displayName.replacingOccurrences(of: "GitHub ", with: ""))
-                                .font(.system(size: 11, weight: .bold, design: .rounded))
-                                .lineLimit(1)
-                            Text(already ? "Add account" : "Connect")
-                                .font(.system(size: 10.5, weight: .bold, design: .rounded))
-                                .foregroundStyle(.white.opacity(already ? 0.35 : 0.6))
-                        }
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 10)
-                        .frame(width: 96)
-                        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.white.opacity(0.07)))
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-        }
+        .help("Add Account…")
     }
 
     private func syncGeometry() {
@@ -210,7 +187,6 @@ struct WideConnectionCard: View {
                 }
                 .buttonStyle(.plain)
             } else if !windows.isEmpty {
-                // Every plan / model window — never a single tightest %.
                 PlanWindowsList(windows: windows, kind: tool.kind, style: .island, showBars: true)
             } else if tool.hasTokenData {
                 Text(Format.tokens(tool.today.total))
@@ -223,6 +199,8 @@ struct WideConnectionCard: View {
                     .font(.system(size: 13, weight: .bold, design: .rounded))
                     .foregroundStyle(.white.opacity(0.6))
             }
+
+            Spacer(minLength: 0)
 
             HStack(spacing: 6) {
                 Text(footLine)
@@ -244,6 +222,7 @@ struct WideConnectionCard: View {
         }
         .padding(.horizontal, 13)
         .padding(.vertical, 12)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Color.white.opacity(0.07)))
     }
 
@@ -299,11 +278,12 @@ struct StripConnectionCard: View {
                 Text(tool.hasTokenData ? Format.tokens(tool.today.total) : "—")
                     .font(.system(size: 16, weight: .heavy, design: .rounded))
             }
+            Spacer(minLength: 0)
         }
         .padding(.horizontal, 9)
         .padding(.top, 13)
         .padding(.bottom, 11)
-        .frame(maxWidth: .infinity)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color.white.opacity(0.07)))
         .contentShape(Rectangle())
         .onTapGesture {

@@ -552,7 +552,7 @@ private struct AppShellNavButtonStyle: ButtonStyle {
     }
 }
 
-// MARK: - Equal-height Overview rows
+// MARK: - Equal-height Overview rows (shared PreferenceKey with island)
 
 /// Measures each card’s ideal height, then forces every card in the row to that max.
 private struct OverviewEqualHeightRow<Card: View>: View {
@@ -565,12 +565,9 @@ private struct OverviewEqualHeightRow<Card: View>: View {
         HStack(alignment: .top, spacing: 12) {
             ForEach(tools) { tool in
                 card(tool)
-                    .frame(maxWidth: .infinity, minHeight: rowHeight > 0 ? rowHeight : nil, alignment: .topLeading)
-                    .background(
-                        GeometryReader { geo in
-                            Color.clear.preference(key: OverviewCardHeightKey.self, value: geo.size.height)
-                        }
-                    )
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                    .fillEqualHeight(rowHeight)
+                    .reportEqualHeight()
             }
             if tools.count < 3 {
                 ForEach(0..<(3 - tools.count), id: \.self) { _ in
@@ -578,14 +575,7 @@ private struct OverviewEqualHeightRow<Card: View>: View {
                 }
             }
         }
-        .onPreferenceChange(OverviewCardHeightKey.self) { rowHeight = $0 }
-    }
-}
-
-private struct OverviewCardHeightKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = max(value, nextValue())
+        .onPreferenceChange(EqualHeightPreferenceKey.self) { rowHeight = $0 }
     }
 }
 
