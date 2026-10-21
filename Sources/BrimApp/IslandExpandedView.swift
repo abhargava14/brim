@@ -11,7 +11,6 @@ struct ExpandedView: View {
     let openSettings: () -> Void
     let addAccount: (AddAccountRequest) -> Void
     @State private var appeared = false
-    @State private var adding = false
 
     private var tools: [ToolSnapshot] { model.featuredTools }
     private var isStrip: Bool { settings.expandedLayout == .strip }
@@ -26,47 +25,44 @@ struct ExpandedView: View {
 
             header
 
-            HStack(alignment: .top, spacing: 8) {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(alignment: .top, spacing: cardGap) {
-                        ForEach(Array(tools.enumerated()), id: \.element.id) { index, tool in
-                            Group {
-                                if isStrip {
-                                    StripConnectionCard(tool: tool, model: model, addAccount: addAccount)
-                                } else {
-                                    WideConnectionCard(tool: tool, model: model, addAccount: addAccount)
-                                }
+            // EqualHeightHStack = shared *ideal* height. `fixedSize(vertical:)` stops horizontal
+            // ScrollView from stretching the cross-axis to the island panel/canvas height.
+            ScrollView(.horizontal, showsIndicators: false) {
+                EqualHeightHStack(spacing: cardGap) {
+                    ForEach(Array(tools.enumerated()), id: \.element.id) { index, tool in
+                        Group {
+                            if isStrip {
+                                StripConnectionCard(tool: tool, model: model, addAccount: addAccount)
+                            } else {
+                                WideConnectionCard(tool: tool, model: model, addAccount: addAccount)
                             }
-                            .frame(width: cardWidth)
-                            .opacity(appeared ? 1 : 0)
-                            .offset(y: appeared ? 0 : -10)
-                            .scaleEffect(appeared ? 1 : 0.98, anchor: .top)
-                            .animation(
-                                .spring(response: 0.34, dampingFraction: 0.82)
-                                    .delay(0.14 + Double(min(index, 8)) * 0.04),
-                                value: appeared
-                            )
                         }
+                        .frame(width: cardWidth, alignment: .topLeading)
+                        .opacity(appeared ? 1 : 0)
+                        .offset(y: appeared ? 0 : -10)
+                        .scaleEffect(appeared ? 1 : 0.98, anchor: .top)
+                        .animation(
+                            .spring(response: 0.34, dampingFraction: 0.82)
+                                .delay(0.14 + Double(min(index, 8)) * 0.04),
+                            value: appeared
+                        )
+                    }
+
+                    addTile
+                }
+                .padding(.trailing, 4)
+                .fixedSize(horizontal: false, vertical: true)
+            }
+            .fixedSize(horizontal: false, vertical: true)
+            .mask(
+                HStack(spacing: 0) {
+                    Color.black
+                    if tools.count > (isStrip ? 6 : 3) {
+                        LinearGradient(colors: [.black, .clear], startPoint: .leading, endPoint: .trailing)
+                            .frame(width: 44)
                     }
                 }
-                .mask(
-                    HStack(spacing: 0) {
-                        Color.black
-                        if tools.count > (isStrip ? 6 : 3) {
-                            LinearGradient(colors: [.black, .clear], startPoint: .leading, endPoint: .trailing)
-                                .frame(width: 44)
-                        }
-                    }
-                )
-
-                addTile
-            }
-            .frame(maxHeight: 240)
-
-            if adding {
-                addPicker
-                    .transition(.opacity.combined(with: .move(edge: .top)))
-            }
+            )
         }
         .padding(.horizontal, 12)
         .padding(.bottom, 12)
@@ -96,59 +92,29 @@ struct ExpandedView: View {
         .monospacedDigit()
     }
 
+    /// Dashed Add tile — same Add Account flow as the menu / Connections.
+    /// Spacer fills only the shared *content* height from `EqualHeightHStack`, not the viewport.
     private var addTile: some View {
-        Button {
-            withAnimation(.spring(response: 0.34, dampingFraction: 0.82)) { adding.toggle() }
-        } label: {
-            VStack(spacing: 8) {
-                Image(systemName: "plus")
-                    .font(.system(size: 16, weight: .bold))
-                    .rotationEffect(.degrees(adding ? 45 : 0))
-                Text(adding ? "Close" : "Add")
-                    .font(.system(size: 12, weight: .heavy, design: .rounded))
-            }
-            .frame(width: addWidth, height: isStrip ? 128 : 168)
-            .foregroundStyle(.white.opacity(0.85))
-            .background(
-                RoundedRectangle(cornerRadius: addRadius, style: .continuous)
-                    .strokeBorder(Color.white.opacity(0.35), style: StrokeStyle(lineWidth: 1.5, dash: adding ? [] : [4, 3]))
-                    .background(
-                        RoundedRectangle(cornerRadius: addRadius, style: .continuous)
-                            .fill(adding ? Color.white.opacity(0.1) : Color.clear)
-                    )
-            )
+        VStack(spacing: 8) {
+            Image(systemName: "plus")
+                .font(.system(size: 16, weight: .bold))
+            Text("Add")
+                .font(.system(size: 12, weight: .heavy, design: .rounded))
+            Spacer(minLength: 0)
         }
-        .buttonStyle(.plain)
-    }
-
-    private var addPicker: some View {
-        let kinds: [ToolKind] = [.claude, .codex, .cursor, .copilot, .windsurf, .openrouter]
-        return ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(kinds) { kind in
-                    let already = settings.connections.contains { $0.kind == kind }
-                    Button {
-                        addAccount(AddAccountRequest(kind: kind))
-                        adding = false
-                    } label: {
-                        VStack(spacing: 6) {
-                            ToolGlyph(kind: kind, mood: .idle, size: 16, playful: settings.playful)
-                            Text(kind.displayName.replacingOccurrences(of: "GitHub ", with: ""))
-                                .font(.system(size: 11, weight: .bold, design: .rounded))
-                                .lineLimit(1)
-                            Text(already ? "Add account" : "Connect")
-                                .font(.system(size: 10.5, weight: .bold, design: .rounded))
-                                .foregroundStyle(.white.opacity(already ? 0.35 : 0.6))
-                        }
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 10)
-                        .frame(width: 96)
-                        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.white.opacity(0.07)))
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-        }
+        .padding(.vertical, 14)
+        .frame(width: addWidth, alignment: .top)
+        .frame(maxHeight: .infinity, alignment: .top)
+        .foregroundStyle(.white.opacity(0.85))
+        .background(
+            RoundedRectangle(cornerRadius: addRadius, style: .continuous)
+                .strokeBorder(Color.white.opacity(0.35), style: StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
+        )
+        .contentShape(RoundedRectangle(cornerRadius: addRadius, style: .continuous))
+        .onTapGesture { addAccount(AddAccountRequest()) }
+        .help("Add Account…")
+        .accessibilityAddTraits(.isButton)
+        .accessibilityLabel("Add Account")
     }
 
     private func syncGeometry() {
@@ -210,7 +176,6 @@ struct WideConnectionCard: View {
                 }
                 .buttonStyle(.plain)
             } else if !windows.isEmpty {
-                // Every plan / model window — never a single tightest %.
                 PlanWindowsList(windows: windows, kind: tool.kind, style: .island, showBars: true)
             } else if tool.hasTokenData {
                 Text(Format.tokens(tool.today.total))
@@ -223,6 +188,8 @@ struct WideConnectionCard: View {
                     .font(.system(size: 13, weight: .bold, design: .rounded))
                     .foregroundStyle(.white.opacity(0.6))
             }
+
+            Spacer(minLength: 0)
 
             HStack(spacing: 6) {
                 Text(footLine)
@@ -244,6 +211,7 @@ struct WideConnectionCard: View {
         }
         .padding(.horizontal, 13)
         .padding(.vertical, 12)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Color.white.opacity(0.07)))
     }
 
@@ -299,11 +267,12 @@ struct StripConnectionCard: View {
                 Text(tool.hasTokenData ? Format.tokens(tool.today.total) : "—")
                     .font(.system(size: 16, weight: .heavy, design: .rounded))
             }
+            Spacer(minLength: 0)
         }
         .padding(.horizontal, 9)
         .padding(.top, 13)
         .padding(.bottom, 11)
-        .frame(maxWidth: .infinity)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color.white.opacity(0.07)))
         .contentShape(Rectangle())
         .onTapGesture {

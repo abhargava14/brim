@@ -6,8 +6,11 @@ public enum BrimMigration {
     /// Safe to run on every launch; it does nothing once there's nothing left to move.
     public static func run() {
         LegacyMigration.moveSupportFolder()
-        let accounts = ConnectionStore().load().connections.map(\.id)
-        Keychain.migrateLegacy(accounts: accounts)
+        // Never migrate / touch Keychain during screenshot or agent QA (no password sheets).
+        if !BrimQA.skipCredentials {
+            let accounts = ConnectionStore().load().connections.map(\.id)
+            Keychain.migrateLegacy(accounts: accounts)
+        }
         _ = try? ClaudeStatusLineSetup(
             supportDirectory: ClaudeStatusLineSetup.defaultSupportDirectory,
             settingsURL: ClaudeStatusLineSetup.defaultSettingsURL()
