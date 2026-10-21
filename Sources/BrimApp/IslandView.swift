@@ -27,9 +27,18 @@ struct IslandView: View {
         }
         .frame(width: IslandController.canvas.width, height: IslandController.canvas.height, alignment: .top)
         .environment(\.colorScheme, .dark)
+        .onAppear { syncExpandedGeometry() }
         .onChange(of: state.isExpanded) { expanded in
             if expanded, settings.pendingIslandTip { settings.pendingIslandTip = false }
+            syncExpandedGeometry()
         }
+        .onChange(of: model.featuredTools.count) { _ in syncExpandedGeometry() }
+        .onChange(of: settings.expandedLayout) { _ in syncExpandedGeometry() }
+    }
+
+    private func syncExpandedGeometry() {
+        state.expandedToolCount = model.featuredTools.count
+        state.expandedLayoutIsStrip = settings.expandedLayout == .strip
     }
 
     private var island: some View {
@@ -97,7 +106,7 @@ struct IslandTipView: View {
             Text("Brim lives here")
                 .font(.system(size: 14, weight: .bold))
                 .foregroundStyle(.primary)
-            Text("Your connections take turns in the notch. Hover to see all of them.")
+            Text("Your connections take turns in the notch. Hover to expand, or press ⌥⌘B.")
                 .font(.system(size: 12))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

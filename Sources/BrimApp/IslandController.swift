@@ -34,12 +34,12 @@ final class IslandState: ObservableObject {
     /// Another app is drawing in the notch; the island stepped aside to the menu bar item.
     @Published var steppedAside = false
 
-    /// Idle wing beside the notch. Kept tight so the island stays near the notch.
-    static let wingWidth: CGFloat = 48
-    static let emptyWingWidth: CGFloat = 26
+    /// Idle wing beside the notch (design v2 · 92pt; capped by menu-bar room).
+    static let wingWidth: CGFloat = 92
+    static let emptyWingWidth: CGFloat = 30
     /// Wings grow to this while an event (connected, near a limit, …) is showing.
-    static let eventWingWidth: CGFloat = 100
-    static let quietEventWingWidth: CGFloat = 80
+    static let eventWingWidth: CGFloat = 140
+    static let quietEventWingWidth: CGFloat = 112
     /// Below this, a wing shows only the glyph (avoids truncated "10…" numbers).
     static let glyphOnlyWidth: CGFloat = 40
     /// At or above this, a wing can show glyph + number + suffix.
@@ -47,8 +47,25 @@ final class IslandState: ObservableObject {
     /// Narrower than this next to the notch → fall back to below the menu bar.
     static let minimumNotchWing: CGFloat = 24
 
+    /// Connection count used to size the horizontal expanded island (Cards / Strip).
+    @Published var expandedToolCount: Int = 0
+    /// When true, expanded columns use the narrow Strip layout.
+    @Published var expandedLayoutIsStrip: Bool = false
+
     var compactWidth: CGFloat { compactWidth(for: nil) }
-    var expandedWidth: CGFloat { isEmpty ? 300 : 360 }
+    var expandedWidth: CGFloat {
+        if isEmpty { return 320 }
+        return Self.wideWidth(count: max(expandedToolCount, 1), strip: expandedLayoutIsStrip)
+    }
+
+    /// Design v2 IslandWide: 560–920pt from connection count and Cards (196) / Strip (108).
+    static func wideWidth(count: Int, strip: Bool) -> CGFloat {
+        let n = CGFloat(max(count, 1))
+        let unit: CGFloat = strip ? 108 : 196
+        let gap: CGFloat = strip ? 6 : 8
+        let add: CGFloat = strip ? 84 : 96
+        return min(920, max(560, 24 + n * unit + max(0, n - 1) * gap + 8 + add))
+    }
 
     func idealWingWidth(for event: IslandEvent.Style?) -> CGFloat {
         switch event {
@@ -74,8 +91,8 @@ final class IslandState: ObservableObject {
 
     func compactWidth(for event: IslandEvent.Style?) -> CGFloat {
         guard !hasNotch else { return leftWingWidth(for: event) + notchWidth + rightWingWidth(for: event) }
-        if event != nil { return 260 }
-        return isEmpty ? 88 : 200
+        if event != nil { return 300 }
+        return isEmpty ? 88 : 230
     }
 
     /// Shift that keeps the gap between the wings over the notch when one wing is capped.
@@ -121,7 +138,8 @@ final class ClickThroughHostingView<Content: View>: NSHostingView<Content> {
 /// is over the visible island, so the menu bar underneath keeps working.
 @MainActor
 final class IslandController {
-    static let canvas = CGSize(width: 640, height: 680)
+    /// Wide enough for design-v2 expanded island (up to 920pt) plus hover slack.
+    static let canvas = CGSize(width: 1000, height: 720)
     /// Height of the island when it hangs below the menu bar.
     static let belowMenuBarHeight: CGFloat = 30
 
@@ -480,7 +498,14 @@ final class IslandController {
     private var islandRect: NSRect {
         guard let screen else { return .zero }
         let event = state.isExpanded ? nil : model.event?.style
-        let width = state.isExpanded ? state.expandedWidth : state.compactWidth(for: event)
+        let width: CGFloat
+        if state.isExpanded {
+            width = state.isEmpty
+                ? 320
+                : IslandState.wideWidth(count: max(model.featuredTools.count, 1), strip: settings.expandedLayout == .strip)
+        } else {
+            width = state.compactWidth(for: event)
+        }
         var height = state.barHeight
         if state.isExpanded {
             height = state.islandSize.height > state.barHeight ? state.islandSize.height : Self.canvas.height

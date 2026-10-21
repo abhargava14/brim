@@ -194,13 +194,13 @@ struct AppShellView: View {
         VStack(alignment: .leading, spacing: 14) {
             AppShellCard {
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("Usage today")
+                    Text("Today")
                         .font(BrimChrome.section)
                         .foregroundStyle(BrimChrome.muted)
                     Text(model.snapshot.usageTodayHeadline)
-                        .font(.system(size: 28, weight: .semibold, design: .rounded))
+                        .font(.system(size: 28, weight: .heavy, design: .rounded))
                         .foregroundStyle(BrimChrome.ink)
-                    Text("\(settings.enabledConnections.count) of \(settings.connections.count) accounts connected")
+                    Text("\(settings.enabledConnections.count) connected")
                         .font(BrimChrome.body)
                         .foregroundStyle(BrimChrome.muted)
                 }
@@ -208,10 +208,17 @@ struct AppShellView: View {
 
             if model.featuredTools.isEmpty {
                 AppShellCard {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Nothing connected yet")
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack(spacing: 8) {
+                            ForEach([ToolKind.claude, .codex, .copilot, .cursor, .windsurf, .openrouter]) { kind in
+                                ToolGlyph(kind: kind, mood: .dim, size: 14, playful: false)
+                                    .frame(width: 28, height: 28)
+                                    .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.white.opacity(0.06)))
+                            }
+                        }
+                        Text("Connect your AIs")
                             .font(BrimChrome.headline)
-                        Text("Add Claude, Codex, Cursor, Copilot or another tool. Claude plan limits come from Anthropic after Sign in with Claude — no log folder required.")
+                        Text("See tokens and plan limits for each tool in the notch.")
                             .font(BrimChrome.body)
                             .foregroundStyle(BrimChrome.muted)
                             .fixedSize(horizontal: false, vertical: true)
@@ -219,32 +226,49 @@ struct AppShellView: View {
                     }
                 }
             } else {
-                ForEach(model.featuredTools) { tool in
-                    AppShellCard {
-                        HStack(alignment: .top, spacing: 12) {
-                            ToolGlyph(kind: tool.kind, mood: .idle, size: 16, playful: false, name: tool.name)
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(tool.name)
-                                    .font(BrimChrome.headline)
-                                if let account = model.accountLabel(for: tool.id) {
-                                    Text(account)
-                                        .font(BrimChrome.caption)
-                                        .foregroundStyle(BrimChrome.muted)
-                                }
-                                if tool.hasData {
-                                    let parts = tool.planWindows.map { "\($0.label) \(Format.used($0))" }
-                                    Text(parts.isEmpty ? model.compactValue(for: tool) : parts.joined(separator: " · "))
-                                        .font(BrimChrome.body)
-                                        .foregroundStyle(BrimChrome.ink)
-                                } else {
-                                    Text(tool.statusMessage ?? "Connecting…")
-                                        .font(BrimChrome.body)
-                                        .foregroundStyle(BrimChrome.muted)
-                                }
-                            }
-                            Spacer()
-                        }
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 200), spacing: 12)], spacing: 12) {
+                    ForEach(model.featuredTools) { tool in
+                        overviewToolCard(tool)
                     }
+                }
+            }
+        }
+    }
+
+    private func overviewToolCard(_ tool: ToolSnapshot) -> some View {
+        let lead = tool.tightestWindow?.usedPercent ?? 0
+        let err = tool.statusMessage != nil && !tool.hasData
+        return AppShellCard {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 8) {
+                    ToolGlyph(kind: tool.kind, mood: err ? .dim : .idle, size: 15, playful: false, name: tool.name)
+                    Text(tool.name)
+                        .font(BrimChrome.headline)
+                        .lineLimit(1)
+                    Spacer(minLength: 0)
+                    if model.isWorking(tool) {
+                        Circle().fill(tool.kind.tint).frame(width: 6, height: 6)
+                    }
+                }
+                Text(err ? "Signed out" : Format.percent(lead))
+                    .font(.system(size: 24, weight: .heavy, design: .rounded))
+                    .foregroundStyle(err ? Color.orange : BrimChrome.ink)
+                if let account = model.accountLabel(for: tool.id) {
+                    Text(account)
+                        .font(BrimChrome.caption)
+                        .foregroundStyle(BrimChrome.muted)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                } else if tool.hasData {
+                    let parts = tool.planWindows.prefix(2).map { "\($0.label) \(Format.used($0))" }
+                    Text(parts.isEmpty ? model.compactValue(for: tool) : parts.joined(separator: " · "))
+                        .font(BrimChrome.caption)
+                        .foregroundStyle(BrimChrome.muted)
+                        .lineLimit(2)
+                } else {
+                    Text(tool.statusMessage ?? "Connecting…")
+                        .font(BrimChrome.caption)
+                        .foregroundStyle(BrimChrome.muted)
                 }
             }
         }
@@ -368,6 +392,17 @@ struct AppShellView: View {
 
             AppShellCard {
                 Form {
+                    Section("Expanded layout") {
+                        Picker("Connections", selection: $settings.expandedLayout) {
+                            ForEach(ExpandedLayout.allCases) { layout in
+                                Text(layout.title).tag(layout)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        Text(settings.expandedLayout.detail)
+                            .font(BrimChrome.caption)
+                            .foregroundStyle(BrimChrome.muted)
+                    }
                     Section("Compact island") {
                         Toggle("Expand when the pointer is over it", isOn: $settings.expandOnHover)
                         Toggle("Playful animations (confetti, bouncing icons)", isOn: $settings.playful)
@@ -393,7 +428,7 @@ struct AppShellView: View {
                 .scrollContentBackground(.hidden)
             }
 
-            Text("The notch stays minimal by default — one metric at a time. Expand for detail.")
+            Text("Compact pairs take turns every 4s. Expand for Cards or Strip detail.")
                 .font(BrimChrome.caption)
                 .foregroundStyle(BrimChrome.muted)
         }

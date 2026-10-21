@@ -47,7 +47,7 @@ struct EmptyPanel: View {
                 .foregroundStyle(.white.opacity(0.6))
                 .multilineTextAlignment(.center)
             HStack(spacing: 8) {
-                PillButton(title: "Add Account…", filled: true) { addAccount(AddAccountRequest()) }
+                PillButton(title: "Connect…", filled: true) { addAccount(AddAccountRequest()) }
                 PillButton(title: "Hide until connected", filled: false) { settings.emptyIsland = .hidden }
             }
         }

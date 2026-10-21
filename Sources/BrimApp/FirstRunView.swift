@@ -25,6 +25,9 @@ struct FirstRunView: View {
         }
         .padding(22)
         .frame(width: 520)
+        .background(BrimChrome.canvas)
+        .foregroundStyle(BrimChrome.ink)
+        .preferredColorScheme(.dark)
         .task { await scan() }
     }
 
@@ -44,10 +47,10 @@ struct FirstRunView: View {
                 VStack(spacing: 0) {
                     ForEach(logTools) { tool in
                         foundRow(tool)
-                        if tool.id != logTools.last?.id { Divider() }
+                        if tool.id != logTools.last?.id { Divider().overlay(BrimChrome.hairline) }
                     }
                 }
-                .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.primary.opacity(0.04)))
+                .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(BrimChrome.card))
             }
 
             if !signInTools.isEmpty {
@@ -55,15 +58,15 @@ struct FirstRunView: View {
                 VStack(spacing: 0) {
                     ForEach(signInTools) { tool in
                         signInRow(tool)
-                        if tool.id != signInTools.last?.id { Divider() }
+                        if tool.id != signInTools.last?.id { Divider().overlay(BrimChrome.hairline) }
                     }
                 }
-                .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.primary.opacity(0.04)))
+                .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(BrimChrome.card))
             }
 
             Text("Local logs stay on this Mac. Add Windsurf, OpenRouter and second accounts later in Settings.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .font(BrimChrome.caption)
+                .foregroundStyle(BrimChrome.muted)
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
@@ -83,7 +86,7 @@ struct FirstRunView: View {
                 Text(tool.kind.displayName).font(.body.weight(.semibold))
                 Text(tool.detail)
                     .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(BrimChrome.muted)
             }
             Spacer(minLength: 8)
             Picker("", selection: Binding(
@@ -107,7 +110,7 @@ struct FirstRunView: View {
             ToolGlyph(kind: tool.kind, mood: .idle, size: 16, playful: settings.playful)
             VStack(alignment: .leading, spacing: 2) {
                 Text(tool.kind.displayName).font(.body.weight(.semibold))
-                Text(tool.detail).font(.caption).foregroundStyle(.secondary)
+                Text(tool.detail).font(BrimChrome.caption).foregroundStyle(BrimChrome.muted)
             }
             Spacer()
             Button(signingIn == tool.kind ? "Signing in…" : "Sign in…") {
@@ -131,7 +134,7 @@ struct FirstRunView: View {
             islandPreview
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 18)
-                .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.primary.opacity(0.05)))
+                .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(BrimChrome.card))
 
             VStack(spacing: 0) {
                 lookRow(title: "Style", detail: "Playful animates icons and moments. Calm stays still.") {
@@ -143,7 +146,7 @@ struct FirstRunView: View {
                     .labelsHidden()
                     .frame(width: 160)
                 }
-                Divider()
+                Divider().overlay(BrimChrome.hairline)
                 lookRow(title: "Show in", detail: nil) {
                     Picker("", selection: $settings.placement) {
                         ForEach(IslandPlacement.allCases) { Text($0.title).tag($0) }
@@ -151,7 +154,7 @@ struct FirstRunView: View {
                     .labelsHidden()
                     .frame(width: 180)
                 }
-                Divider()
+                Divider().overlay(BrimChrome.hairline)
                 lookRow(title: "Open at login", detail: nil) {
                     Toggle("", isOn: $launchAtLogin).labelsHidden()
                         .onChange(of: launchAtLogin) { enabled in
@@ -161,7 +164,7 @@ struct FirstRunView: View {
                         }
                 }
             }
-            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.primary.opacity(0.04)))
+            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(BrimChrome.card))
         }
     }
 
@@ -178,8 +181,8 @@ struct FirstRunView: View {
             .background(Capsule().fill(Color.black))
             .frame(width: 280)
             Text(kinds.isEmpty ? "Preview · connect a tool to see it here" : "Preview · your \(kinds.count) connection\(kinds.count == 1 ? "" : "s")")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .font(BrimChrome.caption)
+                .foregroundStyle(BrimChrome.muted)
         }
     }
 
@@ -206,23 +209,23 @@ struct FirstRunView: View {
 
     private func header(title: String, subtitle: String) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(title).font(.title2.bold())
-            Text(subtitle).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            Text(title).font(.system(size: 22, weight: .heavy, design: .rounded))
+            Text(subtitle).font(BrimChrome.body).foregroundStyle(BrimChrome.muted).fixedSize(horizontal: false, vertical: true)
         }
     }
 
     private func sectionTitle(_ text: String) -> some View {
         Text(text.uppercased())
-            .font(.caption.weight(.semibold))
-            .foregroundStyle(.secondary)
+            .font(BrimChrome.section)
+            .foregroundStyle(BrimChrome.muted)
     }
 
     private func lookRow<Trailing: View>(title: String, detail: String?, @ViewBuilder trailing: () -> Trailing) -> some View {
         HStack(alignment: .center) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(title)
+                Text(title).font(BrimChrome.body)
                 if let detail {
-                    Text(detail).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    Text(detail).font(BrimChrome.caption).foregroundStyle(BrimChrome.muted).fixedSize(horizontal: false, vertical: true)
                 }
             }
             Spacer(minLength: 12)
@@ -235,17 +238,15 @@ struct FirstRunView: View {
     private var footer: some View {
         HStack {
             Text(step == 0 ? "Step 1 of 2" : "Step 2 of 2")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .font(BrimChrome.caption)
+                .foregroundStyle(BrimChrome.muted)
             Spacer()
             if step == 0 {
                 Button("Skip") { skip() }
-                Button("Continue") { applySelection(); step = 1 }
-                    .keyboardShortcut(.defaultAction)
+                BrimChrome.primaryButton("Continue") { applySelection(); step = 1 }
             } else {
                 Button("Back") { step = 0 }
-                Button("Done") { done() }
-                    .keyboardShortcut(.defaultAction)
+                BrimChrome.primaryButton("Done") { done() }
             }
         }
         .padding(.top, 18)
