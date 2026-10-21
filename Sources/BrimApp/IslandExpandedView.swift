@@ -12,6 +12,8 @@ struct ExpandedView: View {
     let openSettings: () -> Void
     let addAccount: (AddAccountRequest) -> Void
     @State private var appeared = false
+    /// Ideal row height from `EqualHeightHStack` — used so Add’s dashed border + centered label match cards.
+    @State private var rowHeight: CGFloat = 0
 
     private var tools: [ToolSnapshot] { model.featuredTools }
     private var isStrip: Bool { settings.expandedLayout == .strip }
@@ -51,6 +53,13 @@ struct ExpandedView: View {
 
                     addTile
                 }
+                .background(
+                    GeometryReader { geo in
+                        Color.clear
+                            .onAppear { rowHeight = geo.size.height }
+                            .onChange(of: geo.size.height) { rowHeight = $0 }
+                    }
+                )
                 .padding(.trailing, 4)
                 .fixedSize(horizontal: false, vertical: true)
             }
@@ -94,32 +103,29 @@ struct ExpandedView: View {
     }
 
     /// Dashed Add tile — same Add Account flow as the menu / Connections.
-    /// Clear scaffold fills the equal-height slot; overlay centers `+` / “Add”.
+    /// Explicit `rowHeight` sizes the dashed border; overlay centers `+` / “Add”.
     private var addTile: some View {
-        Color.clear
-            .frame(width: addWidth)
-            .frame(maxHeight: .infinity)
-            .overlay {
-                VStack(spacing: 8) {
-                    Image(systemName: "plus")
-                        .font(.system(size: 16, weight: .bold))
-                    Text("Add")
-                        .font(.system(size: 12, weight: .heavy, design: .rounded))
-                }
-                .foregroundStyle(.white.opacity(0.85))
+        let height = rowHeight > 0 ? rowHeight : nil
+        return ZStack {
+            RoundedRectangle(cornerRadius: addRadius, style: .continuous)
+                .strokeBorder(Color.white.opacity(0.35), style: StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
+            VStack(spacing: 8) {
+                Image(systemName: "plus")
+                    .font(.system(size: 16, weight: .bold))
+                Text("Add")
+                    .font(.system(size: 12, weight: .heavy, design: .rounded))
             }
-            .background(
-                RoundedRectangle(cornerRadius: addRadius, style: .continuous)
-                    .strokeBorder(Color.white.opacity(0.35), style: StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
-            )
-            .contentShape(RoundedRectangle(cornerRadius: addRadius, style: .continuous))
-            .onTapGesture { addAccount(AddAccountRequest()) }
-            .onHover { hovering in
-                if hovering { NSCursor.pointingHand.push() } else { NSCursor.pop() }
-            }
-            .help("Add Account…")
-            .accessibilityAddTraits(.isButton)
-            .accessibilityLabel("Add Account")
+            .foregroundStyle(.white.opacity(0.85))
+        }
+        .frame(width: addWidth, height: height)
+        .contentShape(RoundedRectangle(cornerRadius: addRadius, style: .continuous))
+        .onTapGesture { addAccount(AddAccountRequest()) }
+        .onHover { hovering in
+            if hovering { NSCursor.pointingHand.push() } else { NSCursor.pop() }
+        }
+        .help("Add Account…")
+        .accessibilityAddTraits(.isButton)
+        .accessibilityLabel("Add Account")
     }
 
     private func syncGeometry() {
