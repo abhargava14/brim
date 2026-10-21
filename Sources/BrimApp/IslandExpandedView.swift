@@ -94,21 +94,21 @@ struct ExpandedView: View {
     }
 
     /// Dashed Add tile — same Add Account flow as the menu / Connections.
-    /// `+` / “Add” stay centered in the equal-height card; whole tile is the hit target.
+    /// ZStack centers `+` / “Add” in the equal-height card; whole tile is the hit target.
     private var addTile: some View {
-        VStack(spacing: 8) {
-            Image(systemName: "plus")
-                .font(.system(size: 16, weight: .bold))
-            Text("Add")
-                .font(.system(size: 12, weight: .heavy, design: .rounded))
-        }
-        .frame(width: addWidth)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .foregroundStyle(.white.opacity(0.85))
-        .background(
+        ZStack {
             RoundedRectangle(cornerRadius: addRadius, style: .continuous)
                 .strokeBorder(Color.white.opacity(0.35), style: StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
-        )
+            VStack(spacing: 8) {
+                Image(systemName: "plus")
+                    .font(.system(size: 16, weight: .bold))
+                Text("Add")
+                    .font(.system(size: 12, weight: .heavy, design: .rounded))
+            }
+            .foregroundStyle(.white.opacity(0.85))
+        }
+        .frame(width: addWidth)
+        .frame(maxHeight: .infinity)
         .contentShape(RoundedRectangle(cornerRadius: addRadius, style: .continuous))
         .onTapGesture { addAccount(AddAccountRequest()) }
         .onHover { hovering in
