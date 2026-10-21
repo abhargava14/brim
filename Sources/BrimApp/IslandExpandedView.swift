@@ -27,47 +27,47 @@ struct ExpandedView: View {
 
             header
 
-            HStack(alignment: .top, spacing: 8) {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(alignment: .top, spacing: cardGap) {
-                        ForEach(Array(tools.enumerated()), id: \.element.id) { index, tool in
-                            Group {
-                                if isStrip {
-                                    StripConnectionCard(tool: tool, model: model, addAccount: addAccount)
-                                } else {
-                                    WideConnectionCard(tool: tool, model: model, addAccount: addAccount)
-                                }
+            // Cards + Add share one HStack so EqualHeightPreferenceKey is not blocked by ScrollView.
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(alignment: .top, spacing: cardGap) {
+                    ForEach(Array(tools.enumerated()), id: \.element.id) { index, tool in
+                        Group {
+                            if isStrip {
+                                StripConnectionCard(tool: tool, model: model, addAccount: addAccount)
+                            } else {
+                                WideConnectionCard(tool: tool, model: model, addAccount: addAccount)
                             }
-                            .frame(width: cardWidth, alignment: .top)
-                            .fillEqualHeight(rowHeight)
-                            .reportEqualHeight()
-                            .opacity(appeared ? 1 : 0)
-                            .offset(y: appeared ? 0 : -10)
-                            .scaleEffect(appeared ? 1 : 0.98, anchor: .top)
-                            .animation(
-                                .spring(response: 0.34, dampingFraction: 0.82)
-                                    .delay(0.14 + Double(min(index, 8)) * 0.04),
-                                value: appeared
-                            )
                         }
+                        .frame(width: cardWidth, alignment: .topLeading)
+                        .fillEqualHeight(rowHeight)
+                        .reportEqualHeight()
+                        .opacity(appeared ? 1 : 0)
+                        .offset(y: appeared ? 0 : -10)
+                        .scaleEffect(appeared ? 1 : 0.98, anchor: .top)
+                        .animation(
+                            .spring(response: 0.34, dampingFraction: 0.82)
+                                .delay(0.14 + Double(min(index, 8)) * 0.04),
+                            value: appeared
+                        )
+                    }
+
+                    addTile
+                        .frame(width: addWidth, alignment: .center)
+                        .fillEqualHeight(rowHeight, alignment: .center)
+                        .reportEqualHeight()
+                }
+                .onPreferenceChange(EqualHeightPreferenceKey.self) { rowHeight = $0 }
+                .padding(.trailing, 4)
+            }
+            .mask(
+                HStack(spacing: 0) {
+                    Color.black
+                    if tools.count > (isStrip ? 6 : 3) {
+                        LinearGradient(colors: [.black, .clear], startPoint: .leading, endPoint: .trailing)
+                            .frame(width: 44)
                     }
                 }
-                .mask(
-                    HStack(spacing: 0) {
-                        Color.black
-                        if tools.count > (isStrip ? 6 : 3) {
-                            LinearGradient(colors: [.black, .clear], startPoint: .leading, endPoint: .trailing)
-                                .frame(width: 44)
-                        }
-                    }
-                )
-
-                addTile
-                    .frame(width: addWidth, alignment: .center)
-                    .fillEqualHeight(rowHeight, alignment: .center)
-                    .reportEqualHeight()
-            }
-            .onPreferenceChange(EqualHeightPreferenceKey.self) { rowHeight = $0 }
+            )
         }
         .padding(.horizontal, 12)
         .padding(.bottom, 12)
@@ -125,6 +125,7 @@ struct ExpandedView: View {
             .contentShape(RoundedRectangle(cornerRadius: addRadius, style: .continuous))
         }
         .buttonStyle(.plain)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .help("Add Account…")
     }
 

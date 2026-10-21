@@ -2,7 +2,7 @@ import Foundation
 
 /// Marketing / CFBundleShortVersionString. Bump when cutting a GitHub Release.
 public enum BrimVersion {
-    public static let string = "0.3.4"
+    public static let string = "0.3.5"
 
     /// Compare dotted versions (`1.2.3`, optional pre-release suffix ignored for ordering).
     public static func compare(_ a: String, _ b: String) -> ComparisonResult {
