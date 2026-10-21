@@ -20,8 +20,12 @@ extension View {
     }
 
     /// Stretches to a measured row height (no-op while height is still 0).
-    /// Uses a fixed height once known so backgrounds / dashed borders fill edge-to-edge.
+    /// Locks min and max so children with `maxHeight: .infinity` (and stroke backgrounds) fill edge-to-edge.
     func fillEqualHeight(_ height: CGFloat, alignment: Alignment = .topLeading) -> some View {
-        frame(height: height > 0 ? height : nil, alignment: alignment)
+        frame(
+            minHeight: height > 0 ? height : nil,
+            maxHeight: height > 0 ? height : nil,
+            alignment: alignment
+        )
     }
 }

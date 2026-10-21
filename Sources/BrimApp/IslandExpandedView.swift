@@ -52,8 +52,8 @@ struct ExpandedView: View {
                     }
 
                     addTile
-                        .frame(width: addWidth, alignment: .center)
-                        .fillEqualHeight(rowHeight, alignment: .center)
+                        .frame(width: addWidth)
+                        .fillEqualHeight(rowHeight)
                         .reportEqualHeight()
                 }
                 .onPreferenceChange(EqualHeightPreferenceKey.self) { rowHeight = $0 }
@@ -104,29 +104,26 @@ struct ExpandedView: View {
     }
 
     /// Dashed Add tile — opens the same Add Account window as the menu / app shell.
+    /// Not a `Button`: plain buttons on macOS often keep intrinsic height, so the dashed
+    /// stroke stayed short while PreferenceKey stretched the frame. Tap target fills the row.
     private var addTile: some View {
-        Button {
-            addAccount(AddAccountRequest())
-        } label: {
+        ZStack {
+            RoundedRectangle(cornerRadius: addRadius, style: .continuous)
+                .strokeBorder(Color.white.opacity(0.35), style: StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
             VStack(spacing: 8) {
                 Image(systemName: "plus")
                     .font(.system(size: 16, weight: .bold))
                 Text("Add")
                     .font(.system(size: 12, weight: .heavy, design: .rounded))
-                Spacer(minLength: 0)
             }
-            .padding(.vertical, 14)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .foregroundStyle(.white.opacity(0.85))
-            .background(
-                RoundedRectangle(cornerRadius: addRadius, style: .continuous)
-                    .strokeBorder(Color.white.opacity(0.35), style: StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
-            )
-            .contentShape(RoundedRectangle(cornerRadius: addRadius, style: .continuous))
         }
-        .buttonStyle(.plain)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .contentShape(RoundedRectangle(cornerRadius: addRadius, style: .continuous))
+        .onTapGesture { addAccount(AddAccountRequest()) }
         .help("Add Account…")
+        .accessibilityAddTraits(.isButton)
+        .accessibilityLabel("Add Account")
     }
 
     private func syncGeometry() {
