@@ -12,7 +12,7 @@ struct ExpandedView: View {
     let openSettings: () -> Void
     let addAccount: (AddAccountRequest) -> Void
     @State private var appeared = false
-    /// Ideal row height from `EqualHeightHStack` — used so Add’s dashed border + centered label match cards.
+    /// Shared row height from `EqualHeightHStack` — locks Add’s dashed frame to card height.
     @State private var rowHeight: CGFloat = 0
 
     private var tools: [ToolSnapshot] { model.featuredTools }
@@ -103,21 +103,24 @@ struct ExpandedView: View {
     }
 
     /// Dashed Add tile — same Add Account flow as the menu / Connections.
-    /// Explicit `rowHeight` sizes the dashed border; overlay centers `+` / “Add”.
+    /// `fixedSize` + `frame(alignment: .center)` centers `+` / “Add” in the tall
+    /// `rowHeight` frame (cards-layout fallback before GeometryReader settles).
+    /// Whole dashed tile is the hit target; hover shows pointing-hand.
     private var addTile: some View {
-        let height = rowHeight > 0 ? rowHeight : nil
-        return ZStack {
+        let height: CGFloat = rowHeight > 0 ? rowHeight : (isStrip ? 108 : 200)
+        return VStack(spacing: 8) {
+            Image(systemName: "plus")
+                .font(.system(size: 16, weight: .bold))
+            Text("Add")
+                .font(.system(size: 12, weight: .heavy, design: .rounded))
+        }
+        .foregroundStyle(.white.opacity(0.85))
+        .fixedSize()
+        .frame(width: addWidth, height: height, alignment: .center)
+        .overlay {
             RoundedRectangle(cornerRadius: addRadius, style: .continuous)
                 .strokeBorder(Color.white.opacity(0.35), style: StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
-            VStack(spacing: 8) {
-                Image(systemName: "plus")
-                    .font(.system(size: 16, weight: .bold))
-                Text("Add")
-                    .font(.system(size: 12, weight: .heavy, design: .rounded))
-            }
-            .foregroundStyle(.white.opacity(0.85))
         }
-        .frame(width: addWidth, height: height)
         .contentShape(RoundedRectangle(cornerRadius: addRadius, style: .continuous))
         .onTapGesture { addAccount(AddAccountRequest()) }
         .onHover { hovering in
