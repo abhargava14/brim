@@ -57,8 +57,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.openSettings()
             }
         } else if ProcessInfo.processInfo.environment["BRIM_OPEN_ADD"] == "1" {
+            // Same entry as island Add / menu. Under QA no-keychain, open the tool picker
+            // (empty request) — never preselect Claude OAuth.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
-                self?.openAddAccount(AddAccountRequest(kind: .claude))
+                let request = BrimQA.skipCredentials ? AddAccountRequest() : AddAccountRequest(kind: .claude)
+                self?.openAddAccount(request)
             }
         }
     }
