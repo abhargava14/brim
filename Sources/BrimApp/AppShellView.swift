@@ -554,20 +554,17 @@ private struct AppShellNavButtonStyle: ButtonStyle {
 
 // MARK: - Equal-height Overview rows (shared PreferenceKey with island)
 
-/// Measures each card’s ideal height, then forces every card in the row to that max.
+/// Equal-height Overview row — same `EqualHeightHStack` as the expanded island.
 private struct OverviewEqualHeightRow<Card: View>: View {
     let rowIndex: Int
     let tools: [ToolSnapshot]
     @ViewBuilder var card: (ToolSnapshot) -> Card
-    @State private var rowHeight: CGFloat = 0
 
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
+        EqualHeightHStack(spacing: 12) {
             ForEach(tools) { tool in
                 card(tool)
                     .frame(maxWidth: .infinity, alignment: .topLeading)
-                    .fillEqualHeight(rowHeight)
-                    .reportEqualHeight()
             }
             if tools.count < 3 {
                 ForEach(0..<(3 - tools.count), id: \.self) { _ in
@@ -575,7 +572,6 @@ private struct OverviewEqualHeightRow<Card: View>: View {
                 }
             }
         }
-        .onPreferenceChange(EqualHeightPreferenceKey.self) { rowHeight = $0 }
     }
 }
 

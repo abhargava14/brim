@@ -11,8 +11,6 @@ struct ExpandedView: View {
     let openSettings: () -> Void
     let addAccount: (AddAccountRequest) -> Void
     @State private var appeared = false
-    /// Shared height for connection cards + Add tile (PreferenceKey).
-    @State private var rowHeight: CGFloat = 0
 
     private var tools: [ToolSnapshot] { model.featuredTools }
     private var isStrip: Bool { settings.expandedLayout == .strip }
@@ -27,9 +25,10 @@ struct ExpandedView: View {
 
             header
 
-            // Cards + Add share one HStack so EqualHeightPreferenceKey is not blocked by ScrollView.
+            // EqualHeightHStack = shared *ideal* height. `fixedSize(vertical:)` stops horizontal
+            // ScrollView from stretching the cross-axis to the island panel/canvas height.
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(alignment: .top, spacing: cardGap) {
+                EqualHeightHStack(spacing: cardGap) {
                     ForEach(Array(tools.enumerated()), id: \.element.id) { index, tool in
                         Group {
                             if isStrip {
@@ -39,8 +38,6 @@ struct ExpandedView: View {
                             }
                         }
                         .frame(width: cardWidth, alignment: .topLeading)
-                        .fillEqualHeight(rowHeight)
-                        .reportEqualHeight()
                         .opacity(appeared ? 1 : 0)
                         .offset(y: appeared ? 0 : -10)
                         .scaleEffect(appeared ? 1 : 0.98, anchor: .top)
@@ -52,13 +49,11 @@ struct ExpandedView: View {
                     }
 
                     addTile
-                        .frame(width: addWidth)
-                        .fillEqualHeight(rowHeight)
-                        .reportEqualHeight()
                 }
-                .onPreferenceChange(EqualHeightPreferenceKey.self) { rowHeight = $0 }
                 .padding(.trailing, 4)
+                .fixedSize(horizontal: false, vertical: true)
             }
+            .fixedSize(horizontal: false, vertical: true)
             .mask(
                 HStack(spacing: 0) {
                     Color.black
@@ -76,14 +71,8 @@ struct ExpandedView: View {
             appeared = true
             syncGeometry()
         }
-        .onChange(of: tools.count) { _ in
-            rowHeight = 0
-            syncGeometry()
-        }
-        .onChange(of: settings.expandedLayout) { _ in
-            rowHeight = 0
-            syncGeometry()
-        }
+        .onChange(of: tools.count) { _ in syncGeometry() }
+        .onChange(of: settings.expandedLayout) { _ in syncGeometry() }
     }
 
     private var header: some View {
@@ -103,22 +92,24 @@ struct ExpandedView: View {
         .monospacedDigit()
     }
 
-    /// Dashed Add tile — opens the same Add Account window as the menu / app shell.
-    /// Not a `Button`: plain buttons on macOS often keep intrinsic height, so the dashed
-    /// stroke stayed short while PreferenceKey stretched the frame. Tap target fills the row.
+    /// Dashed Add tile — same Add Account flow as the menu / Connections.
+    /// Spacer fills only the shared *content* height from `EqualHeightHStack`, not the viewport.
     private var addTile: some View {
-        ZStack {
+        VStack(spacing: 8) {
+            Image(systemName: "plus")
+                .font(.system(size: 16, weight: .bold))
+            Text("Add")
+                .font(.system(size: 12, weight: .heavy, design: .rounded))
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, 14)
+        .frame(width: addWidth, alignment: .top)
+        .frame(maxHeight: .infinity, alignment: .top)
+        .foregroundStyle(.white.opacity(0.85))
+        .background(
             RoundedRectangle(cornerRadius: addRadius, style: .continuous)
                 .strokeBorder(Color.white.opacity(0.35), style: StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
-            VStack(spacing: 8) {
-                Image(systemName: "plus")
-                    .font(.system(size: 16, weight: .bold))
-                Text("Add")
-                    .font(.system(size: 12, weight: .heavy, design: .rounded))
-            }
-            .foregroundStyle(.white.opacity(0.85))
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        )
         .contentShape(RoundedRectangle(cornerRadius: addRadius, style: .continuous))
         .onTapGesture { addAccount(AddAccountRequest()) }
         .help("Add Account…")

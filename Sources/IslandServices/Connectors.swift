@@ -49,6 +49,9 @@ public enum ConnectorError: LocalizedError {
 /// Brim's own Keychain and prefers that copy so the editor DB is not re-read every refresh.
 public enum AccountFetcher {
     public static func fetch(_ connection: Connection) async throws -> AccountUsage {
+        if BrimQA.skipCredentials {
+            throw ConnectorError.needsToken("QA mode — Keychain and account refresh skipped")
+        }
         let saved = Keychain.read(connection.id)
         switch connection.kind {
         case .copilot:
@@ -463,6 +466,7 @@ public enum Keychain {
     }
 
     public static func readData(_ account: String, service: String = service) -> Data? {
+        if BrimQA.skipCredentials { return nil }
         var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -483,6 +487,7 @@ public enum Keychain {
 
     @discardableResult
     public static func saveData(_ data: Data, for account: String) -> Bool {
+        if BrimQA.skipCredentials { return false }
         var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -505,6 +510,7 @@ public enum Keychain {
     }
 
     public static func delete(_ account: String, service: String = service) {
+        if BrimQA.skipCredentials { return }
         var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -516,6 +522,7 @@ public enum Keychain {
 
     /// Existence check without returning the secret (still Fail-UI — never pops a sheet).
     public static func has(_ account: String) -> Bool {
+        if BrimQA.skipCredentials { return false }
         var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,

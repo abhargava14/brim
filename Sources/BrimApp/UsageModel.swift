@@ -94,6 +94,11 @@ final class UsageModel: ObservableObject {
     }
 
     func start() {
+        if BrimQA.skipCredentials {
+            // Fixture-only island / Overview — no Keychain, OAuth, or account APIs.
+            snapshot = BrimQA.fixtureSnapshot()
+            return
+        }
         refresh(forceAccounts: true)
     }
 
@@ -108,6 +113,10 @@ final class UsageModel: ObservableObject {
     // MARK: - Refresh
 
     func refresh(forceAccounts: Bool = false) {
+        if BrimQA.skipCredentials {
+            snapshot = BrimQA.fixtureSnapshot()
+            return
+        }
         settings.reloadIfChangedOnDisk()
         claudeConnection = statusLine.state()
         scanLogs()
@@ -122,6 +131,7 @@ final class UsageModel: ObservableObject {
 
     /// Compact island keeps a 1-day window; opening the panel loads 30 days (lazy history).
     func setExpandedHistory(_ expanded: Bool) {
+        if BrimQA.skipCredentials { return }
         wantsExpandedHistory = expanded
         let target = expanded ? UsageEngine.fullHistoryDays : UsageEngine.compactHistoryDays
         guard engine.historyDays != target else { return }
@@ -134,6 +144,7 @@ final class UsageModel: ObservableObject {
     }
 
     private func scanLogs() {
+        if BrimQA.skipCredentials { return }
         guard !isScanning else {
             scanAgain = true
             return
@@ -170,6 +181,7 @@ final class UsageModel: ObservableObject {
     }
 
     private func fetchAccount(_ connection: Connection) {
+        if BrimQA.skipCredentials { return }
         guard !fetching.contains(connection.id) else { return }
         fetching.insert(connection.id)
         publish()
@@ -189,6 +201,7 @@ final class UsageModel: ObservableObject {
 
     /// Reads who is signed in to the connection's Claude Code folder, then asks Anthropic for its limits.
     private func fetchClaudeLimits(_ connection: Connection) {
+        if BrimQA.skipCredentials { return }
         guard !fetching.contains(connection.id), let configDir = connection.claudeConfigDir() else { return }
         fetching.insert(connection.id)
         Task {
@@ -230,6 +243,10 @@ final class UsageModel: ObservableObject {
 
     /// Merges log and account data in the user's order and raises events for what changed.
     private func publish() {
+        if BrimQA.skipCredentials {
+            snapshot = BrimQA.fixtureSnapshot()
+            return
+        }
         var tools: [ToolSnapshot] = []
         var newStates: [String: ConnectionState] = [:]
 
