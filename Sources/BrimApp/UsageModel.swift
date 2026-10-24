@@ -29,6 +29,11 @@ final class UsageModel: ObservableObject {
     @Published private(set) var claudeConnection: ClaudeStatusLineSetup.State = .notConnected
     /// The event the island is showing right now.
     @Published private(set) var event: IslandEvent?
+    /// Daily highest plan use per account, for the AI tab's 14-day chart.
+    @Published private(set) var quotaHistory = QuotaHistory.load(from: UsageModel.quotaHistoryURL)
+    private var quotaHistorySaved = Date.distantPast
+
+    static var quotaHistoryURL: URL { supportDirectory.appendingPathComponent("quota-history.json") }
 
     let settings: AppSettings
     let statusLine: ClaudeStatusLineSetup
@@ -313,6 +318,22 @@ final class UsageModel: ObservableObject {
         detectEvents(old: snapshot, new: next)
         snapshot = next
         states = newStates
+        recordQuotaHistory(next)
+    }
+
+    private func recordQuotaHistory(_ snapshot: UsageSnapshot) {
+        var history = quotaHistory
+        var changed = false
+        for tool in snapshot.tools {
+            if let lead = tool.tightestWindow?.usedPercent, history.record(tool.id, percent: lead) { changed = true }
+        }
+        guard changed else { return }
+        quotaHistory = history
+        // Written at most once a minute; a lost reading only lowers one day's peak.
+        if Date().timeIntervalSince(quotaHistorySaved) > 60 {
+            quotaHistorySaved = Date()
+            history.save(to: Self.quotaHistoryURL)
+        }
     }
 
     // MARK: - Events
@@ -583,7 +604,7 @@ final class UsageModel: ObservableObject {
         claudeStyleOverrides[id] = style
     }
 
-    /// Adds a connection for a Claude account that just signed in (see `AddClaudeAccountView`).
+    /// Adds a connection for a Claude account that just signed in (from the Add Account window).
     /// Refuses a second connection for the same auth email (caller must show the error to the user).
     @discardableResult
     func addClaudeConnection(for account: ClaudeAccount) throws -> Connection {

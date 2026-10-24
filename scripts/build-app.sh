@@ -47,13 +47,32 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>LSUIElement</key><true/>
     <key>NSHighResolutionCapable</key><true/>
     <key>NSHumanReadableCopyright</key><string>MIT License</string>
+    <key>NSCalendarsFullAccessUsageDescription</key><string>Brim shows your week and your next event in the notch.</string>
+    <key>NSCalendarsUsageDescription</key><string>Brim shows your week and your next event in the notch.</string>
+    <key>NSRemindersFullAccessUsageDescription</key><string>Brim lists your reminders and lets you tick them off.</string>
+    <key>NSRemindersUsageDescription</key><string>Brim lists your reminders and lets you tick them off.</string>
+    <key>NSLocationUsageDescription</key><string>Brim uses your city to show the weather. It never stores where you are.</string>
+    <key>NSLocationWhenInUseUsageDescription</key><string>Brim uses your city to show the weather. It never stores where you are.</string>
+    <key>NSAppleEventsUsageDescription</key><string>Brim controls Spotify or Music when you press play, pause or skip in the notch.</string>
 </dict>
 </plist>
 PLIST
 
-# Ad-hoc signatures so macOS runs them locally (and Launch at Login works).
-codesign --force --sign - "$APP/Contents/Helpers/brim"
-codesign --force --sign - "$APP"
+# Signing decides whether updates keep the user's approvals (Keychain "Always Allow", Calendar,
+# Location, Launch at Login). macOS ties those to the app's designated requirement.
+#  - SIGN_IDENTITY set (a Developer ID): real signature with the hardened runtime; notarize next.
+#  - Otherwise ad-hoc, with a fixed requirement (the bundle ID) instead of the default per-build
+#    hash, so a new build is still "Brim" to the Keychain and to privacy settings. The CLI uses the
+#    same identifier so it shares the app's Keychain items.
+if [[ -n "${SIGN_IDENTITY:-}" ]]; then
+    codesign --force --options runtime --timestamp -i "$BUNDLE_ID" --sign "$SIGN_IDENTITY" "$APP/Contents/Helpers/brim"
+    codesign --force --options runtime --timestamp --sign "$SIGN_IDENTITY" "$APP"
+else
+    REQUIREMENT="designated => identifier \"$BUNDLE_ID\""
+    codesign --force --sign - -i "$BUNDLE_ID" -r="$REQUIREMENT" "$APP/Contents/Helpers/brim"
+    codesign --force --sign - -i "$BUNDLE_ID" -r="$REQUIREMENT" "$APP"
+fi
+codesign --verify --strict "$APP"
 echo "Built $APP"
 
 MODE="${1:-}"

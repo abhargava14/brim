@@ -98,3 +98,48 @@ extension ToolSnapshot {
     /// Plan windows to show in detail surfaces — every reported window, in API order.
     var displayPlanWindows: [PlanWindow] { planWindows }
 }
+
+/// One plan window as a labelled bar with its use and reset.
+struct PlanBar: View {
+    let window: PlanWindow
+    @State private var filled = false
+
+    static func color(for percent: Double) -> Color {
+        switch percent {
+        case ..<80: return Brand.good
+        case ..<95: return Brand.attention
+        default: return Brand.limit
+        }
+    }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text(window.label)
+                .foregroundStyle(.white.opacity(0.6))
+                .lineLimit(1)
+                .frame(width: 38, alignment: .leading)
+            GeometryReader { geometry in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Color.white.opacity(0.12))
+                    Capsule()
+                        .fill(Self.color(for: window.usedPercent))
+                        .frame(width: max(4, geometry.size.width * (filled ? min(window.usedPercent, 100) : 0) / 100))
+                }
+            }
+            .frame(height: 6)
+            Text(Format.used(window))
+                .foregroundStyle(window.usedPercent >= 80 ? Self.color(for: window.usedPercent) : .white.opacity(0.6))
+                .lineLimit(1)
+                .frame(minWidth: 62, alignment: .trailing)
+            Text(window.resetsAt.map { Format.reset($0) } ?? "")
+                .foregroundStyle(.white.opacity(0.35))
+                .lineLimit(1)
+                .frame(width: 84, alignment: .trailing)
+        }
+        .font(.system(size: 11.5, weight: .bold, design: .rounded))
+        .monospacedDigit()
+        .onAppear {
+            withAnimation(.timingCurve(0.25, 1, 0.4, 1, duration: 0.9).delay(0.3)) { filled = true }
+        }
+    }
+}

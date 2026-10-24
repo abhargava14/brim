@@ -102,10 +102,33 @@ enum NotchConflictPolicy: String, CaseIterable, Identifiable {
     }
 }
 
+/// How the open island looks. The closed notch is always black.
+enum IslandAppearance: String, CaseIterable, Identifiable {
+    case dark
+    case light
+    case system
+
+    var id: String { rawValue }
+    var title: String { rawValue.capitalized }
+}
+
+/// Which screens get the island.
+enum IslandDisplay: String, CaseIterable, Identifiable {
+    /// The built-in display (with the notch), else the main one.
+    case builtIn
+    /// Follows the display you're working on.
+    case all
+
+    var id: String { rawValue }
+    var title: String { self == .builtIn ? "Built-in" : "All displays" }
+}
+
 /// User preferences (UserDefaults) and the connections file shared with the `brim` command.
 @MainActor
 final class AppSettings: ObservableObject {
-    private let defaults = UserDefaults.standard
+    /// Snapshot renders read and write a scratch suite and never touch the connections file.
+    nonisolated static let isSnapshot = ProcessInfo.processInfo.environment["BRIM_SNAPSHOT_DIR"] != nil
+    private let defaults = AppSettings.isSnapshot ? UserDefaults(suiteName: "com.brim.snapshot")! : UserDefaults.standard
     let store = ConnectionStore()
     private var lastSeenFileDate: Date?
 
@@ -202,6 +225,41 @@ final class AppSettings: ObservableObject {
         didSet { defaults.set(pendingIslandTip, forKey: "pendingIslandTip") }
     }
 
+    /// Tab order and which tabs show in the bar.
+    @Published var tabLayout: TabLayout {
+        didSet {
+            defaults.set(tabLayout.order.map(\.rawValue), forKey: "tabOrder")
+            defaults.set(tabLayout.hidden.map(\.rawValue).sorted(), forKey: "tabHidden")
+        }
+    }
+
+    /// The tab the island opens on.
+    @Published var selectedTab: TabID {
+        didSet { defaults.set(selectedTab.rawValue, forKey: "selectedTab") }
+    }
+
+    @Published var appearance: IslandAppearance {
+        didSet { defaults.set(appearance.rawValue, forKey: "appearance") }
+    }
+
+    @Published var display: IslandDisplay {
+        didSet { defaults.set(display.rawValue, forKey: "display") }
+    }
+
+    /// ⌥Space opens the island from anywhere.
+    @Published var hotkeyEnabled: Bool {
+        didSet { defaults.set(hotkeyEnabled, forKey: "hotkeyEnabled") }
+    }
+
+    /// What the closed notch rotates through and what may interrupt it.
+    @Published var closedMusic: Bool { didSet { defaults.set(closedMusic, forKey: "closedMusic") } }
+    @Published var closedTimer: Bool { didSet { defaults.set(closedTimer, forKey: "closedTimer") } }
+    @Published var closedAI: Bool { didSet { defaults.set(closedAI, forKey: "closedAI") } }
+    @Published var interruptLimits: Bool { didSet { defaults.set(interruptLimits, forKey: "interruptLimits") } }
+    @Published var interruptAccounts: Bool { didSet { defaults.set(interruptAccounts, forKey: "interruptAccounts") } }
+    @Published var interruptTimerDone: Bool { didSet { defaults.set(interruptTimerDone, forKey: "interruptTimerDone") } }
+    @Published var interruptEvents: Bool { didSet { defaults.set(interruptEvents, forKey: "interruptEvents") } }
+
     private static let keys = ["showIsland", "placement", "hideInFullScreen", "showInMenuBar", "compactMetric",
                                "expandOnHover", "playful", "pinnedID", "refreshSeconds", "didOnboard",
                                "emptyIsland", "showAccountEmails", "placementMovedForCrowding", "claudeCardStyle",
@@ -209,7 +267,7 @@ final class AppSettings: ObservableObject {
 
     init() {
         Self.copyLegacyDefaults(into: defaults)
-        let file = store.load()
+        let file = Self.isSnapshot ? ConnectionFile(connections: []) : store.load()
         connections = file.connections
         showIsland = defaults.object(forKey: "showIsland") as? Bool ?? true
         placement = defaults.string(forKey: "placement").flatMap(IslandPlacement.init(rawValue:)) ?? .wrapNotch
@@ -232,6 +290,19 @@ final class AppSettings: ObservableObject {
         notchConflict = defaults.string(forKey: "notchConflict").flatMap(NotchConflictPolicy.init(rawValue:)) ?? .moveToMenuBar
         useNotchAnyway = defaults.bool(forKey: "useNotchAnyway")
         pendingIslandTip = defaults.bool(forKey: "pendingIslandTip")
+        tabLayout = TabLayout(savedOrder: defaults.stringArray(forKey: "tabOrder") ?? [],
+                              savedHidden: defaults.stringArray(forKey: "tabHidden") ?? [])
+        selectedTab = defaults.string(forKey: "selectedTab").flatMap(TabID.init(rawValue:)) ?? .home
+        appearance = defaults.string(forKey: "appearance").flatMap(IslandAppearance.init(rawValue:)) ?? .dark
+        display = defaults.string(forKey: "display").flatMap(IslandDisplay.init(rawValue:)) ?? .builtIn
+        hotkeyEnabled = defaults.object(forKey: "hotkeyEnabled") as? Bool ?? true
+        closedMusic = defaults.object(forKey: "closedMusic") as? Bool ?? true
+        closedTimer = defaults.object(forKey: "closedTimer") as? Bool ?? true
+        closedAI = defaults.object(forKey: "closedAI") as? Bool ?? true
+        interruptLimits = defaults.object(forKey: "interruptLimits") as? Bool ?? true
+        interruptAccounts = defaults.object(forKey: "interruptAccounts") as? Bool ?? true
+        interruptTimerDone = defaults.object(forKey: "interruptTimerDone") as? Bool ?? true
+        interruptEvents = defaults.object(forKey: "interruptEvents") as? Bool ?? false
         isReady = true
         save()
     }
@@ -247,6 +318,7 @@ final class AppSettings: ObservableObject {
     }
 
     private func save() {
+        guard !Self.isSnapshot else { return }
         try? store.save(ConnectionFile(connections: connections))
         lastSeenFileDate = store.modificationDate()
     }

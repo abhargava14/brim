@@ -13,8 +13,11 @@
 ## 1. What you're working on
 
 **Brim** is a free, open-source macOS app that sits around the MacBook notch (like the
-iPhone's Dynamic Island) and shows how much of each AI coding tool the user has used today:
-tokens and plan-limit percentages. Users connect **any number** of tools (Claude Code, Codex,
+iPhone's Dynamic Island). Since 0.4 it is a general notch app: the open island has sixteen tabs
+(Home, AI, Analytics, Notes, Calendar, Timers, Stats, Screen Time, Weather, Links, Sounds,
+Scratchpad, Shelf, Clipboard, Files, Units) and the closed notch rotates between
+now playing, a running timer and AI limits. AI usage is still the core: tokens and plan-limit
+percentages per account. Users connect **any number** of tools (Claude Code, Codex,
 GitHub Copilot, Cursor, Windsurf, OpenRouter, any log folder, any JSON usage URL), including
 several accounts of one tool. There are two ways to connect: the app's Settings window and the
 `brim` command-line tool. Both edit the same file.
@@ -30,10 +33,15 @@ tests and run. Then polish.
 2. **No limit on connections.** Users can add as many as they like.
 3. **Privacy.** No telemetry, analytics or accounts. Never read, store or log prompt, reply or
    code content from the logs, only usage metadata. Tokens go in the Keychain, never in files.
-   Account-based tools may only talk to their own service.
+   Account-based tools may only talk to their own service. Tabs ask for a macOS permission only
+   when used, and every request first checks the usage text exists (`canAsk`), because asking
+   without it terminates the app. Clipboard history stays in memory and skips concealed types.
+   Network hosts beyond the AI services: Open-Meteo (weather), DataFast / Google (only for sites
+   the user adds), Spotify artwork.
 4. **Never guess plan limits.** Percentages must come from the tool or its service.
 5. **Keep `IslandCore` Foundation-only** (no AppKit, SwiftUI, Security, SQLite or CryptoKit), so
-   its tests run anywhere.
+   its tests run anywhere. macOS readers (EventKit, CoreLocation, IOKit, AppleScript, ImageIO)
+   go in `IslandSystem`.
 6. **Targets and versions:** macOS 13+, `swift-tools-version:5.9` (Swift 5 language mode). Don't
    switch the package to Swift 6 language mode. Don't add third-party dependencies.
 7. **Minimal fixes.** When something doesn't compile, fix it the smallest way that keeps the
@@ -61,6 +69,9 @@ xcodebuild -version 2>/dev/null || echo "no full Xcode (tests need Xcode)"
 
 ## 4. Project map
 
+Visual check without Keychain or permissions: `BRIM_SNAPSHOT_DIR=/tmp/shots swift run BrimApp`
+renders every tab and Settings page (dark and light) with fixture data, then quits.
+
 ```
 Package.swift                     4 targets + tests
 Sources/IslandCore/               Foundation-only logic (unit tested)
@@ -83,6 +94,15 @@ Sources/BrimApp/                 the app (AppKit + SwiftUI)
   IslandController.swift          notch-aware floating NSPanel, hover tracking
   IslandView.swift                compact / moment / expanded views, animations
   SettingsView.swift              connections list, add/remove, plans, tokens, CLI install
+  Island/                         tabbed shell (IslandShell), design kit (IslandKit), closed notch,
+                                  Settings hooks, ⌥Space hot key
+  Tabs/                           one view per tab
+  Services/                       app-side stores: notes, links, timers, stats, sounds, clipboard,
+                                  shelf, launcher, analytics
+  Settings/BrimSettingsView.swift the Settings window (General, Tabs, Closed notch, Connections,
+                                  Permissions, About)
+  Snapshot.swift                  BRIM_SNAPSHOT_DIR=… renders every screen to PNG with fixtures
+Sources/IslandSystem/             system stats, calendar, now playing, weather, screen time, images
 Sources/BrimCLI/main.swift    the `brim` command
 Tests/IslandCoreTests/            XCTest suite for IslandCore
 scripts/build-app.sh              builds "Brim.app" with the CLI inside (Contents/Helpers)

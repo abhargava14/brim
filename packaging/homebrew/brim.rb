@@ -1,7 +1,7 @@
 # Homebrew formula (builds from source). Put it in a tap, e.g. abhargava14/homebrew-tap, then:
 #   brew install --HEAD abhargava14/tap/brim
 class Brim < Formula
-  desc "AI usage tracker that lives in your Mac's notch (Claude Code, Codex, Copilot, Cursor, …)"
+  desc "Living notch for your Mac: music, calendar, timers, stats and AI usage limits"
   homepage "https://github.com/abhargava14/brim"
   head "https://github.com/abhargava14/brim.git", branch: "main"
   license "MIT"
@@ -27,9 +27,8 @@ class Brim < Formula
         brim add claude
         brim status
 
-      This formula builds from source (HEAD). Prefer a release tag/commit pin when
-      installing via scripts; the app is not Apple-notarized yet — first open may need
-      right-click → Open (Gatekeeper).
+      This formula builds from source (HEAD) on your Mac, so Gatekeeper doesn't ask.
+      Keychain and privacy approvals carry over between updates.
     EOS
   end
 

@@ -1,41 +1,77 @@
 # Brim
 
-**See your AI coding usage at a glance, right in your Mac's notch.**
+**A living notch for your Mac.** Music, your next meeting, timers, notes, system stats, weather and
+your AI coding limits, one hover away from the notch at the top of your screen.
 
-Brim is a small, free, open-source Mac app. It lives around the notch at the top of your
-screen and shows how much you've used your AI coding tools today, and how close you are to each
-plan's limits. Hover over it for the details.
+Brim is a small, free, open-source Mac app. The closed notch quietly shows what matters right now
+(the song playing, a running timer, how close you are to a plan limit). Hover over it, or press
+**⌥ Space**, and it opens into tabs.
 
 Brim used to be called AI Island. Updating moves your connections, saved tokens, settings and
 the Claude Code status line over on first launch, and the old `ai-island` command still works.
 
-- **Works with the tools you use.** Claude Code, Codex, GitHub Copilot, Cursor, Windsurf,
-  OpenRouter, and anything else that writes logs or reports usage at a URL.
-- **As many as you like.** Connect one tool or twenty, including several accounts of the same
-  tool (say, personal and work).
-- **Private.** No account, no tracking. Your prompts and code are never read.
+- **Sixteen tabs, pick your own.** Home, AI, Analytics, Notes, Calendar, Timers, Stats, Screen
+  Time, Weather, Links, Sounds, Scratchpad, Shelf, Clipboard, Files and Units.
+  Eight show by default; the rest wait under the grid button. Reorder and hide them in Settings.
+- **AI usage, still first class.** Claude Code, Codex, GitHub Copilot, Cursor, Windsurf,
+  OpenRouter, and anything else that writes logs or reports usage at a URL. As many accounts as
+  you like, labelled (personal, work) so you can tell them apart.
+- **Private.** No account, no tracking, no money anywhere. Your prompts, code, notes and
+  clipboard never leave your Mac.
 
 ## About the app
 
 <p align="center">
-  <img src="media/readme/overview.png" alt="Brim Overview: today's token usage and connected accounts" width="720">
+  <img src="media/readme/notch-music.png" alt="The closed notch showing the song playing and time left" width="500">
 </p>
-<p align="center"><em>Overview — today's usage and your connected tools.</em></p>
+<p align="center"><em>The closed notch: what's playing, a running timer, or your nearest AI limit.</em></p>
 
 <p align="center">
-  <img src="media/readme/island-compact.png" alt="Brim compact island in the Mac notch showing plan usage percent" width="420">
+  <img src="media/readme/island-home.png" alt="Brim Home tab: now playing, up next with a Join button, a launcher and a glance row" width="760">
 </p>
-<p align="center"><em>The island in the notch — a glanceable usage % while you work.</em></p>
+<p align="center"><em>Home — now playing, your next event, a launcher, and a glance row.</em></p>
 
 <p align="center">
-  <img src="media/readme/connections.png" alt="Brim Connections list with anonymized demo accounts" width="720">
+  <img src="media/readme/island-ai.png" alt="Brim AI tab overview with tokens today, nearest limit and every account" width="760">
 </p>
-<p align="center"><em>Connections — turn accounts on or off. (Demo email shown.)</em></p>
+<p align="center"><em>AI — every account, highest limit first. Broken accounts sort to the top with one fix.</em></p>
 
 <p align="center">
-  <img src="media/readme/connect.png" alt="Brim Connect sheet listing Claude, Codex, Cursor, and other tools" width="720">
+  <img src="media/readme/island-ai-account.png" alt="Cursor account showing Cursor models and Other models usage separately" width="760">
 </p>
-<p align="center"><em>Add Account — pick a tool and sign in. No Terminal needed.</em></p>
+<p align="center"><em>One account — each plan pool on its own (Cursor models and other models), with the plan and reset date.</em></p>
+
+<table>
+<tr>
+<td><img src="media/readme/island-calendar.png" alt="Calendar tab with a seven-day agenda"></td>
+<td><img src="media/readme/island-timers.png" alt="Timers tab with a Pomodoro ring"></td>
+</tr>
+<tr>
+<td align="center"><em>Calendar</em></td>
+<td align="center"><em>Timers</em></td>
+</tr>
+<tr>
+<td><img src="media/readme/island-weather.png" alt="Weather tab with current conditions and a seven-day forecast"></td>
+<td><img src="media/readme/island-stats.png" alt="Stats tab with CPU, memory, disk, network, battery and top apps"></td>
+</tr>
+<tr>
+<td align="center"><em>Weather</em></td>
+<td align="center"><em>Stats</em></td>
+</tr>
+<tr>
+<td><img src="media/readme/island-units.png" alt="Units tab converting US dollars to Indian rupees"></td>
+<td><img src="media/readme/island-light.png" alt="The open island in the light theme"></td>
+</tr>
+<tr>
+<td align="center"><em>Units and currency</em></td>
+<td align="center"><em>Light theme</em></td>
+</tr>
+</table>
+
+<p align="center">
+  <img src="media/readme/settings.png" alt="Brim Settings window, General page" width="640">
+</p>
+<p align="center"><em>Settings — tabs, the closed notch, connections and permissions in one window.</em></p>
 
 ---
 
@@ -99,6 +135,20 @@ Do **not** turn Gatekeeper off system‑wide. Friend-facing steps:
 [docs/gatekeeper-friend-install.md](docs/gatekeeper-friend-install.md). Permanent fix (Developer ID +
 notarize): [docs/notarization.md](docs/notarization.md).
 
+#### Passwords and approvals
+
+Brim asks for things **once**, and updates keep them:
+
+- **Keychain:** only when you sign in to an account (Claude, Cursor…). Pick **Always Allow**.
+  Background refreshes never show a password sheet.
+- **Calendar, Location, Notifications, Automation:** only when you use the tab that needs it.
+
+Every Brim build has the same code identity (its bundle ID), so macOS keeps treating an updated
+Brim as the same app. Updating from 0.3.x asks once more, because those builds didn't have that
+identity yet. The one step that stays until Brim is signed with an Apple Developer ID is the
+first-open Gatekeeper warning above. Installing from Terminal skips it, because builds made on
+your own Mac aren't marked as downloaded.
+
 ### Later updates (still no Xcode)
 
 - In the app: menu bar ✳ → **Check for Updates…**
@@ -128,6 +178,8 @@ cd brim
 git checkout v0.3.2
 ./scripts/build-app.sh --install
 ```
+
+Terminal installs build on your Mac, so there is no Gatekeeper warning to click through.
 
 **Homebrew** (tracks `main`, also builds from source):
 
@@ -188,25 +240,38 @@ brim add claude --name "Claude · Work" --path ~/work/.claude/projects
 
 | You do | What happens |
 |---|---|
-| Glance at the notch | Two tools, each with its key number (plan % or tokens today) |
-| Connect three or more tools | The island takes turns showing them, two at a time. Anything close to a limit, or working right now, always comes first |
-| Hover over the island | It opens to show every connection: tokens, plan limits with reset times, and a 14-day chart |
-| Move the pointer away | It closes again |
-| Click ✳ in the menu bar | A quick summary, Refresh, Disconnect All, and Settings |
+| Glance at the notch | It rotates between the song playing and your AI limits. A running timer takes over |
+| Hover over the notch, or press ⌥ Space | It opens to the tab you used last. Click a tab to switch; the grid button lists every tab |
+| Click into a text field (notes, links, reminders) | The island stays open while you type. Esc or a click elsewhere closes it |
+| Drag a file onto the notch | It opens on the Shelf, ready for the drop |
+| Click the gear | Settings: General, Tabs, Closed notch, Connections, Permissions and About |
 
-**It also tells you when something happens.** For a few seconds, the island grows to show:
+**The tabs**
 
-- **Connected:** a new tool is working (with a little confetti).
-- **Near a limit:** a plan passed 80% or 95%.
-- **Limit reached:** a plan hit 100%, and when it resets.
-- **Milestones:** 1M, 5M, 10M … tokens in a day.
+| Tab | What it does | Needs |
+|---|---|---|
+| Home | Now playing, up next with a Join button, a launcher, and a glance row | Calendar access (optional) |
+| AI | Overview plus one pill per account: limits, tokens, 14-day chart, what broke and the fix | Local logs or sign-in |
+| Analytics | Visitors, pages and sources for your sites | A DataFast key or a Google service account |
+| Notes, Scratchpad | Longer notes with search; one always-there text box | Nothing |
+| Calendar | Seven-day agenda and reminders you can tick off or add with Return | Calendars and Reminders access |
+| Timers | Pomodoro, countdown, stopwatch and hydration reminders | Notifications (optional) |
+| Stats | CPU, memory, disk, network, battery health and the busiest apps | Nothing |
+| Screen Time | Where the day went, app by app, counted by Brim from the day you turn it on | Nothing |
+| Weather | Now, the next hours and seven days, from Open-Meteo | Location, or a city you pick |
+| Links | Search the web or your saved sites, in folders | Nothing |
+| Sounds | Rain, ocean, stream, wind, fireplace, thunder and noise, layered, with a fade-out timer | Nothing |
+| Shelf, Files | Park files and drag them out; convert and shrink images to JPEG, PNG, HEIC or PDF | Nothing |
+| Clipboard | A searchable history of what you copy, with pins (off until you turn it on) | Nothing |
+| Units | Units and currencies: "5 km to mi", "100 usd to inr". Exchange rates from the European Central Bank via Frankfurter, refreshed daily | Nothing |
 
-A tool's icon also moves while that tool is working: Claude's sparkle turns and Codex's brackets
-blink. You can turn the animations off in **Settings → Island → Playful animations**. With
-**Reduce Motion** turned on in macOS, everything just fades.
+**The closed notch interrupts once when something happens:** a plan passed 80% or 95%, an account
+signed out, a timer finished, or (if you turn it on) a meeting is five minutes away. Each can be
+switched off in **Settings → Closed notch**.
 
-The island never takes keyboard focus, lets clicks through to the menu bar around it, and hides
-when an app is full screen.
+Animations respect **Reduce Motion**. The island lets clicks through to the menu bar around it,
+never covers menus or status icons, and hides when an app is full screen. The open island follows
+**Settings → General → Appearance** (dark, light or system); the closed notch is always black.
 
 ## Supported tools
 
@@ -286,7 +351,16 @@ safely).
 
 ## Privacy
 
-- **No account, no analytics, no tracking.**
+- **No account, no analytics, no tracking.** Brim asks for a macOS permission only when you use
+  the tab that needs it, and Settings → Permissions shows what's allowed.
+- **Stays on your Mac:** notes, scratchpad, links, timers, screen time (app names and minutes
+  only, never window titles), shelf and pinned clipboard items live in
+  `~/Library/Application Support/Brim/`. Clipboard history is kept in memory only, is off until
+  you turn it on, and skips anything password managers mark as concealed or transient.
+- **Calendar and reminders** are read through macOS (EventKit). Brim never sees your Google or
+  Exchange passwords.
+- **Music:** song names come from Spotify's and Music's own notifications. Play, pause, skip and
+  artwork use Automation, which you turn on yourself.
 - **Your prompts, replies and code are never read.** For Claude Code and Codex, Brim reads
   only usage numbers from their logs: tokens, model, time, session and project folder name.
 - **Tokens are stored in your Mac's Keychain**, never in plain files. When Claude's OAuth
@@ -301,6 +375,10 @@ safely).
   asset). Custom Usage URLs must be `https://` (no cleartext `http://`). Brim trusts macOS
   system roots (no certificate pinning — see security notes in the engineering review
   deliverable).
+  The tabs add: **Open-Meteo** (`api.open-meteo.com`, `geocoding-api.open-meteo.com`) for
+  weather, with your coordinates rounded to about 100 m; **DataFast** (`datafa.st`) or
+  **Google** (`oauth2.googleapis.com`, `analyticsdata.googleapis.com`) only for sites you add to
+  Analytics; Spotify's artwork server for the album cover; and links you open yourself.
 - Your connection list lives in `~/Library/Application Support/Brim/connections.json`
   (mode `600`). It holds no secrets.
 - Custom log folders must resolve under your home directory; symlink escapes are refused.

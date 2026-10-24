@@ -18,8 +18,10 @@ let package = Package(
             dependencies: ["IslandCore"],
             linkerSettings: [.linkedLibrary("sqlite3")]
         ),
+        // Readers for this Mac used by the island's tabs: system stats, screen time, music, calendar, weather.
+        .target(name: "IslandSystem", dependencies: ["IslandCore"]),
         // The notch island, menu bar item and settings window.
-        .executableTarget(name: "BrimApp", dependencies: ["IslandCore", "IslandServices"], resources: [.copy("Resources/Logos")]),
+        .executableTarget(name: "BrimApp", dependencies: ["IslandCore", "IslandServices", "IslandSystem"], resources: [.copy("Resources/Logos")]),
         // `brim`: connect tools and check usage from the terminal.
         .executableTarget(name: "BrimCLI", dependencies: ["IslandCore", "IslandServices"]),
         .testTarget(name: "IslandCoreTests", dependencies: ["IslandCore"]),
