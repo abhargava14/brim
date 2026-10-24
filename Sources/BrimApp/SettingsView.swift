@@ -13,6 +13,8 @@ struct ConnectionRow: View {
     @ObservedObject var model: UsageModel
     let signIn: () -> Void
     @Binding var isExpanded: Bool
+    /// False inside Settings › Connections, which draws its own row header.
+    var showsHeader = true
     @State private var token = ""
     @State private var confirmRemove = false
     @State private var justConnected = false
@@ -20,6 +22,19 @@ struct ConnectionRow: View {
     private var state: ConnectionState { model.states[connection.id] ?? .off }
 
     var body: some View {
+        if showsHeader {
+            row
+        } else {
+            details
+                .confirmationDialog("Remove \(connection.name)?", isPresented: $confirmRemove) {
+                    Button("Remove", role: .destructive) { model.remove(connection.id) }
+                } message: {
+                    Text("Its settings and saved token are deleted. You can add it again any time.")
+                }
+        }
+    }
+
+    private var row: some View {
         DisclosureGroup(isExpanded: $isExpanded) {
             details.padding(.top, 6)
         } label: {

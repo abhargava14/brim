@@ -153,7 +153,7 @@ public enum AccountFetcher {
         var summary = URLRequest(url: URL(string: "https://cursor.com/api/usage-summary")!)
         summary.setValue("WorkosCursorSessionToken=\(cookieValue)", forHTTPHeaderField: "Cookie")
         if let data = try? await send(summary, service: "Cursor", help: help), var usage = CursorUsage.parseSummary(data) {
-            if usage.planName == nil, let membership { usage.planName = membership.capitalized }
+            if usage.planName == nil, let membership { usage.planName = CursorUsage.planName(membership) }
             return usage
         }
 

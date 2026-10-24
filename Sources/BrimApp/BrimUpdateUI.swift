@@ -46,21 +46,28 @@ enum BrimUpdateUI {
             run(alert, from: window)
 
         case .updateAvailable(let update):
-            let alert = NSAlert()
-            alert.messageText = "Update available"
-            alert.informativeText = """
-            Brim \(update.version) (\(update.tag)) is ready.
+            offer(update, from: window, watcher: nil)
+        }
+    }
 
-            Download & Install will quit Brim, replace \(AppUpdater.installDestination().path), verify the SHA-256 when present, and relaunch.
-            """
-            alert.alertStyle = .informational
-            alert.addButton(withTitle: "Download & Install")
-            alert.addButton(withTitle: "Not Now")
-            let choice = run(alert, from: window)
-            guard choice == .alertFirstButtonReturn else { return }
-            Task { @MainActor in
-                await install(update, from: window)
-            }
+    /// The "Update available" dialog, from a manual check, the notch notice or the menu.
+    static func offer(_ update: AppUpdater.Update, from window: NSWindow? = nil, watcher: UpdateWatcher?) {
+        let alert = NSAlert()
+        alert.messageText = "Update available"
+        alert.informativeText = """
+        Brim \(update.version) (\(update.tag)) is ready.
+
+        Download & Install will quit Brim, replace \(AppUpdater.installDestination().path), verify the SHA-256 when present, and relaunch.
+        """
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "Download & Install")
+        alert.addButton(withTitle: "Not Now")
+        if watcher != nil { alert.addButton(withTitle: "Skip This Version") }
+        let choice = run(alert, from: window)
+        if choice == .alertThirdButtonReturn, let watcher { watcher.skip(update) }
+        guard choice == .alertFirstButtonReturn else { return }
+        Task { @MainActor in
+            await install(update, from: window)
         }
     }
 

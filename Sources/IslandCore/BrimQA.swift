@@ -41,6 +41,50 @@ public enum BrimQA {
             PlanWindow(label: "Week · all models", usedPercent: 2, resetsAt: now.addingTimeInterval(86400 * 5)),
         ]
 
-        return UsageSnapshot(tools: [claudeCode, cursor, claude], generatedAt: now)
+        guard ProcessInfo.processInfo.environment["BRIM_QA_FIXTURE"] == "rich" else {
+            return UsageSnapshot(tools: [claudeCode, cursor, claude], generatedAt: now)
+        }
+        // Richer set for the tabbed island: history, a working session and a broken account.
+        let calendar = Calendar.current
+        func history(_ base: Double, _ seed: Double) -> [DailyPoint] {
+            (0..<14).map { back in
+                let value = base * (0.5 + 0.35 * sin(Double(back) * 0.55 + seed) + 0.15 * sin(Double(back) * 1.7 + seed * 3))
+                let date = calendar.date(byAdding: .day, value: -(13 - back), to: calendar.startOfDay(for: now)) ?? now
+                return DailyPoint(date: date, tokens: TokenCounts(input: Int64(value * 0.01), output: Int64(value * 0.03),
+                                                                  cacheWrite: Int64(value * 0.12), cacheRead: Int64(value * 0.84)))
+            }
+        }
+        claudeCode.name = "Claude · personal"
+        claudeCode.today = TokenCounts(input: 2_100, output: 310_000, cacheWrite: 1_900_000, cacheRead: 11_900_000)
+        claudeCode.todayRequests = 212
+        claudeCode.todaySessions = 3
+        claudeCode.topModel = "claude-sonnet-4-5"
+        claudeCode.planName = "Max 5×"
+        claudeCode.daily = history(14_000_000, 1)
+        claudeCode.lastActivity = now.addingTimeInterval(-20)
+        claudeCode.sessions = [SessionUsage(id: "s1", project: "auth-service", model: "claude-sonnet-4-5",
+                                            today: claudeCode.today, requests: 212, lastActivity: now.addingTimeInterval(-20))]
+        claudeCode.planWindows = [
+            PlanWindow(label: "Current session", usedPercent: 84, resetsAt: now.addingTimeInterval(4_800)),
+            PlanWindow(label: "Week · all models", usedPercent: 31, resetsAt: now.addingTimeInterval(86400 * 3 + 14_400)),
+        ]
+        var codex = ToolSnapshot(id: "qa-codex", kind: .codex, name: "Codex · work")
+        codex.hasData = true
+        codex.planName = "Business"
+        codex.today = TokenCounts(input: 400_000, output: 260_000, cacheWrite: 0, cacheRead: 2_440_000)
+        codex.todayRequests = 64
+        codex.todaySessions = 2
+        codex.topModel = "gpt-5-codex"
+        codex.daily = history(3_100_000, 4)
+        codex.updatedAt = now.addingTimeInterval(-60)
+        codex.planWindows = [
+            PlanWindow(label: "5h", usedPercent: 22, resetsAt: now.addingTimeInterval(9_000)),
+            PlanWindow(label: "Week", usedPercent: 9, resetsAt: now.addingTimeInterval(86400 * 5)),
+        ]
+        var copilot = ToolSnapshot(id: "qa-copilot", kind: .copilot, name: "GitHub Copilot")
+        copilot.statusMessage = "Session expired. Sign in again."
+        copilot.updatedAt = now.addingTimeInterval(-3_600)
+        cursor.name = "Cursor · work"
+        return UsageSnapshot(tools: [claudeCode, codex, cursor, claude, copilot], generatedAt: now)
     }
 }

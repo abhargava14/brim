@@ -8,6 +8,7 @@ import SwiftUI
 @MainActor
 enum BrimMain {
     static func main() {
+        if BrimSnapshot.runIfRequested() { return }
         BrimMigration.run()
         let app = NSApplication.shared
         let delegate = AppDelegate()
@@ -23,6 +24,7 @@ enum BrimMain {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let settings = AppSettings()
     private lazy var model = UsageModel(settings: settings)
+    private lazy var hub = BrimHub(settings: settings, model: model)
     private var island: IslandController?
     private var statusItem: NSStatusItem?
     private let setup = SetupWindows()
@@ -34,9 +36,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let dedupe = settings.dedupeClaudeConnectionsByEmail()
         setUpStatusItem()
         island = IslandController(
-            model: model, settings: settings, setup: setup,
+            hub: hub, setup: setup,
             statusItemFrame: { [weak self] in self?.statusItem?.button?.window?.frame },
-            openSettings: { [weak self] in self?.openSettings() },
+            openSettings: { [weak self] in self?.openSettings(at: $0) },
             addAccount: { [weak self] in self?.openAddAccount($0) }
         )
         model.start()
@@ -54,7 +56,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         } else if ProcessInfo.processInfo.environment["BRIM_OPEN_APP"] == "1" {
             // Screenshot / QA hook: open the app shell once after launch.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
-                self?.openSettings()
+                self?.openSettings(at: .general)
             }
         } else if ProcessInfo.processInfo.environment["BRIM_OPEN_ADD"] == "1" {
             // Same entry as island Add / menu. Under QA no-keychain, open the tool picker
@@ -98,6 +100,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         settings.$connections.combineLatest(settings.$emptyIsland, settings.$showIsland, settings.$playful)
             .receive(on: RunLoop.main)
             .sink { [weak self] _, _, _, _ in self?.updateStatusItem() }
+            .store(in: &cancellables)
+        hub.updates.$available
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.updateStatusItem() }
             .store(in: &cancellables)
 
         // The island's right wing stops at this item, so lay it out again whenever the item moves or resizes.
@@ -157,6 +163,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func buildEmptyMenu() -> NSMenu {
         let menu = NSMenu()
+        addUpdateItem(to: menu)
         let header = NSMenuItem(title: "No AI tools connected.", action: nil, keyEquivalent: "")
         header.isEnabled = false
         menu.addItem(header)
@@ -165,7 +172,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if !settings.connections.isEmpty {
             menu.addItem(menuItem("Connect All", action: #selector(connectAll), symbol: "link"))
         }
-        menu.addItem(menuItem("Settings…", action: #selector(openSettings), key: ",", symbol: "gearshape"))
+        menu.addItem(menuItem("Settings…", action: #selector(openSettingsFromMenu), key: ",", symbol: "gearshape"))
         menu.addItem(menuItem("Check for Updates…", action: #selector(checkForUpdates), symbol: "arrow.triangle.2.circlepath"))
         let show = NSMenuItem(title: "Show Island", action: #selector(showEmptyIsland), keyEquivalent: "")
         show.state = settings.showIsland && settings.emptyIsland == .small ? .on : .off
@@ -176,8 +183,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return menu
     }
 
+    /// "Update to Brim X…" at the top of the menu when the daily check found a release.
+    private func addUpdateItem(to menu: NSMenu) {
+        guard let update = hub.updates.available else { return }
+        let item = menuItem("Update to Brim \(update.version)…", action: #selector(offerUpdate), symbol: "arrow.down.circle")
+        item.attributedTitle = NSAttributedString(string: "Update to Brim \(update.version)…",
+                                                  attributes: [.font: NSFont.systemFont(ofSize: NSFont.systemFontSize, weight: .semibold)])
+        menu.addItem(item)
+        menu.addItem(.separator())
+    }
+
+    @objc private func offerUpdate() {
+        guard let update = hub.updates.available else { return }
+        BrimUpdateUI.offer(update, watcher: hub.updates)
+    }
+
     private func buildMenu() -> NSMenu {
         let menu = NSMenu()
+        addUpdateItem(to: menu)
         let tools = model.featuredTools
         let header = NSMenuItem(title: "", action: nil, keyEquivalent: "")
         let title = NSMutableAttributedString(string: "Today  ", attributes: [.foregroundColor: NSColor.secondaryLabelColor])
@@ -220,6 +243,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             menu.addItem(.separator())
         }
 
+        menu.addItem(menuItem("Open Island  ⌥ Space", action: #selector(openIsland), symbol: "rectangle.topthird.inset.filled"))
         let toggle = NSMenuItem(title: "Show Island", action: #selector(toggleIsland), keyEquivalent: "")
         toggle.state = settings.showIsland ? .on : .off
         toggle.target = self
@@ -232,7 +256,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(menuItem("Refresh", action: #selector(refreshNow), key: "r", symbol: "arrow.clockwise"))
         menu.addItem(menuItem("Add Account…", action: #selector(addAccountFromMenu), symbol: "person.badge.plus"))
         menu.addItem(menuItem("Disconnect All", action: #selector(disconnectAll), symbol: "person.crop.circle.badge.minus"))
-        menu.addItem(menuItem("Settings…", action: #selector(openSettings), key: ",", symbol: "gearshape"))
+        menu.addItem(menuItem("Settings…", action: #selector(openSettingsFromMenu), key: ",", symbol: "gearshape"))
         menu.addItem(menuItem("Check for Updates…", action: #selector(checkForUpdates), symbol: "arrow.triangle.2.circlepath"))
         menu.addItem(.separator())
         menu.addItem(menuItem("Quit Brim", action: #selector(NSApplication.terminate(_:)), key: "q", symbol: "xmark.square", bindTarget: false))
@@ -257,6 +281,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             item.image = image
         }
         return item
+    }
+
+    @objc private func openIsland() {
+        island?.openFromKeyboard()
     }
 
     @objc private func toggleIsland() {
@@ -301,9 +329,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Settings window
 
-    @objc func openSettings() {
-        setup.show(.settings, title: "Brim", size: NSSize(width: 920, height: 640), refresh: true) {
-            AppShellView(model: model, settings: settings)
+    @objc func openSettingsFromMenu() {
+        openSettings(at: .general)
+    }
+
+    func openSettings(at section: SettingsSection) {
+        island?.collapse()
+        defer { hub.pendingGroup = nil }
+        setup.show(.settings, title: "Brim Settings", size: NSSize(width: 860, height: 580), refresh: true) {
+            BrimSettingsView(hub: hub, settings: settings, model: model, section: section, group: hub.pendingGroup ?? .ai)
         }
     }
 

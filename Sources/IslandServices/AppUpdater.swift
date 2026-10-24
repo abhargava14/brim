@@ -290,8 +290,13 @@ public enum AppUpdater {
         rm -rf \(shellEscape(dest))
         mkdir -p "$(dirname \(shellEscape(dest)))"
         cp -R \(shellEscape(src)) \(shellEscape(dest))
-        codesign --force --sign - \(shellEscape(dest))/Contents/Helpers/brim 2>/dev/null || true
-        codesign --force --sign - \(shellEscape(dest)) 2>/dev/null || true
+        # Keep the release's own signature (a Developer ID one must never be replaced). Only a broken
+        # signature is redone, the way build-app.sh signs: a fixed requirement so Keychain and privacy
+        # approvals carry over to the new version.
+        if ! codesign --verify --strict \(shellEscape(dest)) 2>/dev/null; then
+          codesign --force --sign - -i com.brim.app -r='designated => identifier "com.brim.app"' \(shellEscape(dest))/Contents/Helpers/brim 2>/dev/null || true
+          codesign --force --sign - -i com.brim.app -r='designated => identifier "com.brim.app"' \(shellEscape(dest)) 2>/dev/null || true
+        fi
         open \(shellEscape(dest))
         rm -rf \(shellEscape(src))
         rm -f \(shellEscape(script.path))

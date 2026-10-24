@@ -142,7 +142,8 @@ public enum CursorUsage {
         return PlanWindow(label: label, usedPercent: used / limit * 100, resetsAt: reset)
     }
 
-    static func planName(_ raw: String) -> String {
+    /// Cursor's membership value as its Plan page names it ("pro_plus" → "Pro+").
+    public static func planName(_ raw: String) -> String {
         switch raw.lowercased() {
         case "free", "hobby", "free_trial": return "Hobby"
         case "pro": return "Pro"

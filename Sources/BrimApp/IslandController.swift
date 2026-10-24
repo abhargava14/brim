@@ -33,6 +33,17 @@ final class IslandState: ObservableObject {
     @Published var isEmpty = false
     /// Another app is drawing in the notch; the island stepped aside to the menu bar item.
     @Published var steppedAside = false
+    /// Opened by a click, the keyboard or typing: stays open until Esc or a click elsewhere.
+    @Published var isPinned = false
+    /// The closed notch shows music, a timer or a notice: wider wings.
+    @Published var wideWings = false
+    /// Wings for music, timers and notices (Brim Island design · 421pt with the notch).
+    static let wideWingWidth: CGFloat = 118
+    /// Width of the screen the island is on, so the open island never runs off it.
+    @Published var screenWidth: CGFloat = 1440
+
+    /// Width of the open island (Brim Island design).
+    static let openWidth: CGFloat = 880
 
     /// Idle wing beside the notch (design v2 · 92pt; capped by menu-bar room).
     static let wingWidth: CGFloat = 92
@@ -54,8 +65,7 @@ final class IslandState: ObservableObject {
 
     var compactWidth: CGFloat { compactWidth(for: nil) }
     var expandedWidth: CGFloat {
-        if isEmpty { return 320 }
-        return Self.wideWidth(count: max(expandedToolCount, 1), strip: expandedLayoutIsStrip)
+        min(Self.openWidth, max(600, screenWidth - 24))
     }
 
     /// Design v2 IslandWide: 560–920pt from connection count and Cards (196) / Strip (108).
@@ -69,7 +79,7 @@ final class IslandState: ObservableObject {
 
     func idealWingWidth(for event: IslandEvent.Style?) -> CGFloat {
         switch event {
-        case .none: return isEmpty ? Self.emptyWingWidth : Self.wingWidth
+        case .none: return wideWings ? Self.wideWingWidth : isEmpty ? Self.emptyWingWidth : Self.wingWidth
         case .disconnected: return Self.quietEventWingWidth
         default: return Self.eventWingWidth
         }
@@ -92,6 +102,7 @@ final class IslandState: ObservableObject {
     func compactWidth(for event: IslandEvent.Style?) -> CGFloat {
         guard !hasNotch else { return leftWingWidth(for: event) + notchWidth + rightWingWidth(for: event) }
         if event != nil { return 300 }
+        if wideWings { return 300 }
         return isEmpty ? 88 : 230
     }
 
@@ -123,7 +134,10 @@ final class IslandPanel: NSPanel {
         ignoresMouseEvents = true
     }
 
-    override var canBecomeKey: Bool { false }
+    /// True while the island is open, so its text fields can take typing without activating Brim.
+    var allowsKey = false
+
+    override var canBecomeKey: Bool { allowsKey }
     override var canBecomeMain: Bool { false }
 }
 
@@ -156,14 +170,18 @@ final class IslandController {
     private var fullScreenAppActive = false
     /// Status icons come and go; re-measure clearance a few times a minute.
     private var clearanceTimer: Timer?
+    private var hotKey: HotKey?
+    /// The drag pasteboard as last seen, so one file drag opens the Shelf only once.
+    private var lastDragCount = NSPasteboard(name: .drag).changeCount
 
-    init(model: UsageModel, settings: AppSettings, setup: SetupWindows,
-         statusItemFrame: @escaping () -> NSRect?, openSettings: @escaping () -> Void,
+    init(hub: BrimHub, setup: SetupWindows,
+         statusItemFrame: @escaping () -> NSRect?, openSettings: @escaping (SettingsSection) -> Void,
          addAccount: @escaping (AddAccountRequest) -> Void) {
-        self.model = model
-        self.settings = settings
+        self.model = hub.model
+        self.settings = hub.settings
         self.statusItemFrame = statusItemFrame
-        let root = IslandView(model: model, settings: settings, state: state, openSettings: openSettings, addAccount: addAccount)
+        let model = hub.model, settings = hub.settings
+        let root = IslandView(hub: hub, closed: hub.closed, model: model, settings: settings, state: state, openSettings: openSettings, addAccount: addAccount)
         panel.contentView = ClickThroughHostingView(rootView: root)
 
         position()
@@ -198,13 +216,31 @@ final class IslandController {
 
         state.$isExpanded
             .removeDuplicates()
-            .sink { [weak model] expanded in
+            .sink { [weak model, weak self] expanded in
                 Task { @MainActor in
                     model?.setMomentsPaused(expanded, reason: "expanded")
                     model?.setExpandedHistory(expanded)
+                    self?.expansionChanged(expanded)
                 }
             }
             .store(in: &cancellables)
+
+        settings.$hotkeyEnabled
+            .removeDuplicates()
+            .sink { [weak self] enabled in Task { @MainActor in self?.setHotKey(enabled) } }
+            .store(in: &cancellables)
+        settings.$display
+            .dropFirst()
+            .sink { [weak self] _ in Task { @MainActor in self?.position() } }
+            .store(in: &cancellables)
+
+        for name in [NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification] {
+            NotificationCenter.default.publisher(for: name, object: panel)
+                .sink { [weak self] note in
+                    Task { @MainActor in self?.keyChanged(note.name == NSWindow.didBecomeKeyNotification) }
+                }
+                .store(in: &cancellables)
+        }
 
         setup.$open
             .sink { [weak self] open in Task { @MainActor in self?.lockExpansion(open != nil) } }
@@ -229,6 +265,20 @@ final class IslandController {
             return event
         }) {
             monitors.append(local)
+        }
+        // A click in another app closes a pinned island.
+        if let clicks = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown], handler: { [weak self] _ in
+            Task { @MainActor in self?.clickedElsewhere() }
+        }) {
+            monitors.append(clicks)
+        }
+        // Esc closes the open island while it has the keyboard.
+        if let keys = NSEvent.addLocalMonitorForEvents(matching: .keyDown, handler: { [weak self] event in
+            guard event.keyCode == 53, let self, event.window === self.panel, self.state.isExpanded else { return event }
+            Task { @MainActor in self.collapse() }
+            return nil
+        }) {
+            monitors.append(keys)
         }
 
         // `BRIM_SCREENSHOT=1` locks the expanded island open for capture scripts.
@@ -271,7 +321,61 @@ final class IslandController {
 
     func toggleExpanded() {
         guard !state.expansionLocked else { return }
-        state.isExpanded.toggle()
+        if state.isExpanded {
+            collapse()
+        } else {
+            state.isPinned = true
+            state.isExpanded = true
+        }
+    }
+
+    /// Opens from the keyboard and takes typing right away.
+    func openFromKeyboard() {
+        guard shouldShow, !state.expansionLocked else { return }
+        if state.isExpanded {
+            collapse()
+            return
+        }
+        position()
+        state.isPinned = true
+        state.isExpanded = true
+        panel.allowsKey = true
+        panel.makeKey()
+    }
+
+    func collapse() {
+        state.isPinned = false
+        state.isExpanded = false
+    }
+
+    private func expansionChanged(_ expanded: Bool) {
+        panel.allowsKey = expanded
+        if !expanded {
+            state.isPinned = false
+            if panel.isKeyWindow {
+                panel.resignKey()
+                if panel.isKeyWindow { panel.orderOut(nil); panel.orderFrontRegardless() }
+            }
+        }
+    }
+
+    /// Clicking into a text field makes the panel key: keep the island open while typing.
+    private func keyChanged(_ isKey: Bool) {
+        if isKey {
+            if state.isExpanded { state.isPinned = true }
+        } else if state.isPinned, !islandRect.contains(NSEvent.mouseLocation) {
+            collapse()
+        }
+    }
+
+    private func clickedElsewhere() {
+        guard state.isExpanded, state.isPinned, !islandRect.contains(NSEvent.mouseLocation) else { return }
+        collapse()
+    }
+
+    private func setHotKey(_ enabled: Bool) {
+        hotKey?.unregister()
+        hotKey = enabled ? HotKey { [weak self] in self?.openFromKeyboard() } : nil
     }
 
     private func lockExpansion(_ locked: Bool) {
@@ -283,9 +387,17 @@ final class IslandController {
         }
     }
 
-    /// The screen with the menu bar; on a MacBook that is usually the one with the notch.
+    /// The built-in display (with the notch) by default; with "All displays", the one under the pointer.
     private var screen: NSScreen? {
-        NSScreen.screens.first ?? NSScreen.main
+        if settings.display == .all {
+            let mouse = NSEvent.mouseLocation
+            if let under = NSScreen.screens.first(where: { NSMouseInRect(mouse, $0.frame, false) }) { return under }
+        }
+        let builtIn = NSScreen.screens.first { screen in
+            guard let number = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else { return false }
+            return CGDisplayIsBuiltin(CGDirectDisplayID(number.uint32Value)) != 0
+        }
+        return builtIn ?? NSScreen.screens.first ?? NSScreen.main
     }
 
     /// Lays the island out for the current screen, placement and menu bar. Call again when the
@@ -293,6 +405,7 @@ final class IslandController {
     func position() {
         guard let screen else { return }
         let frame = screen.frame
+        state.screenWidth = frame.width
         let menuBarHeight = max(frame.maxY - screen.visibleFrame.maxY, screen.safeAreaInsets.top, 24)
         var top = frame.maxY
         let wantsNotch = settings.placement == .wrapNotch
@@ -496,13 +609,11 @@ final class IslandController {
     /// The visible island in screen coordinates. Width comes from the state (it changes before
     /// the view is measured); height from the view once measured.
     private var islandRect: NSRect {
-        guard let screen else { return .zero }
-        let event = state.isExpanded ? nil : model.event?.style
+        guard screen != nil else { return .zero }
+        let event = state.isExpanded || (!settings.interruptLimits && [.warning, .limit].contains(model.event?.style)) ? nil : model.event?.style
         let width: CGFloat
         if state.isExpanded {
-            width = state.isEmpty
-                ? 320
-                : IslandState.wideWidth(count: max(model.featuredTools.count, 1), strip: settings.expandedLayout == .strip)
+            width = state.expandedWidth
         } else {
             width = state.compactWidth(for: event)
         }
@@ -512,18 +623,34 @@ final class IslandController {
         }
         let size = CGSize(width: width, height: height)
         let top = panel.frame.maxY
-        let midX = screen.frame.midX + (state.isExpanded ? 0 : state.xOffset(for: event))
+        let midX = panel.frame.midX + (state.isExpanded ? 0 : state.xOffset(for: event))
         return NSRect(x: midX - size.width / 2, y: top - size.height, width: size.width, height: size.height)
     }
 
     private func trackMouse() {
         guard panel.isVisible else { return }
+        // "All displays": follow the pointer to another screen while the island is closed.
+        if settings.display == .all, !state.isExpanded, let screen, abs(screen.frame.midX - panel.frame.midX) > 1 {
+            position()
+        }
         let rect = islandRect
         let mouse = NSEvent.mouseLocation
         // Clicks land only on the visible shape; everywhere else they reach the menu bar and apps.
         panel.ignoresMouseEvents = !rect.contains(mouse)
         let margin = state.isExpanded ? Self.expandedHoverMargin : Self.hoverMargin
         let inside = rect.insetBy(dx: -margin, dy: -margin).contains(mouse)
+
+        // Dragging files onto the closed notch opens the Shelf to drop them on.
+        if inside, !state.isExpanded, !state.expansionLocked, NSEvent.pressedMouseButtons & 1 != 0 {
+            let drag = NSPasteboard(name: .drag)
+            if drag.changeCount != lastDragCount, drag.types?.contains(.fileURL) == true {
+                lastDragCount = drag.changeCount
+                settings.selectedTab = .shelf
+                state.isPinned = true
+                state.isExpanded = true
+                return
+            }
+        }
 
         if inside {
             collapseTask?.cancel()
@@ -540,10 +667,10 @@ final class IslandController {
         } else {
             expandTask?.cancel()
             expandTask = nil
-            if state.isExpanded, !state.expansionLocked, collapseTask == nil {
+            if state.isExpanded, !state.expansionLocked, !state.isPinned, collapseTask == nil {
                 collapseTask = Task { [weak self] in
                     try? await Task.sleep(nanoseconds: Self.collapseDelay)
-                    guard let self, !Task.isCancelled, !self.state.expansionLocked else { return }
+                    guard let self, !Task.isCancelled, !self.state.expansionLocked, !self.state.isPinned else { return }
                     self.state.isExpanded = false
                     self.collapseTask = nil
                 }

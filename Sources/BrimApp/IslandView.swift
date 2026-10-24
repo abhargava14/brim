@@ -4,15 +4,31 @@ import SwiftUI
 // MARK: - Root
 
 struct IslandView: View {
+    @ObservedObject var hub: BrimHub
+    @ObservedObject var closed: ClosedNotchState
     @ObservedObject var model: UsageModel
     @ObservedObject var settings: AppSettings
     @ObservedObject var state: IslandState
-    let openSettings: () -> Void
+    let openSettings: (SettingsSection) -> Void
     let addAccount: (AddAccountRequest) -> Void
 
-    private var cornerRadius: CGFloat { state.isExpanded ? (state.isEmpty ? 22 : 28) : (state.hasNotch ? 14 : 16) }
+    private var cornerRadius: CGFloat { state.isExpanded ? 30 : (state.hasNotch ? 14 : 16) }
+    /// The open island follows Appearance; the closed notch is always black.
+    private var theme: IslandTheme { state.isExpanded ? IslandTheme.resolve(settings.appearance) : .dark }
     private var width: CGFloat {
-        state.isExpanded ? state.expandedWidth : state.compactWidth(for: model.event?.style)
+        state.isExpanded ? state.expandedWidth : state.compactWidth(for: event?.style)
+    }
+
+    /// The AI moment to show, unless the user turned limit warnings off.
+    private var event: IslandEvent? {
+        guard let event = model.event else { return nil }
+        if !settings.interruptLimits, event.style == .warning || event.style == .limit { return nil }
+        return event
+    }
+
+    private var notice: ClosedNotchState.Notice? {
+        if case .notice(let notice) = closed.mode { return notice }
+        return nil
     }
 
     var body: some View {
@@ -26,7 +42,8 @@ struct IslandView: View {
             }
         }
         .frame(width: IslandController.canvas.width, height: IslandController.canvas.height, alignment: .top)
-        .environment(\.colorScheme, .dark)
+        .environment(\.islandTheme, theme)
+        .environment(\.colorScheme, theme.isDark ? .dark : .light)
         .onAppear { syncExpandedGeometry() }
         .onChange(of: state.isExpanded) { expanded in
             if expanded, settings.pendingIslandTip { settings.pendingIslandTip = false }
@@ -43,17 +60,17 @@ struct IslandView: View {
 
     private var island: some View {
         ZStack(alignment: .top) {
-            if state.isExpanded && state.isEmpty {
-                EmptyPanel(settings: settings, state: state, addAccount: addAccount)
+            if state.isExpanded {
+                IslandShellView(hub: hub, settings: settings, model: model, state: state,
+                                openSettings: openSettings, addAccount: addAccount)
                     .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .top)))
-            } else if state.isExpanded {
-                ExpandedView(model: model, settings: settings, state: state, openSettings: openSettings, addAccount: addAccount)
-                    .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .top)))
-            } else if let event = model.event {
+            } else if let event {
                 EventView(event: event, state: state, playful: settings.playful)
                     .id(event.id)
                     .transition(.asymmetric(insertion: .opacity.combined(with: .offset(y: 4)).animation(.easeOut(duration: 0.2).delay(0.08)),
                                             removal: .opacity))
+            } else if closed.mode != .ai {
+                ClosedNotchView(mode: closed.mode, hub: hub, music: hub.music, timers: hub.timers, state: state)
             } else if state.isEmpty {
                 EmptyCompactView(state: state)
                     .transition(.opacity)
@@ -64,13 +81,32 @@ struct IslandView: View {
         }
         .frame(width: width)
         .frame(height: state.isExpanded ? nil : state.barHeight)
-        .background(NotchShape(bottomRadius: cornerRadius).fill(Color.black))
-        .overlay(EventGlow(event: state.isExpanded ? nil : model.event, radius: cornerRadius))
+        .background(NotchShape(bottomRadius: cornerRadius).fill(theme.bg))
+        .overlay(alignment: .top) {
+            // Light theme: the hardware notch shows as a black cut-out.
+            if state.isExpanded, !theme.isDark, state.hasNotch {
+                NotchShape(bottomRadius: 12)
+                    .fill(Color.black)
+                    .frame(width: state.notchWidth, height: state.barHeight)
+                    .allowsHitTesting(false)
+            }
+        }
+        .overlay(EventGlow(event: state.isExpanded ? nil : event, radius: cornerRadius))
+        .overlay {
+            // A notice interrupts once with a coloured rim, then the notch goes back to normal.
+            if let notice, !state.isExpanded, event == nil {
+                NotchShape(bottomRadius: cornerRadius)
+                    .stroke(notice.tint, lineWidth: 1.5)
+                    .shadow(color: notice.tint.opacity(0.45), radius: 8)
+                    .allowsHitTesting(false)
+            }
+        }
         .clipShape(NotchShape(bottomRadius: cornerRadius))
+        .compositingGroup()
         .shadow(color: .black.opacity(state.isExpanded ? 0.35 : 0), radius: 25, y: 18)
         .shadow(color: .black.opacity(state.isExpanded ? 0.2 : 0), radius: 7, y: 4)
         .overlay(alignment: .top) {
-            if let event = model.event, event.celebrates, settings.playful, !state.isExpanded {
+            if let event, event.celebrates, settings.playful, !state.isExpanded {
                 ConfettiBurst(colors: event.style == .milestone
                               ? [event.kind.tint, .white, event.kind.tint.opacity(0.6)]
                               : [Brand.good, .white, event.kind.tint, Color(red: 0x9B / 255, green: 0xE7 / 255, blue: 0xAE / 255)])
@@ -91,10 +127,25 @@ struct IslandView: View {
         .onTapGesture {
             guard !state.isExpanded, !state.expansionLocked else { return }
             if model.event != nil { model.dismissEvent() }
+            if let notice, notice.id.hasPrefix(ClosedNotchState.updateNoticePrefix), let update = hub.updates.available {
+                closed.dismissNotice()
+                Task { @MainActor in BrimUpdateUI.offer(update, watcher: hub.updates) }
+                return
+            } else if let notice {
+                settings.selectedTab = notice.tab
+                closed.dismissNotice()
+            } else if closed.mode == .timer {
+                settings.selectedTab = .timers
+            }
+            // A click opens it for good: it stays until Esc or a click elsewhere.
+            state.isPinned = true
             state.isExpanded = true
         }
         .animation(.spring(response: 0.38, dampingFraction: 0.82), value: state.isExpanded)
         .animation(.spring(response: 0.38, dampingFraction: 0.82), value: model.event?.id)
+        .animation(.spring(response: 0.38, dampingFraction: 0.82), value: closed.mode)
+        .onChange(of: closed.mode.wide) { state.wideWings = $0 }
+        .onAppear { state.wideWings = closed.mode.wide }
     }
 }
 
@@ -108,7 +159,7 @@ struct IslandTipView: View {
             Text("Brim lives here")
                 .font(.system(size: 14, weight: .bold))
                 .foregroundStyle(.primary)
-            Text("Your connections take turns in the notch. Hover to expand, or press ⌥⌘B.")
+            Text("Your music, timers and AI limits take turns in the notch. Hover to open it, or press ⌥ Space.")
                 .font(.system(size: 12))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -214,13 +265,20 @@ struct ToolGlyph: View {
     var name: String?
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.islandTheme) private var theme
     @State private var phase = false
 
     private var animated: Bool { playful && !reduceMotion }
 
+    /// Cursor's mark and custom tools are near-white; on a light island they turn dark.
+    private var tint: Color {
+        if !theme.isDark, [.cursor, .customLogs, .customEndpoint].contains(kind) { return Color(white: 0.23) }
+        return kind.tint
+    }
+
     var body: some View {
         mark
-            .foregroundStyle(mood == .attention ? Brand.attention : kind.tint)
+            .foregroundStyle(mood == .attention ? Brand.attention : tint)
             .opacity(mood == .dim ? 0.35 : 1)
             .rotationEffect(.degrees(rotation))
             .scaleEffect(scale)
