@@ -388,7 +388,7 @@ struct NotchPage: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            SettingsGroup(title: "Rotates through") {
+            SettingsGroup(title: "Resting view, rotates through") {
                 SettingsRow(title: "Now playing", sub: "Song and time left", divider: false) {
                     IslandSwitch(isOn: $settings.closedMusic, label: "Now playing")
                 }
@@ -397,6 +397,18 @@ struct NotchPage: View {
                 }
                 SettingsRow(title: "AI limits", sub: "Two accounts at a time, highest usage first") {
                     IslandSwitch(isOn: $settings.closedAI, label: "AI limits")
+                }
+                SettingsRow(title: "Next event", sub: "Today's next meeting and how long until it starts") {
+                    IslandSwitch(isOn: $settings.closedEvent, label: "Next event")
+                }
+                SettingsRow(title: "Weather", sub: "Temperature and conditions") {
+                    IslandSwitch(isOn: $settings.closedWeather, label: "Weather")
+                }
+                SettingsRow(title: "Clock", sub: "Your time, plus your first city from Clocks") {
+                    IslandSwitch(isOn: $settings.closedClock, label: "Clock")
+                }
+                SettingsRow(title: "Switch every", sub: "How long each item stays before the next") {
+                    SegmentedPills(options: [(5.0, "5s"), (8.0, "8s"), (15.0, "15s"), (30.0, "30s")], selection: $settings.closedRotation, look: .strong)
                 }
             }
             SettingsGroup(title: "Interrupts with") {

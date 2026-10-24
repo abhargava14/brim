@@ -83,8 +83,15 @@ public struct Forecast: Codable, Equatable, Sendable {
         public var uvIndex: Double
         public var code: Int
         public var isDay: Bool
+        /// Degrees the wind comes from (0 = north).
+        public var windDirection: Double?
+        /// US AQI, from Open-Meteo's air-quality service.
+        public var airQuality: Int?
+        /// Millimetres of rain or snow in the last hour.
+        public var precipitation: Double?
 
-        public init(temperature: Double, feelsLike: Double, humidity: Double, windSpeed: Double, uvIndex: Double, code: Int, isDay: Bool) {
+        public init(temperature: Double, feelsLike: Double, humidity: Double, windSpeed: Double, uvIndex: Double, code: Int, isDay: Bool,
+                    windDirection: Double? = nil, airQuality: Int? = nil, precipitation: Double? = nil) {
             self.temperature = temperature
             self.feelsLike = feelsLike
             self.humidity = humidity
@@ -92,6 +99,9 @@ public struct Forecast: Codable, Equatable, Sendable {
             self.uvIndex = uvIndex
             self.code = code
             self.isDay = isDay
+            self.windDirection = windDirection
+            self.airQuality = airQuality
+            self.precipitation = precipitation
         }
     }
 
@@ -143,6 +153,11 @@ public struct Forecast: Codable, Equatable, Sendable {
         self.place = place
     }
 
+    /// The 24 hours of one day (local to the place), for the day chart.
+    public func hours(on day: Date, calendar: Calendar = .current) -> [Hour] {
+        hours.filter { calendar.isDate($0.time, inSameDayAs: day) }
+    }
+
     /// The next hours starting with the current one.
     public func upcomingHours(_ count: Int = 7, now: Date = Date()) -> [Hour] {
         let start = hours.firstIndex { $0.time.addingTimeInterval(3600) > now } ?? 0
@@ -156,7 +171,7 @@ public enum OpenMeteo {
         components?.queryItems = [
             URLQueryItem(name: "latitude", value: String(format: "%.3f", latitude)),
             URLQueryItem(name: "longitude", value: String(format: "%.3f", longitude)),
-            URLQueryItem(name: "current", value: "temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m,uv_index,is_day"),
+            URLQueryItem(name: "current", value: "temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m,wind_direction_10m,uv_index,is_day,precipitation"),
             URLQueryItem(name: "hourly", value: "temperature_2m,weather_code,precipitation_probability"),
             URLQueryItem(name: "daily", value: "weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunrise,sunset"),
             URLQueryItem(name: "timezone", value: "auto"),
@@ -165,6 +180,43 @@ public enum OpenMeteo {
             URLQueryItem(name: "wind_speed_unit", value: fahrenheit ? "mph" : "kmh"),
         ]
         return components?.url
+    }
+
+    /// Current US AQI and PM2.5 (https://open-meteo.com/en/docs/air-quality-api).
+    public static func airQualityURL(latitude: Double, longitude: Double) -> URL? {
+        var components = URLComponents(string: "https://air-quality-api.open-meteo.com/v1/air-quality")
+        components?.queryItems = [
+            URLQueryItem(name: "latitude", value: String(format: "%.3f", latitude)),
+            URLQueryItem(name: "longitude", value: String(format: "%.3f", longitude)),
+            URLQueryItem(name: "current", value: "us_aqi,pm2_5"),
+        ]
+        return components?.url
+    }
+
+    public static func parseAirQuality(_ data: Data) -> Int? {
+        guard let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let current = json["current"] as? [String: Any],
+              let aqi = (current["us_aqi"] as? NSNumber)?.doubleValue else { return nil }
+        return Int(aqi.rounded())
+    }
+
+    /// US AQI bands.
+    public static func airQualityText(_ aqi: Int) -> String {
+        switch aqi {
+        case ..<51: return "Good"
+        case ..<101: return "Moderate"
+        case ..<151: return "Poor for some"
+        case ..<201: return "Unhealthy"
+        case ..<301: return "Very unhealthy"
+        default: return "Hazardous"
+        }
+    }
+
+    /// 0° → "N", 225° → "SW".
+    public static func compass(_ degrees: Double) -> String {
+        let points = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]
+        let index = Int((degrees.truncatingRemainder(dividingBy: 360) + 360 + 22.5) / 45) % 8
+        return points[index]
     }
 
     public static func searchURL(_ query: String) -> URL? {
@@ -226,7 +278,9 @@ public enum OpenMeteo {
 
         let now = Forecast.Current(temperature: number("temperature_2m"), feelsLike: number("apparent_temperature"),
                                    humidity: number("relative_humidity_2m"), windSpeed: number("wind_speed_10m"),
-                                   uvIndex: number("uv_index"), code: Int(number("weather_code")), isDay: number("is_day") != 0)
+                                   uvIndex: number("uv_index"), code: Int(number("weather_code")), isDay: number("is_day") != 0,
+                                   windDirection: current["wind_direction_10m"] == nil ? nil : number("wind_direction_10m"),
+                                   precipitation: current["precipitation"] == nil ? nil : number("precipitation"))
         let hourTimes = (hourly["time"] as? [String] ?? []).map { minute.date(from: $0) }
         let hourTemps = doubles(hourly, "temperature_2m"), hourCodes = ints(hourly, "weather_code")
         let hourRain = doubles(hourly, "precipitation_probability")

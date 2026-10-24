@@ -141,6 +141,12 @@ struct IslandView: View {
                 settings.selectedTab = .timers
             } else if closed.mode == .scratch {
                 settings.selectedTab = .scratchpad
+            } else if closed.mode == .clock {
+                settings.selectedTab = .clocks
+            } else if closed.mode == .weather {
+                settings.selectedTab = .weather
+            } else if closed.mode == .event {
+                settings.selectedTab = .calendar
             }
             // A click opens it for good: it stays until Esc or a click elsewhere.
             state.isPinned = true

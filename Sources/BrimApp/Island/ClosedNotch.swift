@@ -23,6 +23,9 @@ final class ClosedNotchState: ObservableObject {
         case music
         case timer
         case scratch
+        case clock
+        case weather
+        case event
         case notice(Notice)
 
         /// Modes that need the wider wings from the design (118pt).
@@ -38,8 +41,6 @@ final class ClosedNotchState: ObservableObject {
     private var lastFinished: String?
     private var timer: Timer?
     private weak var hub: BrimHub?
-    /// How long each rotating item stays.
-    static let rotation: TimeInterval = 8
 
     func start(_ hub: BrimHub) {
         self.hub = hub
@@ -87,8 +88,11 @@ final class ClosedNotchState: ObservableObject {
             var rotation: [Mode] = []
             if settings.closedMusic, hub.music.track?.playing == true { rotation.append(.music) }
             if settings.closedAI { rotation.append(.ai) }
+            if settings.closedEvent, let event = hub.calendar.nextEvent, Calendar.current.isDateInToday(event.start) { rotation.append(.event) }
+            if settings.closedWeather, hub.weather.forecast != nil { rotation.append(.weather) }
+            if settings.closedClock { rotation.append(.clock) }
             if rotation.isEmpty { rotation = settings.closedMusic && hub.music.track != nil ? [.music] : [.ai] }
-            next = rotation[Int(now.timeIntervalSince1970 / Self.rotation) % rotation.count]
+            next = rotation[Int(now.timeIntervalSince1970 / max(3, settings.closedRotation)) % rotation.count]
         }
         if next != mode { mode = next }
     }
@@ -157,6 +161,9 @@ struct ClosedNotchView: View {
         case .music: return "music"
         case .timer: return "timer"
         case .scratch: return "scratch"
+        case .clock: return "clock"
+        case .weather: return "weather"
+        case .event: return "event"
         case .notice(let notice): return notice.id
         }
     }
@@ -195,6 +202,28 @@ struct ClosedNotchView: View {
                 Image(systemName: "pin.fill").font(.system(size: 10, weight: .bold)).foregroundStyle(.white.opacity(0.6))
                 Text(scratch.firstLine).truncationMode(.tail)
             }
+        case .clock:
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                HStack(spacing: 6) {
+                    Image(systemName: "clock").font(.system(size: 10, weight: .bold)).foregroundStyle(.white.opacity(0.6))
+                    Text(ClocksTabView.time(context.date, zone: .current))
+                }
+            }
+        case .weather:
+            if let forecast = hub.weather.forecast {
+                HStack(spacing: 6) {
+                    Image(systemName: OpenMeteo.symbol(forecast.current.code, isDay: forecast.current.isDay))
+                        .symbolRenderingMode(.hierarchical).font(.system(size: 12))
+                    Text("\(Int(forecast.current.temperature.rounded()))°")
+                }
+            }
+        case .event:
+            if let event = hub.calendar.nextEvent {
+                HStack(spacing: 6) {
+                    Circle().fill(.white.opacity(0.7)).frame(width: 6, height: 6)
+                    Text(event.title).truncationMode(.tail)
+                }
+            }
         case .notice(let notice):
             HStack(spacing: 6) {
                 Image(systemName: notice.symbol).font(.system(size: 12, weight: .bold)).foregroundStyle(notice.tint)
@@ -203,6 +232,19 @@ struct ClosedNotchView: View {
         default:
             EmptyView()
         }
+    }
+
+    /// The first world clock as "LDN 4:41 PM", or the date when there are none.
+    private func secondClock(_ date: Date) -> String {
+        guard let clock = hub.clocks.clocks.first else {
+            let formatter = DateFormatter()
+            formatter.setLocalizedDateFormatFromTemplate("EEE d")
+            return formatter.string(from: date)
+        }
+        let words = clock.label.split(separator: " ")
+        let short = words.count > 1 ? words.compactMap(\.first).map(String.init).joined().uppercased()
+            : clock.label.count <= 6 ? clock.label : String(clock.label.prefix(3)).uppercased()
+        return short + " " + ClocksTabView.time(date, zone: clock.timeZone)
     }
 
     @ViewBuilder
@@ -221,6 +263,18 @@ struct ClosedNotchView: View {
             Text(Clock.mmss(state.pomodoroRunning ? state.pomodoroRemaining(at: timers.now) : state.countdownRemaining(at: timers.now)))
         case .scratch:
             Text("\(scratch.wordCount) words").foregroundStyle(.white.opacity(0.55))
+        case .clock:
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                Text(secondClock(context.date)).foregroundStyle(.white.opacity(0.6))
+            }
+        case .weather:
+            if let forecast = hub.weather.forecast {
+                Text(OpenMeteo.describe(forecast.current.code)).foregroundStyle(.white.opacity(0.6)).truncationMode(.tail)
+            }
+        case .event:
+            if let event = hub.calendar.nextEvent {
+                Text(event.start > Date() ? When.until(event.start) : "now").foregroundStyle(.white.opacity(0.6))
+            }
         case .notice(let notice):
             Text(notice.detail).foregroundStyle(notice.tint)
         default:

@@ -34,6 +34,10 @@ final class UsageModel: ObservableObject {
     private var quotaHistorySaved = Date.distantPast
 
     static var quotaHistoryURL: URL { supportDirectory.appendingPathComponent("quota-history.json") }
+    /// Tokens per day across log-reading accounts, for the activity heatmap and streaks.
+    @Published private(set) var tokenHistory = AppSettings.isSnapshot ? UsageModel.sampleTokenHistory() : TokenHistory.load(from: UsageModel.tokenHistoryURL)
+    private var tokenHistorySaved = Date.distantPast
+    static var tokenHistoryURL: URL { supportDirectory.appendingPathComponent("token-history.json") }
 
     let settings: AppSettings
     let statusLine: ClaudeStatusLineSetup
@@ -327,6 +331,7 @@ final class UsageModel: ObservableObject {
         for tool in snapshot.tools {
             if let lead = tool.tightestWindow?.usedPercent, history.record(tool.id, percent: lead) { changed = true }
         }
+        recordTokenHistory(snapshot)
         guard changed else { return }
         quotaHistory = history
         // Written at most once a minute; a lost reading only lowers one day's peak.
@@ -334,6 +339,41 @@ final class UsageModel: ObservableObject {
             quotaHistorySaved = Date()
             history.save(to: Self.quotaHistoryURL)
         }
+    }
+
+    private func recordTokenHistory(_ snapshot: UsageSnapshot) {
+        var totals: [Date: Double] = [:]
+        let calendar = Calendar.current
+        for tool in snapshot.tools {
+            for point in tool.daily { totals[calendar.startOfDay(for: point.date), default: 0] += Double(point.tokens.total) }
+        }
+        let today = calendar.startOfDay(for: Date())
+        totals[today] = max(totals[today] ?? 0, snapshot.tools.reduce(0.0) { $0 + Double($1.today.total) })
+        var history = tokenHistory
+        var changed = false
+        for (day, total) in totals where history.record(total, on: day) { changed = true }
+        guard changed else { return }
+        tokenHistory = history
+        if Date().timeIntervalSince(tokenHistorySaved) > 60 {
+            tokenHistorySaved = Date()
+            history.save(to: Self.tokenHistoryURL)
+        }
+    }
+
+    /// Half a year of believable activity for snapshot renders.
+    static func sampleTokenHistory(now: Date = Date()) -> TokenHistory {
+        var history = TokenHistory()
+        var seed: UInt64 = 42
+        for back in 0..<182 {
+            seed = seed &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
+            let roll = Double(seed >> 33) / Double(1 << 31)
+            let date = Calendar.current.date(byAdding: .day, value: -back, to: now) ?? now
+            let weekend = Calendar.current.isDateInWeekend(date)
+            // A 12-day streak up to today, quieter weekends further back.
+            let active = back < 12 || roll > (weekend ? 0.6 : 0.18)
+            if active { history.record((2 + roll * 16) * 1_000_000 * (weekend ? 0.4 : 1), on: date) }
+        }
+        return history
     }
 
     // MARK: - Events

@@ -28,6 +28,10 @@ public struct JSONFile<Value: Codable> {
         try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try? data.write(to: url, options: .atomic)
     }
+
+    public func delete() {
+        try? FileManager.default.removeItem(at: url)
+    }
 }
 
 // MARK: - Notes
@@ -387,4 +391,39 @@ extension CharacterSet {
         set.remove(charactersIn: "&=+#?")
         return set
     }()
+}
+
+// MARK: - Clipboard
+
+/// What a copied piece of text looks like, for the Clipboard preview.
+public enum ClipText {
+    /// "#1E90FF", "#fff" or "1e90ff" → RGB in 0–1.
+    public static func hexColor(_ text: String) -> (red: Double, green: Double, blue: Double)? {
+        var hex = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if hex.hasPrefix("#") { hex.removeFirst() }
+        guard [3, 6].contains(hex.count), hex.allSatisfy(\.isHexDigit) else { return nil }
+        // Bare six-digit words like "decade" or "000000" only count with a #.
+        if !text.trimmingCharacters(in: .whitespaces).hasPrefix("#"),
+           hex.count != 6 || !hex.contains(where: \.isNumber) || !hex.contains(where: \.isLetter) { return nil }
+        if hex.count == 3 { hex = hex.map { "\($0)\($0)" }.joined() }
+        guard let value = UInt32(hex, radix: 16) else { return nil }
+        return (Double((value >> 16) & 0xFF) / 255, Double((value >> 8) & 0xFF) / 255, Double(value & 0xFF) / 255)
+    }
+
+    public static func isEmail(_ text: String) -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.contains(" "), !trimmed.contains("\n"), let at = trimmed.firstIndex(of: "@") else { return false }
+        let domain = trimmed[trimmed.index(after: at)...]
+        return at != trimmed.startIndex && domain.contains(".") && !domain.hasSuffix(".")
+    }
+
+    /// "142 characters · 23 words · 3 lines".
+    public static func stats(_ text: String) -> String {
+        let characters = text.count
+        let words = text.split { $0.isWhitespace || $0.isNewline }.count
+        let lines = text.split(separator: "\n", omittingEmptySubsequences: false).count
+        var parts = ["\(characters) character\(characters == 1 ? "" : "s")", "\(words) word\(words == 1 ? "" : "s")"]
+        if lines > 1 { parts.append("\(lines) lines") }
+        return parts.joined(separator: " · ")
+    }
 }

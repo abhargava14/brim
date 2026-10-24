@@ -95,6 +95,7 @@ extension TabID {
         case .notes: return "note.text"
         case .calendar: return "calendar"
         case .timers: return "timer"
+        case .clocks: return "globe"
         case .stats: return "cpu"
         case .screen: return "hourglass"
         case .weather: return "cloud.sun"

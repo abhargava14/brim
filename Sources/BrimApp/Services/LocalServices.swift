@@ -415,3 +415,45 @@ enum Bytes {
         return formatter.string(fromByteCount: Int64(bytesPerSecond)) + "/s"
     }
 }
+
+// MARK: - Clocks
+
+/// The cities in the Clocks tab, next to the local clock.
+@MainActor
+final class ClocksStore: ObservableObject {
+    @Published private(set) var clocks: [WorldClock] = []
+    private let file = JSONFile<[WorldClock]>("clocks.json", directory: LocalData.directory)
+
+    init() {
+        if AppSettings.isSnapshot {
+            clocks = [WorldClock(label: "New York", zone: "America/New_York"), WorldClock(label: "London", zone: "Europe/London"),
+                      WorldClock(label: "Tokyo", zone: "Asia/Tokyo")]
+        } else {
+            clocks = file.load() ?? []
+        }
+    }
+
+    var canAdd: Bool { clocks.count < WorldClocks.limit }
+
+    func add(_ clock: WorldClock) {
+        guard canAdd, !clocks.contains(where: { $0.zone == clock.zone && $0.label == clock.label }) else { return }
+        clocks.append(WorldClock(label: clock.label, zone: clock.zone))
+        save()
+    }
+
+    func remove(_ id: String) {
+        clocks.removeAll { $0.id == id }
+        save()
+    }
+
+    func move(_ id: String, by offset: Int) {
+        guard let index = clocks.firstIndex(where: { $0.id == id }), clocks.indices.contains(index + offset) else { return }
+        clocks.swapAt(index, index + offset)
+        save()
+    }
+
+    private func save() {
+        guard !AppSettings.isSnapshot else { return }
+        file.save(clocks)
+    }
+}

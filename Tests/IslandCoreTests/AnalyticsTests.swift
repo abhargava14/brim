@@ -73,3 +73,52 @@ final class GoogleAnalyticsTests: XCTestCase {
         XCTAssertEqual(GoogleAnalytics.error(Data(#"{"error":{"message":"denied"}}"#.utf8)), "denied")
     }
 }
+
+final class AnalyticsProviderTests: XCTestCase {
+    func testPlausibleRowsAndSeries() {
+        let totals = Data(#"{"results":[{"metrics":[120,340,41.5,63],"dimensions":[]}],"meta":{},"query":{}}"#.utf8)
+        XCTAssertEqual(Plausible.rows(totals).first?.metrics, [120, 340, 41.5, 63])
+        let series = Data(#"{"results":[{"metrics":[5],"dimensions":["2026-10-24"]}],"meta":{"time_labels":["2026-10-23","2026-10-24","2026-10-25"]}}"#.utf8)
+        XCTAssertEqual(Plausible.series(series), [0, 5, 0])
+        XCTAssertEqual(Plausible.error(Data(#"{"error":"Invalid site"}"#.utf8)), "Invalid site")
+        let body = Plausible.body(site: "brim.app", metrics: ["visitors"], dateRange: "7d", dimensions: ["event:page"], limit: 6)
+        let json = try! JSONSerialization.jsonObject(with: body) as! [String: Any]
+        XCTAssertEqual(json["site_id"] as? String, "brim.app")
+        XCTAssertEqual((json["pagination"] as? [String: Any])?["limit"] as? Int, 6)
+    }
+
+    func testUmamiStatsBothShapes() {
+        var report = AnalyticsReport()
+        let newer = Data(#"{"pageviews":300,"visitors":120,"visits":150,"bounces":60,"totaltime":9000,"comparison":{"visitors":100}}"#.utf8)
+        XCTAssertTrue(Umami.parseStats(newer, into: &report))
+        XCTAssertEqual(report.visitors, 120)
+        XCTAssertEqual(report.bounceRate, 0.4)
+        XCTAssertEqual(report.sessionSeconds, 60)
+        XCTAssertEqual(report.previousVisitors, 100)
+        var older = AnalyticsReport()
+        let legacy = Data(#"{"pageviews":{"value":30,"prev":20},"visitors":{"value":12,"prev":10},"visits":{"value":15,"prev":9}}"#.utf8)
+        XCTAssertTrue(Umami.parseStats(legacy, into: &older))
+        XCTAssertEqual(older.visitors, 12)
+        XCTAssertEqual(older.previousVisitors, 10)
+        XCTAssertEqual(Umami.parseMetrics(Data(#"[{"x":"/","y":9},{"x":"","y":2}]"#.utf8)).map(\.label), ["/", "Direct/None"])
+        XCTAssertEqual(Umami.parseSeries(Data(#"{"pageviews":[{"x":"a","y":4}],"sessions":[{"x":"a","y":3}]}"#.utf8)), [3])
+        XCTAssertEqual(Umami.parseActive(Data(#"{"visitors":4}"#.utf8)), 4)
+    }
+
+    func testFathomStringsParse() {
+        var report = AnalyticsReport()
+        let totals = Data(#"[{"visits":"150","uniques":"120","pageviews":"300","avg_duration":"64.5","bounce_rate":"0.42"}]"#.utf8)
+        XCTAssertTrue(Fathom.parseTotals(totals, into: &report))
+        XCTAssertEqual(report.visitors, 120)
+        XCTAssertEqual(report.bounceRate, 0.42)
+        XCTAssertEqual(Fathom.parseRows(Data(#"[{"pathname":"/docs","uniques":"7"}]"#.utf8), field: "pathname").first?.value, 7)
+        XCTAssertEqual(Fathom.parseCurrent(Data(#"{"total":14}"#.utf8)), 14)
+        let url = Fathom.aggregationURL(site: "ABC", dates: (Date(timeIntervalSince1970: 0), Date(timeIntervalSince1970: 0)), aggregates: "uniques")!
+        XCTAssertTrue(url.absoluteString.contains("entity_id=ABC"))
+    }
+
+    func testCustomHostIsNormalised() {
+        XCTAssertEqual(AnalyticsSite(name: "a", provider: .umami, host: "stats.example.com/").customHost, "https://stats.example.com")
+        XCTAssertNil(AnalyticsSite(name: "a", provider: .plausible, host: " ").customHost)
+    }
+}

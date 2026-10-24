@@ -804,6 +804,7 @@ struct WeatherTabView: View {
     @State private var query = ""
     @State private var results: [OpenMeteo.Place] = []
     @State private var picking = false
+    @State private var day = 0
     @Environment(\.islandTheme) private var theme
 
     var body: some View {
@@ -821,93 +822,151 @@ struct WeatherTabView: View {
     }
 
     private func content(_ f: Forecast) -> some View {
-        HStack(spacing: 10) {
-            IslandCard(padding: EdgeInsets(top: 14, leading: 18, bottom: 14, trailing: 18)) {
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack {
-                        Text(f.place).font(.brim(13))
-                        Image(systemName: weather.useLocation ? "location.fill" : "mappin").font(.system(size: 9)).opacity(0.5)
-                        Spacer()
-                        Text("updated \(When.time(f.fetchedAt))").font(.brim(11, .bold)).foregroundStyle(theme.f(0.4))
-                        Image(systemName: "magnifyingglass")
-                            .font(.system(size: 11, weight: .bold))
-                            .frame(width: 22, height: 22)
-                            .hoverFill(11, hover: theme.f(0.1))
-                            .onTapGesture { picking = true }
-                            .help("Change city")
-                            .accessibilityLabel("Change city")
-                    }
-                    HStack(spacing: 14) {
+        let selected = min(day, max(f.days.count - 1, 0))
+        return HStack(spacing: 10) {
+            IslandCard(padding: EdgeInsets(top: 12, leading: 16, bottom: 12, trailing: 16)) {
+                VStack(alignment: .leading, spacing: 10) {
+                    placeBar(f)
+                    HStack(alignment: .center, spacing: 12) {
                         Image(systemName: OpenMeteo.symbol(f.current.code, isDay: f.current.isDay))
                             .symbolRenderingMode(.hierarchical)
-                            .font(.system(size: 44))
-                        Text("\(Int(f.current.temperature.rounded()))°").font(.brim(58)).kerning(-1.5)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(OpenMeteo.describe(f.current.code)).font(.brim(15))
+                            .font(.system(size: 36))
+                        VStack(alignment: .leading, spacing: 0) {
+                            Text("\(Int(f.current.temperature.rounded()))°").font(.brim(46)).kerning(-1.2)
+                            Text(OpenMeteo.describe(f.current.code)).font(.brim(12.5)).lineLimit(1)
                             if let today = f.days.first {
-                                Text("H \(Int(today.high.rounded()))° · L \(Int(today.low.rounded()))°").font(.brim(12, .bold)).foregroundStyle(theme.f(0.55))
+                                Text("H \(Int(today.high.rounded()))°  L \(Int(today.low.rounded()))°  Feels \(Int(f.current.feelsLike.rounded()))°")
+                                    .font(.brim(11, .bold)).foregroundStyle(theme.f(0.55)).lineLimit(1)
                             }
                         }
+                        .fixedSize()
+                        Spacer(minLength: 8)
+                        details(f)
                     }
-                    HStack(spacing: 6) {
-                        detail("Feels like", "\(Int(f.current.feelsLike.rounded()))°")
-                        detail("Humidity", "\(Int(f.current.humidity))%")
-                        detail("Wind", "\(Int(f.current.windSpeed.rounded())) \(weather.fahrenheit ? "mph" : "km/h")")
-                        detail("UV", "\(Int(f.current.uvIndex.rounded()))")
-                    }
-                    HStack(spacing: 4) {
-                        ForEach(Array(f.upcomingHours().enumerated()), id: \.offset) { index, hour in
-                            VStack(spacing: 5) {
-                                Text(index == 0 ? "Now" : Self.hour(hour.time)).font(.brim(10.5, .bold)).foregroundStyle(theme.f(0.5))
-                                Image(systemName: OpenMeteo.symbol(hour.code)).symbolRenderingMode(.hierarchical).font(.system(size: 14))
-                                Text("\(Int(hour.temperature.rounded()))°").font(.brim(12.5))
-                            }
-                            .frame(maxWidth: .infinity)
-                        }
-                    }
+                    dayChart(f, index: selected)
                 }
             }
-            IslandCard(padding: EdgeInsets(top: 14, leading: 14, bottom: 8, trailing: 14)) {
-                VStack(alignment: .leading, spacing: 2) {
-                    SectionTitle(title: "7-day forecast").padding(.horizontal, 4).padding(.bottom, 6)
-                    let lowest = f.days.map(\.low).min() ?? 0, highest = f.days.map(\.high).max() ?? 1
-                    ForEach(Array(f.days.enumerated()), id: \.offset) { index, day in
-                        HStack(spacing: 10) {
-                            Text(index == 0 ? "Today" : Self.weekday(day.date)).frame(width: 44, alignment: .leading)
-                            Image(systemName: OpenMeteo.symbol(day.code)).symbolRenderingMode(.hierarchical).font(.system(size: 14)).frame(width: 20)
-                            Text("\(Int(day.low.rounded()))°").foregroundStyle(theme.f(0.5)).frame(width: 30, alignment: .trailing)
-                            GeometryReader { geo in
-                                let span = max(highest - lowest, 1)
-                                ZStack(alignment: .leading) {
-                                    Capsule().fill(theme.f(0.08))
-                                    Capsule()
-                                        .fill(LinearGradient(colors: [theme.f(0.35), theme.fg], startPoint: .leading, endPoint: .trailing))
-                                        .frame(width: max(6, geo.size.width * (day.high - day.low) / span))
-                                        .offset(x: geo.size.width * (day.low - lowest) / span)
-                                }
-                            }
-                            .frame(height: 5)
-                            Text("\(Int(day.high.rounded()))°").frame(width: 30, alignment: .leading)
-                        }
-                        .font(.brim(12.5))
-                        .padding(.horizontal, 4)
-                        .frame(height: 34)
-                    }
-                }
-            }
-            .frame(width: 350)
+            sevenDay(f, selected: selected).frame(width: 318)
         }
     }
 
-    private func detail(_ key: String, _ value: String) -> some View {
-        VStack(alignment: .leading, spacing: 1) {
-            Text(key.uppercased()).font(.brim(10)).kerning(1).foregroundStyle(theme.f(0.45))
-            Text(value).font(.brim(14))
+    /// Your location and saved cities as pills, with search to add one.
+    private func placeBar(_ f: Forecast) -> some View {
+        HStack(spacing: 4) {
+            if weather.access != .unavailable {
+                placePill(nil, title: "Here", symbol: "location.fill")
+            }
+            ForEach(weather.places) { place in
+                placePill(place, title: place.name, symbol: nil)
+            }
+            IconButton(symbol: "plus", help: "Add a city", size: 24) { picking = true }
+            Spacer(minLength: 6)
+            if weather.loading { Spinner().frame(width: 12, height: 12) }
+            Text("updated \(When.time(f.fetchedAt))").font(.brim(10.5, .bold)).foregroundStyle(theme.f(0.4)).lineLimit(1).fixedSize()
+        }
+    }
+
+    private func placePill(_ place: OpenMeteo.Place?, title: String, symbol: String?) -> some View {
+        let on = weather.isShowing(place)
+        return HStack(spacing: 4) {
+            if let symbol { Image(systemName: symbol).font(.system(size: 9, weight: .bold)) }
+            Text(title).font(.brim(11.5)).lineLimit(1)
         }
         .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 12).fill(theme.f(0.06)))
+        .frame(height: 24)
+        .foregroundStyle(on ? theme.bg : theme.f(0.7))
+        .background(Capsule().fill(on ? theme.fg : theme.f(0.07)))
+        .contentShape(Capsule())
+        .onTapGesture { weather.select(place); day = 0 }
+        .contextMenu {
+            if let place { Button("Remove \(place.name)", role: .destructive) { weather.removePlace(place) } }
+        }
+        .help(place?.region ?? "Your location")
+        .accessibilityLabel(title)
+        .accessibilityAddTraits(on ? [.isButton, .isSelected] : .isButton)
+    }
+
+    private func details(_ f: Forecast) -> some View {
+        let unit = weather.fahrenheit ? "mph" : "km/h"
+        let wind = "\(Int(f.current.windSpeed.rounded())) \(unit)" + (f.current.windDirection.map { " " + OpenMeteo.compass($0) } ?? "")
+        let air = f.current.airQuality.map { "\($0) · \(OpenMeteo.airQualityText($0))" } ?? "–"
+        let sun = f.days.first.flatMap { day in day.sunrise.flatMap { rise in day.sunset.map { (rise, $0) } } }
+        let cells: [(String, String)] = [
+            ("Humidity", "\(Int(f.current.humidity))%"), ("Wind", wind), ("UV", "\(Int(f.current.uvIndex.rounded()))"),
+            ("Air", air), ("Sunrise", sun.map { When.time($0.0) } ?? "–"), ("Sunset", sun.map { When.time($0.1) } ?? "–"),
+        ]
+        return Grid(horizontalSpacing: 6, verticalSpacing: 6) {
+            ForEach(0..<2, id: \.self) { row in
+                GridRow {
+                    ForEach(0..<3, id: \.self) { column in
+                        let cell = cells[row * 3 + column]
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(cell.0.uppercased()).font(.brim(9)).kerning(0.8).foregroundStyle(theme.f(0.45))
+                            Text(cell.1).font(.brim(12)).lineLimit(1).minimumScaleFactor(0.8)
+                        }
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 6)
+                        .frame(width: 88, alignment: .leading)
+                        .background(RoundedRectangle(cornerRadius: 10).fill(theme.f(0.06)))
+                    }
+                }
+            }
+        }
+    }
+
+    /// Temperature through one day, with the chance of rain as bars underneath.
+    private func dayChart(_ f: Forecast, index: Int) -> some View {
+        let date = f.days.indices.contains(index) ? f.days[index].date : Date()
+        let hours = f.hours(on: date)
+        let isToday = Calendar.current.isDateInToday(date)
+        let rainiest = hours.map(\.precipitation).max() ?? 0
+        return VStack(alignment: .leading, spacing: 6) {
+            SectionTitle(title: isToday ? "Today, hour by hour" : Self.longDay(date),
+                         aside: rainiest >= 20 ? "up to \(Int(rainiest))% rain" : "dry")
+            if hours.count >= 2 {
+                HourlyChart(hours: hours, now: isToday ? Date() : nil)
+            } else {
+                Text("No hourly forecast for this day.").font(.brim(12, .bold)).foregroundStyle(theme.f(0.4))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+    }
+
+    private func sevenDay(_ f: Forecast, selected: Int) -> some View {
+        IslandCard(padding: EdgeInsets(top: 14, leading: 10, bottom: 8, trailing: 10)) {
+            VStack(alignment: .leading, spacing: 1) {
+                SectionTitle(title: "7-day forecast", aside: "tap a day").padding(.horizontal, 8).padding(.bottom, 6)
+                let lowest = f.days.map(\.low).min() ?? 0, highest = f.days.map(\.high).max() ?? 1
+                ForEach(Array(f.days.enumerated()), id: \.offset) { index, day in
+                    HStack(spacing: 8) {
+                        Text(index == 0 ? "Today" : Self.weekday(day.date)).frame(width: 42, alignment: .leading)
+                        Image(systemName: OpenMeteo.symbol(day.code)).symbolRenderingMode(.hierarchical).font(.system(size: 13)).frame(width: 20)
+                        Text(day.precipitation >= 20 ? "\(Int(day.precipitation))%" : "")
+                            .font(.brim(10.5, .bold)).foregroundStyle(theme.f(0.5)).frame(width: 30, alignment: .leading)
+                        Text("\(Int(day.low.rounded()))°").foregroundStyle(theme.f(0.5)).frame(width: 28, alignment: .trailing)
+                        GeometryReader { geo in
+                            let span = max(highest - lowest, 1)
+                            ZStack(alignment: .leading) {
+                                Capsule().fill(theme.f(0.08))
+                                Capsule()
+                                    .fill(LinearGradient(colors: [theme.f(0.35), theme.fg], startPoint: .leading, endPoint: .trailing))
+                                    .frame(width: max(6, geo.size.width * (day.high - day.low) / span))
+                                    .offset(x: geo.size.width * (day.low - lowest) / span)
+                            }
+                        }
+                        .frame(height: 5)
+                        Text("\(Int(day.high.rounded()))°").frame(width: 28, alignment: .leading)
+                    }
+                    .font(.brim(12.5))
+                    .padding(.horizontal, 8)
+                    .frame(height: 32)
+                    .hoverFill(9, base: index == selected ? theme.f(0.09) : .clear, hover: theme.f(0.06))
+                    .onTapGesture { self.day = index }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityAddTraits(index == selected ? [.isButton, .isSelected] : .isButton)
+                }
+            }
+        }
     }
 
     private var setup: some View {
@@ -967,5 +1026,70 @@ struct WeatherTabView: View {
         let formatter = DateFormatter()
         formatter.setLocalizedDateFormatFromTemplate("EEE")
         return formatter.string(from: date)
+    }
+
+    static func longDay(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.setLocalizedDateFormatFromTemplate("EEEE d MMM")
+        return formatter.string(from: date)
+    }
+}
+
+/// A day's temperatures as a line with every third hour labelled, and rain chances as bars.
+struct HourlyChart: View {
+    let hours: [Forecast.Hour]
+    var now: Date?
+    @Environment(\.islandTheme) private var theme
+
+    var body: some View {
+        GeometryReader { geo in
+            let w = geo.size.width, h = geo.size.height
+            let top: CGFloat = 16, labels: CGFloat = 16, rainHeight: CGFloat = 18
+            let plot = h - top - labels - rainHeight - 4
+            let temps = hours.map(\.temperature)
+            let low = (temps.min() ?? 0) - 1, high = (temps.max() ?? 1) + 1
+            let step = w / CGFloat(max(hours.count - 1, 1))
+            let point = { (i: Int) -> CGPoint in
+                CGPoint(x: CGFloat(i) * step, y: top + plot * CGFloat(1 - (temps[i] - low) / max(high - low, 1)))
+            }
+            ZStack(alignment: .topLeading) {
+                // Rain bars.
+                ForEach(hours.indices, id: \.self) { i in
+                    let p = hours[i].precipitation / 100
+                    RoundedRectangle(cornerRadius: 1.5)
+                        .fill(theme.f(0.28))
+                        .frame(width: max(2, step - 3), height: max(0, rainHeight * p))
+                        .position(x: CGFloat(i) * step, y: h - labels - rainHeight * p / 2)
+                        .opacity(p > 0.04 ? 1 : 0)
+                }
+                // Area and line.
+                Path { path in
+                    path.move(to: CGPoint(x: 0, y: top + plot))
+                    for i in hours.indices { path.addLine(to: point(i)) }
+                    path.addLine(to: CGPoint(x: w, y: top + plot))
+                    path.closeSubpath()
+                }
+                .fill(LinearGradient(colors: [theme.f(0.16), theme.f(0)], startPoint: .top, endPoint: .bottom))
+                Path { path in
+                    for i in hours.indices { i == 0 ? path.move(to: point(i)) : path.addLine(to: point(i)) }
+                }
+                .stroke(theme.fg, style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+                // Labels every three hours.
+                ForEach(Array(stride(from: 0, to: hours.count, by: 3)), id: \.self) { i in
+                    Text("\(Int(hours[i].temperature.rounded()))°").font(.brim(10.5))
+                        .position(x: min(max(point(i).x, 10), w - 10), y: point(i).y - 9)
+                    Text(WeatherTabView.hour(hours[i].time)).font(.brim(9.5, .bold)).foregroundStyle(theme.f(0.45))
+                        .position(x: min(max(point(i).x, 12), w - 12), y: h - labels / 2)
+                }
+                if let now, let first = hours.first?.time {
+                    let x = CGFloat(now.timeIntervalSince(first) / 3600) * step
+                    if x >= 0 && x <= w {
+                        Rectangle().fill(theme.f(0.5)).frame(width: 1, height: plot + top).position(x: x, y: (plot + top) / 2)
+                    }
+                }
+            }
+        }
+        .accessibilityElement()
+        .accessibilityLabel("Hourly temperature, \(Int(hours.map(\.temperature).min() ?? 0))° to \(Int(hours.map(\.temperature).max() ?? 0))°")
     }
 }

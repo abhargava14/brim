@@ -16,6 +16,8 @@ struct ClipItem: Identifiable, Equatable, Codable {
     var files: [String] = []
     var image: Data?
     var app: String?
+    /// Bundle ID of the app it was copied from, for its icon and "Never keep from".
+    var bundle: String?
     var date = Date()
     var pinned = false
 
@@ -29,8 +31,9 @@ struct ClipItem: Identifiable, Equatable, Codable {
     }
 }
 
-/// A searchable history of what you copy. Off until you turn it on; kept in memory only (pins are
-/// saved). Anything a password manager marks as concealed or transient is never recorded.
+/// A searchable history of what you copy. Off until you turn it on; kept in memory only unless you
+/// choose to keep it after quitting (pins are always saved). Anything a password manager marks as
+/// concealed or transient is never recorded, nor is anything copied in an ignored app.
 @MainActor
 final class ClipboardService: ObservableObject {
     @Published private(set) var items: [ClipItem] = []
@@ -38,6 +41,22 @@ final class ClipboardService: ObservableObject {
     private var lastCount = NSPasteboard.general.changeCount
     private var timer: Timer?
     private let pins = JSONFile<[ClipItem]>("clipboard-pins.json", directory: LocalData.directory)
+    private let history = JSONFile<[ClipItem]>("clipboard-history.json", directory: LocalData.directory)
+    private var saveTask: Task<Void, Never>?
+
+    /// Keep the whole history on disk between launches (off by default).
+    @Published var keepHistory = UserDefaults.standard.bool(forKey: "clipboardKeepHistory") {
+        didSet {
+            UserDefaults.standard.set(keepHistory, forKey: "clipboardKeepHistory")
+            if keepHistory { saveSoon() } else { history.delete() }
+        }
+    }
+
+    /// Apps whose copies are never kept: password managers out of the box.
+    @Published private(set) var ignored: [String] = UserDefaults.standard.stringArray(forKey: "clipboardIgnored") ?? ClipboardService.defaultIgnored
+
+    static let defaultIgnored = ["com.1password.1password", "com.agilebits.onepassword7", "com.bitwarden.desktop",
+                                 "com.apple.keychainaccess", "com.apple.Passwords", "com.lastpass.LastPass", "org.keepassxc.keepassxc"]
 
     /// Pasteboard types that mean "don't keep this" (nspasteboard.org conventions, 1Password, etc.).
     static let privateTypes: Set<String> = ["org.nspasteboard.ConcealedType", "org.nspasteboard.TransientType",
@@ -47,6 +66,10 @@ final class ClipboardService: ObservableObject {
 
     init() {
         items = pins.load() ?? []
+        if keepHistory, !AppSettings.isSnapshot {
+            let saved = (history.load() ?? []).filter { !$0.pinned && !items.map(\.id).contains($0.id) }
+            items += saved
+        }
         if AppSettings.isSnapshot { loadSamples() }
         if enabled { start() }
     }
@@ -79,7 +102,9 @@ final class ClipboardService: ObservableObject {
         lastCount = board.changeCount
         let types = Set((board.types ?? []).map(\.rawValue))
         guard types.isDisjoint(with: Self.privateTypes) else { return }
-        let app = NSWorkspace.shared.frontmostApplication?.localizedName
+        let front = NSWorkspace.shared.frontmostApplication
+        if let bundle = front?.bundleIdentifier, ignored.contains(bundle) { return }
+        let app = front?.localizedName
         var item: ClipItem?
         if let urls = board.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL], !urls.isEmpty {
             item = ClipItem(kind: .files, text: urls.map(\.lastPathComponent).joined(separator: ", "), files: urls.map(\.path), app: app)
@@ -89,13 +114,55 @@ final class ClipboardService: ObservableObject {
         } else if let image = NSImage(pasteboard: board), let thumb = Self.thumbnail(image) {
             item = ClipItem(kind: .image, text: "Image \(Int(image.size.width))×\(Int(image.size.height))", image: thumb, app: app)
         }
-        guard let item else { return }
+        guard var item else { return }
+        item.bundle = front?.bundleIdentifier
         items.removeAll { !$0.pinned && $0.kind == item.kind && $0.text == item.text }
         let firstUnpinned = items.firstIndex { !$0.pinned } ?? items.count
         items.insert(item, at: firstUnpinned)
         // Keep 200 unpinned items.
         let unpinned = items.enumerated().filter { !$0.element.pinned }.map(\.offset)
         if unpinned.count > 200 { items.remove(at: unpinned.last!) }
+        saveSoon()
+    }
+
+    func ignore(_ bundle: String) {
+        guard !ignored.contains(bundle) else { return }
+        ignored.append(bundle)
+        UserDefaults.standard.set(ignored, forKey: "clipboardIgnored")
+        items.removeAll { !$0.pinned && $0.bundle == bundle }
+        saveSoon()
+    }
+
+    func unignore(_ bundle: String) {
+        ignored.removeAll { $0 == bundle }
+        UserDefaults.standard.set(ignored, forKey: "clipboardIgnored")
+    }
+
+    /// "1Password" for "com.1password.1password", or the bundle ID when the app isn't installed.
+    static func appName(_ bundle: String) -> String {
+        guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundle) else { return bundle }
+        return FileManager.default.displayName(atPath: url.path).replacingOccurrences(of: ".app", with: "")
+    }
+
+    static func appIcon(_ bundle: String?) -> NSImage? {
+        guard let bundle, let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundle) else { return nil }
+        return NSWorkspace.shared.icon(forFile: url.path)
+    }
+
+    /// Installed apps from the ignore list, so the list doesn't show apps you don't have.
+    var ignoredInstalled: [String] {
+        ignored.filter { NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0) != nil || !Self.defaultIgnored.contains($0) }
+    }
+
+    private func saveSoon() {
+        guard keepHistory, !AppSettings.isSnapshot else { return }
+        saveTask?.cancel()
+        let snapshot = items.filter { !$0.pinned }, history = self.history
+        saveTask = Task {
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            guard !Task.isCancelled else { return }
+            history.save(snapshot)
+        }
     }
 
     /// Puts an item back on the clipboard (and moves it to the top).
@@ -125,10 +192,12 @@ final class ClipboardService: ObservableObject {
     func delete(_ item: ClipItem) {
         items.removeAll { $0.id == item.id }
         savePins()
+        saveSoon()
     }
 
     func clear() {
         items = items.filter(\.pinned)
+        if keepHistory { history.save([]) }
     }
 
     private func savePins() {
@@ -152,12 +221,13 @@ final class ClipboardService: ObservableObject {
         enabled = true
         let now = Date()
         items = [
-            ClipItem(kind: .text, text: "brew install --cask brim", app: "Ghostty", date: now.addingTimeInterval(-40), pinned: true),
-            ClipItem(kind: .link, text: "https://github.com/abhargava14/brim/pull/33", app: "Arc", date: now.addingTimeInterval(-90)),
-            ClipItem(kind: .text, text: "Included usage resets on the billing date, not the 1st. Teams seats only show per-seat usage.", app: "Notes", date: now.addingTimeInterval(-600)),
-            ClipItem(kind: .text, text: "func compactWidth(for event: IslandEvent.Style?) -> CGFloat", app: "Xcode", date: now.addingTimeInterval(-1800)),
-            ClipItem(kind: .files, text: "brim-1a-island-app-icon-1024.svg", files: ["/tmp/brim-1a-island-app-icon-1024.svg"], app: "Finder", date: now.addingTimeInterval(-4000)),
-            ClipItem(kind: .text, text: "Standup moved to 9:45 tomorrow", app: "Slack", date: now.addingTimeInterval(-7200)),
+            ClipItem(kind: .text, text: "brew install --cask brim", app: "Ghostty", bundle: "com.mitchellh.ghostty", date: now.addingTimeInterval(-40), pinned: true),
+            ClipItem(kind: .link, text: "https://github.com/abhargava14/brim/pull/33", app: "Safari", bundle: "com.apple.Safari", date: now.addingTimeInterval(-90)),
+            ClipItem(kind: .text, text: "Included usage resets on the billing date, not the 1st. Teams seats only show per-seat usage.", app: "Notes", bundle: "com.apple.Notes", date: now.addingTimeInterval(-600)),
+            ClipItem(kind: .text, text: "func compactWidth(for event: IslandEvent.Style?) -> CGFloat", app: "Xcode", bundle: "com.apple.dt.Xcode", date: now.addingTimeInterval(-1800)),
+            ClipItem(kind: .files, text: "brim-1a-island-app-icon-1024.svg", files: ["/tmp/brim-1a-island-app-icon-1024.svg"], app: "Finder", bundle: "com.apple.finder", date: now.addingTimeInterval(-4000)),
+            ClipItem(kind: .text, text: "#1E90FF", app: "Figma", bundle: "com.figma.Desktop", date: now.addingTimeInterval(-5200)),
+            ClipItem(kind: .text, text: "Standup moved to 9:45 tomorrow", app: "Slack", bundle: "com.tinyspeck.slackmacgap", date: now.addingTimeInterval(-7200)),
         ]
     }
 }

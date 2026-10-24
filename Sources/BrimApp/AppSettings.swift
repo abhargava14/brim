@@ -255,6 +255,11 @@ final class AppSettings: ObservableObject {
     @Published var closedMusic: Bool { didSet { defaults.set(closedMusic, forKey: "closedMusic") } }
     @Published var closedTimer: Bool { didSet { defaults.set(closedTimer, forKey: "closedTimer") } }
     @Published var closedAI: Bool { didSet { defaults.set(closedAI, forKey: "closedAI") } }
+    @Published var closedClock: Bool { didSet { defaults.set(closedClock, forKey: "closedClock") } }
+    @Published var closedWeather: Bool { didSet { defaults.set(closedWeather, forKey: "closedWeather") } }
+    @Published var closedEvent: Bool { didSet { defaults.set(closedEvent, forKey: "closedEvent") } }
+    /// Seconds each item in the rotation stays.
+    @Published var closedRotation: Double { didSet { defaults.set(closedRotation, forKey: "closedRotation") } }
     @Published var interruptLimits: Bool { didSet { defaults.set(interruptLimits, forKey: "interruptLimits") } }
     @Published var interruptAccounts: Bool { didSet { defaults.set(interruptAccounts, forKey: "interruptAccounts") } }
     @Published var interruptTimerDone: Bool { didSet { defaults.set(interruptTimerDone, forKey: "interruptTimerDone") } }
@@ -309,6 +314,10 @@ final class AppSettings: ObservableObject {
         closedMusic = defaults.object(forKey: "closedMusic") as? Bool ?? true
         closedTimer = defaults.object(forKey: "closedTimer") as? Bool ?? true
         closedAI = defaults.object(forKey: "closedAI") as? Bool ?? true
+        closedClock = defaults.object(forKey: "closedClock") as? Bool ?? false
+        closedWeather = defaults.object(forKey: "closedWeather") as? Bool ?? false
+        closedEvent = defaults.object(forKey: "closedEvent") as? Bool ?? false
+        closedRotation = defaults.object(forKey: "closedRotation") as? Double ?? 8
         interruptLimits = defaults.object(forKey: "interruptLimits") as? Bool ?? true
         interruptAccounts = defaults.object(forKey: "interruptAccounts") as? Bool ?? true
         interruptTimerDone = defaults.object(forKey: "interruptTimerDone") as? Bool ?? true

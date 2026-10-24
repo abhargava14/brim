@@ -2,6 +2,7 @@ import AppKit
 import IslandCore
 import IslandSystem
 import SwiftUI
+import UniformTypeIdentifiers
 
 // MARK: - Stats
 
@@ -172,12 +173,15 @@ struct BatteryGlyph: View {
 /// Sounds: layer ambient noise, each with its own volume, and fade out on a timer.
 struct SoundsTabView: View {
     @ObservedObject var sounds: SoundsService
+    @State private var mixName = ""
+    @State private var naming = false
+    @State private var targeted = false
     @Environment(\.islandTheme) private var theme
 
     var body: some View {
         VStack(spacing: 10) {
             HStack(spacing: 10) {
-                Text(sounds.playing ? "\(sounds.levels.count) playing" : "Nothing playing").font(.brim(12.5)).fixedSize()
+                Text(sounds.playing ? "\(sounds.playingCount) playing" : "Nothing playing").font(.brim(12.5)).fixedSize()
                 Image(systemName: "speaker.wave.2.fill").font(.system(size: 12)).opacity(0.6).padding(.leading, 8)
                 IslandSlider(value: $sounds.master, label: "Volume").frame(width: 150)
                 Spacer()
@@ -192,40 +196,144 @@ struct SoundsTabView: View {
             .frame(height: 40)
             .background(RoundedRectangle(cornerRadius: 15, style: .continuous).fill(theme.f(0.06)))
 
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3), spacing: 8) {
-                ForEach(AmbientSound.allCases) { sound in
-                    tile(sound)
+            HStack(alignment: .top, spacing: 10) {
+                IslandScroll {
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 4), spacing: 8) {
+                        ForEach(AmbientSound.shown) { sound in
+                            tile(title: sound.title, symbol: sound.symbol, level: sounds.levels[sound],
+                                 toggle: { sounds.toggle(sound) }, set: { sounds.setLevel(sound, $0) })
+                        }
+                        ForEach(sounds.customs) { custom in
+                            tile(title: custom.name, symbol: "music.note", level: sounds.customLevels[custom.id],
+                                 toggle: { sounds.toggleCustom(custom.id) }, set: { sounds.setCustom(custom.id, $0) })
+                                .contextMenu {
+                                    Button("Remove \(custom.name)", role: .destructive) { sounds.removeCustom(custom.id) }
+                                }
+                        }
+                        addTile
+                    }
+                }
+                mixesCard.frame(width: 214)
+            }
+        }
+        .fileDrop(isTargeted: $targeted) { providers in
+            for provider in providers {
+                _ = provider.loadObject(ofClass: URL.self) { url, _ in
+                    guard let url else { return }
+                    Task { @MainActor in sounds.addFiles([url]) }
                 }
             }
-            Spacer(minLength: 0)
+            return true
         }
     }
 
-    private func tile(_ sound: AmbientSound) -> some View {
-        let level = sounds.levels[sound]
+    private func tile(title: String, symbol: String, level: Double?, toggle: @escaping () -> Void, set: @escaping (Double) -> Void) -> some View {
         let on = level != nil
-        return VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                Image(systemName: "waveform").font(.system(size: 14, weight: .semibold)).foregroundStyle(on ? theme.fg : theme.f(0.5))
-                Text(sound.title).font(.brim(13))
-                Spacer()
-                Text(level.map { "\(Int($0 * 100))%" } ?? "Off").font(.brim(11)).foregroundStyle(on ? theme.f(0.8) : theme.f(0.4))
+        return VStack(alignment: .leading, spacing: 7) {
+            HStack(spacing: 7) {
+                Image(systemName: symbol).font(.system(size: 12.5, weight: .semibold)).frame(width: 18).foregroundStyle(on ? theme.fg : theme.f(0.5))
+                Text(title).font(.brim(12.5)).lineLimit(1)
+                Spacer(minLength: 2)
+                Text(level.map { "\(Int($0 * 100))%" } ?? "").font(.brim(10.5)).foregroundStyle(theme.f(0.7))
             }
             if on {
-                IslandSlider(value: Binding(get: { sounds.levels[sound] ?? 0.5 }, set: { sounds.setLevel(sound, $0) }),
-                             label: "\(sound.title) volume")
+                IslandSlider(value: Binding(get: { level ?? 0.5 }, set: set), label: "\(title) volume")
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .frame(height: 84)
-        .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(on ? theme.f(0.1) : theme.f(0.05)))
-        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(on ? theme.f(0.5) : .clear, lineWidth: 1.5))
-        .contentShape(RoundedRectangle(cornerRadius: 16))
-        .onTapGesture { withAnimation(.easeOut(duration: 0.2)) { sounds.toggle(sound) } }
+        .padding(.horizontal, 12)
+        .frame(height: 60)
+        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(on ? theme.f(0.12) : theme.f(0.05)))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(on ? theme.f(0.5) : .clear, lineWidth: 1.5))
+        .contentShape(RoundedRectangle(cornerRadius: 14))
+        .onTapGesture { withAnimation(.easeOut(duration: 0.2)) { toggle() } }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(sound.title + (on ? ", playing" : ""))
+        .accessibilityLabel(title + (on ? ", playing" : ""))
         .accessibilityAddTraits(.isButton)
+    }
+
+    /// Opens a file picker; audio files can also be dropped anywhere on the tab.
+    private var addTile: some View {
+        HStack(spacing: 7) {
+            Image(systemName: "plus").font(.system(size: 12.5, weight: .semibold)).frame(width: 18)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Your own").font(.brim(12.5))
+                Text("Drop or pick audio").font(.brim(10, .bold)).foregroundStyle(theme.f(0.45))
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 12)
+        .frame(height: 60)
+        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(theme.f(targeted ? 0.6 : 0.18), style: StrokeStyle(lineWidth: 1.2, dash: [4, 3])))
+        .contentShape(RoundedRectangle(cornerRadius: 14))
+        .onTapGesture { choose() }
+        .help("Add a recorded loop (M4A, MP3, WAV, AIFF)")
+        .accessibilityLabel("Add your own sound")
+        .accessibilityAddTraits(.isButton)
+    }
+
+    private var mixesCard: some View {
+        IslandCard(padding: EdgeInsets(top: 10, leading: 8, bottom: 8, trailing: 8)) {
+            VStack(alignment: .leading, spacing: 2) {
+                SectionTitle(title: "Mixes").padding(.horizontal, 6).padding(.bottom, 2)
+                IslandScroll {
+                    VStack(spacing: 2) {
+                        ForEach(SoundMix.builtIns + sounds.mixes) { mix in mixRow(mix) }
+                    }
+                }
+                if naming {
+                    HStack(spacing: 4) {
+                        IslandField(placeholder: "Name", text: $mixName, height: 26, fontSize: 11.5) { saveMix() }
+                        IconButton(symbol: "checkmark", help: "Save", size: 24) { saveMix() }
+                    }
+                } else {
+                    IslandButton(title: "Save this mix", height: 26, fontSize: 11, symbol: "plus") { naming = true }
+                        .frame(maxWidth: .infinity)
+                        .opacity(sounds.playing && sounds.activeMix == nil ? 1 : 0.35)
+                        .disabled(!sounds.playing || sounds.activeMix != nil)
+                }
+            }
+        }
+    }
+
+    private func mixRow(_ mix: SoundMix) -> some View {
+        let on = sounds.activeMix?.id == mix.id
+        let names = mix.levels.keys.sorted().compactMap { key -> String? in
+            if let sound = AmbientSound(rawValue: key) { return sound.title }
+            return sounds.customs.first { "custom:" + $0.id == key }?.name
+        }
+        return VStack(alignment: .leading, spacing: 1) {
+            HStack(spacing: 5) {
+                Text(mix.name).font(.brim(11.5)).lineLimit(1)
+                if !mix.builtIn { Image(systemName: "person.fill").font(.system(size: 8)).opacity(0.4) }
+                Spacer(minLength: 0)
+                if on { Image(systemName: "speaker.wave.2.fill").font(.system(size: 9)) }
+            }
+            Text(names.joined(separator: ", ")).font(.brim(9.5, .bold)).foregroundStyle(on ? theme.bg.opacity(0.6) : theme.f(0.45)).lineLimit(1)
+        }
+        .padding(.horizontal, 8)
+        .frame(height: 34)
+        .foregroundStyle(on ? theme.bg : theme.fg)
+        .hoverFill(9, base: on ? theme.fg : .clear, hover: on ? theme.fg : theme.f(0.08))
+        .onTapGesture { on ? sounds.stopAll() : sounds.apply(mix) }
+        .contextMenu {
+            if !mix.builtIn { Button("Delete \(mix.name)", role: .destructive) { sounds.deleteMix(mix.id) } }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(on ? [.isButton, .isSelected] : .isButton)
+    }
+
+    private func saveMix() {
+        sounds.saveMix(named: mixName)
+        mixName = ""
+        naming = false
+    }
+
+    private func choose() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.audio]
+        panel.allowsMultipleSelection = true
+        NSApp.activate(ignoringOtherApps: true)
+        if panel.runModal() == .OK { sounds.addFiles(panel.urls) }
     }
 }
 

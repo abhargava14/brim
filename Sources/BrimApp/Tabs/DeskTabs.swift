@@ -121,14 +121,41 @@ struct ScreenTimeTabView: View {
 
 /// Clipboard: everything you copied, searchable. Click to copy again; pin what you reuse.
 struct ClipboardTabView: View {
+    enum Filter: String, CaseIterable { case all, text, link, image, files, pinned
+
+        var title: String {
+            switch self {
+            case .all: return "All"
+            case .text: return "Text"
+            case .link: return "Links"
+            case .image: return "Images"
+            case .files: return "Files"
+            case .pinned: return "Pinned"
+            }
+        }
+
+        func matches(_ item: ClipItem) -> Bool {
+            switch self {
+            case .all: return true
+            case .pinned: return item.pinned
+            case .text: return item.kind == .text
+            case .link: return item.kind == .link
+            case .image: return item.kind == .image
+            case .files: return item.kind == .files
+            }
+        }
+    }
+
     @ObservedObject var clipboard: ClipboardService
     @State private var query = ""
     @State private var selected: String?
+    @State private var filter: Filter = .all
+    @State private var showIgnored = false
     @Environment(\.islandTheme) private var theme
 
     private var shown: [ClipItem] {
         let q = query.trimmingCharacters(in: .whitespaces)
-        return clipboard.items.filter { q.isEmpty || $0.text.localizedCaseInsensitiveContains(q) }
+        return clipboard.items.filter { filter.matches($0) && (q.isEmpty || $0.text.localizedCaseInsensitiveContains(q) || ($0.app ?? "").localizedCaseInsensitiveContains(q)) }
     }
 
     var body: some View {
@@ -138,23 +165,28 @@ struct ClipboardTabView: View {
                         actions: [.init(title: "Turn on") { clipboard.enable() }])
         } else {
             HStack(spacing: 10) {
-                IslandCard(padding: EdgeInsets(top: 10, leading: 10, bottom: 10, trailing: 10)) {
+                IslandCard(padding: EdgeInsets(top: 10, leading: 10, bottom: 8, trailing: 10)) {
                     VStack(spacing: 8) {
                         HStack(spacing: 8) {
-                            IslandField(placeholder: "Search what you copied", text: $query, symbol: "magnifyingglass")
+                            IslandField(placeholder: "Search text or app", text: $query, symbol: "magnifyingglass")
                             IslandButton(title: "Clear", height: 30, fontSize: 11.5) { clipboard.clear() }
                         }
-                        if shown.isEmpty {
+                        filters
+                        if showIgnored {
+                            ignoredList
+                        } else if shown.isEmpty {
                             Spacer()
                             Text(clipboard.items.isEmpty ? "Copy something and it shows up here." : "Nothing matches.")
                                 .font(.brim(12.5, .bold)).foregroundStyle(theme.f(0.45))
                             Spacer()
-                        }
-                        IslandScroll {
-                            VStack(spacing: 2) {
-                                ForEach(shown) { item in row(item) }
+                        } else {
+                            IslandScroll {
+                                VStack(spacing: 2) {
+                                    ForEach(shown) { item in row(item) }
+                                }
                             }
                         }
+                        footer
                     }
                 }
                 preview.frame(width: 300)
@@ -162,22 +194,102 @@ struct ClipboardTabView: View {
         }
     }
 
+    private var filters: some View {
+        HStack(spacing: 2) {
+            ForEach(Filter.allCases, id: \.self) { option in
+                let count = clipboard.items.filter(option.matches).count
+                if option == .all || count > 0 {
+                    HStack(spacing: 4) {
+                        Text(option.title).font(.brim(11))
+                        if option != .all { Text("\(count)").font(.brim(10, .bold)).opacity(0.55) }
+                    }
+                    .padding(.horizontal, 9)
+                    .frame(height: 22)
+                    .foregroundStyle(filter == option ? theme.bg : theme.f(0.65))
+                    .background(Capsule().fill(filter == option ? theme.fg : .clear))
+                    .contentShape(Capsule())
+                    .onTapGesture { filter = option }
+                    .accessibilityLabel("\(option.title), \(count)")
+                    .accessibilityAddTraits(filter == option ? [.isButton, .isSelected] : .isButton)
+                }
+            }
+            Spacer()
+        }
+    }
+
+    private var footer: some View {
+        HStack(spacing: 8) {
+            HStack(spacing: 4) {
+                Image(systemName: "hand.raised.fill").font(.system(size: 9, weight: .bold))
+                Text("Ignoring \(clipboard.ignoredInstalled.count) app\(clipboard.ignoredInstalled.count == 1 ? "" : "s")").font(.brim(10.5, .bold))
+                Image(systemName: showIgnored ? "chevron.down" : "chevron.up").font(.system(size: 8, weight: .bold))
+            }
+            .foregroundStyle(theme.f(0.5))
+            .padding(.horizontal, 6)
+            .frame(height: 20)
+            .hoverFill(6, hover: theme.f(0.08))
+            .onTapGesture { showIgnored.toggle() }
+            .help("Copies made in these apps are never kept")
+            .accessibilityAddTraits(.isButton)
+            Spacer()
+            Text("Keep after quitting").font(.brim(10.5, .bold)).foregroundStyle(theme.f(0.5))
+            IslandSwitch(isOn: $clipboard.keepHistory, label: "Keep history after quitting")
+                .scaleEffect(0.8)
+        }
+        .padding(.horizontal, 4)
+        .frame(height: 20)
+    }
+
+    /// Apps whose copies are never kept; right-click any item to add its app.
+    private var ignoredList: some View {
+        IslandScroll {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Copies made in these apps are never kept. Right-click an item to add its app.")
+                    .font(.brim(11, .bold)).foregroundStyle(theme.f(0.5)).padding(.horizontal, 10).padding(.bottom, 4)
+                ForEach(clipboard.ignoredInstalled, id: \.self) { bundle in
+                    HStack(spacing: 9) {
+                        if let icon = ClipboardService.appIcon(bundle) {
+                            Image(nsImage: icon).resizable().frame(width: 16, height: 16)
+                        } else {
+                            Image(systemName: "app").font(.system(size: 11, weight: .semibold)).frame(width: 16).opacity(0.6)
+                        }
+                        Text(ClipboardService.appName(bundle)).font(.brim(12.5, .bold)).lineLimit(1)
+                        Spacer()
+                        IslandButton(title: "Stop ignoring", height: 22, fontSize: 10.5) { clipboard.unignore(bundle) }
+                    }
+                    .padding(.horizontal, 10)
+                    .frame(height: 30)
+                }
+            }
+        }
+    }
+
     private func row(_ item: ClipItem) -> some View {
-        HStack(spacing: 10) {
-            Image(systemName: item.symbol).font(.system(size: 11, weight: .semibold)).frame(width: 16).opacity(0.6)
+        HStack(spacing: 9) {
+            if let icon = ClipboardService.appIcon(item.bundle) {
+                Image(nsImage: icon).resizable().frame(width: 16, height: 16)
+            } else {
+                Image(systemName: item.symbol).font(.system(size: 11, weight: .semibold)).frame(width: 16).opacity(0.6)
+            }
+            if let color = ClipText.hexColor(item.text) {
+                RoundedRectangle(cornerRadius: 3).fill(Color(red: color.red, green: color.green, blue: color.blue)).frame(width: 12, height: 12)
+            }
             Text(item.text.replacingOccurrences(of: "\n", with: " ")).font(.brim(12.5, .bold)).lineLimit(1)
             Spacer(minLength: 6)
             if item.pinned { Image(systemName: "pin.fill").font(.system(size: 9)).foregroundStyle(theme.f(0.7)) }
             Text(Format.ago(item.date)).font(.brim(10.5, .bold)).foregroundStyle(theme.f(0.4)).fixedSize()
         }
         .padding(.horizontal, 10)
-        .frame(height: 32)
+        .frame(height: 30)
         .hoverFill(10, base: selected == item.id ? theme.f(0.1) : .clear, hover: theme.f(0.08))
         .onTapGesture { selected = item.id }
         .simultaneousGesture(TapGesture(count: 2).onEnded { clipboard.copy(item) })
         .contextMenu {
             Button("Copy") { clipboard.copy(item) }
             Button(item.pinned ? "Unpin" : "Pin") { clipboard.togglePin(item) }
+            if let bundle = item.bundle {
+                Button("Never keep from \(item.app ?? ClipboardService.appName(bundle))") { clipboard.ignore(bundle) }
+            }
             Divider()
             Button("Delete", role: .destructive) { clipboard.delete(item) }
         }
@@ -191,21 +303,37 @@ struct ClipboardTabView: View {
         let item = clipboard.items.first { $0.id == selected } ?? shown.first
         IslandCard {
             VStack(alignment: .leading, spacing: 10) {
-                SectionTitle(title: "Preview", aside: item?.app)
+                SectionTitle(title: "Preview", aside: item.map { [$0.app, Format.ago($0.date)].compactMap { $0 }.joined(separator: " · ") })
                 if let item {
                     if let data = item.image, let image = NSImage(data: data) {
                         Image(nsImage: image).resizable().scaledToFit().clipShape(RoundedRectangle(cornerRadius: 10))
+                    } else if let color = ClipText.hexColor(item.text) {
+                        HStack(spacing: 12) {
+                            RoundedRectangle(cornerRadius: 12).fill(Color(red: color.red, green: color.green, blue: color.blue))
+                                .frame(width: 64, height: 64)
+                                .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(theme.f(0.15)))
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(item.text.uppercased()).font(.system(size: 15, weight: .bold, design: .monospaced))
+                                Text("rgb(\(Int(color.red * 255)), \(Int(color.green * 255)), \(Int(color.blue * 255)))")
+                                    .font(.system(size: 11.5, design: .monospaced)).foregroundStyle(theme.f(0.55))
+                            }
+                        }
                     } else {
                         Text(item.text).font(item.kind == .text && item.text.contains("(") ? .system(size: 12, design: .monospaced) : .brim(13, .bold))
-                            .lineLimit(9)
+                            .lineLimit(7)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     Spacer(minLength: 0)
+                    Text(detail(item)).font(.brim(10.5, .bold)).foregroundStyle(theme.f(0.45)).lineLimit(1)
                     HStack(spacing: 6) {
                         IslandButton(title: "Copy", style: .primary, height: 28) { clipboard.copy(item) }
                         IslandButton(title: item.pinned ? "Unpin" : "Pin", height: 28) { clipboard.togglePin(item) }
                         if item.kind == .link, let url = URL(string: Links.normalized(item.text)) {
                             IslandButton(title: "Open", height: 28) { NSWorkspace.shared.open(url) }
+                        } else if ClipText.isEmail(item.text), let url = URL(string: "mailto:" + item.text.trimmingCharacters(in: .whitespacesAndNewlines)) {
+                            IslandButton(title: "Email", height: 28) { NSWorkspace.shared.open(url) }
+                        } else if item.kind == .files, let first = item.files.first {
+                            IslandButton(title: "Reveal", height: 28) { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: first)]) }
                         }
                         Spacer()
                         Image(systemName: "trash")
@@ -219,6 +347,15 @@ struct ClipboardTabView: View {
                     Spacer()
                 }
             }
+        }
+    }
+
+    private func detail(_ item: ClipItem) -> String {
+        switch item.kind {
+        case .image: return item.text
+        case .files: return "\(item.files.count) file\(item.files.count == 1 ? "" : "s")"
+        case .link: return URL(string: Links.normalized(item.text))?.host ?? "Link"
+        case .text: return ClipText.isEmail(item.text) ? "Email address" : ClipText.hexColor(item.text) != nil ? "Colour" : ClipText.stats(item.text)
         }
     }
 }

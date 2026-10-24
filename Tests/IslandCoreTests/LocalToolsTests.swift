@@ -149,3 +149,73 @@ final class SearchEngineTests: XCTestCase {
         XCTAssertEqual(Set(SearchEngines.builtIn.map(\.keyword)).count, SearchEngines.builtIn.count)
     }
 }
+
+final class WorldClockTests: XCTestCase {
+    func testSearchFindsAliasesAndZoneCities() {
+        XCTAssertEqual(WorldClocks.search("bengaluru").first?.zone, "Asia/Kolkata")
+        XCTAssertEqual(WorldClocks.search("san fran").first?.zone, "America/Los_Angeles")
+        XCTAssertEqual(WorldClocks.search("Tokyo").first?.label, "Tokyo")
+        XCTAssertTrue(WorldClocks.search("").isEmpty)
+    }
+
+    func testOffsetText() {
+        XCTAssertEqual(WorldClocks.offsetText(0), "Same time")
+        XCTAssertEqual(WorldClocks.offsetText(19_800), "+5h 30m")
+        XCTAssertEqual(WorldClocks.offsetText(-28_800), "−8h")
+        XCTAssertEqual(WorldClocks.offsetText(1800), "+30m")
+    }
+
+    func testDayTextAcrossMidnight() {
+        // 2026-10-26 02:00 UTC is still the 25th in Los Angeles.
+        let date = Date(timeIntervalSince1970: 1_792_980_000)
+        let utc = TimeZone(identifier: "UTC")!, la = TimeZone(identifier: "America/Los_Angeles")!
+        XCTAssertEqual(WorldClocks.dayText(la, base: utc, at: date), "Yesterday")
+        XCTAssertEqual(WorldClocks.dayText(utc, base: la, at: date), "Tomorrow")
+        XCTAssertEqual(WorldClocks.dayText(utc, base: utc, at: date), "Today")
+    }
+
+    func testHours() {
+        let utc = TimeZone(identifier: "UTC")!
+        // Monday 2026-10-26 10:00 UTC.
+        let monday = Date(timeIntervalSince1970: 1_793_008_800)
+        XCTAssertEqual(WorldClocks.hours(in: utc, at: monday), .working)
+        XCTAssertEqual(WorldClocks.hours(in: utc, at: monday.addingTimeInterval(9 * 3600)), .evening)
+        XCTAssertEqual(WorldClocks.hours(in: utc, at: monday.addingTimeInterval(16 * 3600)), .asleep)
+    }
+}
+
+final class WeatherExtrasTests: XCTestCase {
+    func testCompass() {
+        XCTAssertEqual(OpenMeteo.compass(0), "N")
+        XCTAssertEqual(OpenMeteo.compass(350), "N")
+        XCTAssertEqual(OpenMeteo.compass(225), "SW")
+        XCTAssertEqual(OpenMeteo.compass(90), "E")
+    }
+
+    func testAirQuality() {
+        let data = Data(#"{"current":{"time":"2026-10-25T10:00","us_aqi":42.4,"pm2_5":8.1}}"#.utf8)
+        XCTAssertEqual(OpenMeteo.parseAirQuality(data), 42)
+        XCTAssertEqual(OpenMeteo.airQualityText(42), "Good")
+        XCTAssertEqual(OpenMeteo.airQualityText(120), "Poor for some")
+        XCTAssertNil(OpenMeteo.parseAirQuality(Data("{}".utf8)))
+    }
+}
+
+final class ClipTextTests: XCTestCase {
+    func testHexColor() {
+        XCTAssertNotNil(ClipText.hexColor("#1E90FF"))
+        XCTAssertEqual(ClipText.hexColor("#fff")?.red, 1)
+        XCTAssertNotNil(ClipText.hexColor("1e90ff"))
+        XCTAssertNil(ClipText.hexColor("decade"))
+        XCTAssertNil(ClipText.hexColor("123456"))
+        XCTAssertNil(ClipText.hexColor("abc"))
+    }
+
+    func testEmailAndStats() {
+        XCTAssertTrue(ClipText.isEmail("a@b.co"))
+        XCTAssertFalse(ClipText.isEmail("@b.co"))
+        XCTAssertFalse(ClipText.isEmail("hello world@x.com"))
+        XCTAssertEqual(ClipText.stats("one two\nthree"), "13 characters · 3 words · 2 lines")
+        XCTAssertEqual(ClipText.stats("a"), "1 character · 1 word")
+    }
+}

@@ -13,6 +13,7 @@ final class BrimHub: ObservableObject {
     let links = LinksStore()
     let scratch = ScratchStore()
     let timers = TimerService()
+    let clocks = ClocksStore()
     let stats = StatsService()
     let sounds = SoundsService()
     let music = NowPlaying()
@@ -90,10 +91,11 @@ final class BrimHub: ObservableObject {
         case .analytics: return analytics.current?.name ?? ""
         case .screen: return screenTime.enabled ? Clock.hm(screenTime.log.day(Date()).total) + " today" : ""
         case .clipboard: return clipboard.enabled ? "\(clipboard.items.count) items" : ""
+        case .clocks: return clocks.clocks.isEmpty ? "" : "\(clocks.clocks.count + 1) clocks"
         case .files: return converter.queue.isEmpty ? "" : "\(converter.queue.count) to convert"
         case .notes: return "\(notes.notes.count) note\(notes.notes.count == 1 ? "" : "s")"
         case .links: return "\(links.links.count) saved"
-        case .sounds: return sounds.playing ? "\(sounds.levels.count) playing" : ""
+        case .sounds: return sounds.playing ? "\(sounds.playingCount) playing" : ""
         case .stats:
             return "\(ProcessInfo.processInfo.activeProcessorCount) cores · \(Bytes.format(Double(ProcessInfo.processInfo.physicalMemory)))"
         case .timers:
@@ -220,9 +222,10 @@ struct IslandShellView: View {
             case .ai:
                 AITabView(model: model, settings: settings, addAccount: addAccount,
                           manage: { openSettings(.connections) },
-                          selected: preset["ai.selected"], adding: preset["ai.adding"] != nil)
+                          selected: preset["ai.selected"], adding: preset["ai.adding"] != nil, chart: preset["ai.chart"])
             case .notes: NotesTabView(store: hub.notes)
             case .timers: TimersTabView(timers: hub.timers, sub: preset["timers.sub"])
+            case .clocks: ClocksTabView(store: hub.clocks)
             case .stats: StatsTabView(stats: hub.stats)
             case .links: LinksTabView(store: hub.links, managing: preset["links.manage"] != nil)
             case .sounds: SoundsTabView(sounds: hub.sounds)
@@ -296,7 +299,7 @@ struct MorePill: View {
             Image(systemName: on ? "xmark" : "square.grid.3x3.fill")
                 .symbolRenderingMode(.monochrome)
                 .font(.system(size: 12.5, weight: .bold))
-                .foregroundColor(on ? theme.bg : theme.f(0.7))
+                .foregroundStyle(on ? theme.bg : theme.f(0.7))
         }
             .frame(width: 34, height: 32)
             .contentShape(Capsule())

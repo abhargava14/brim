@@ -99,3 +99,43 @@ final class QuotaHistoryTests: XCTestCase {
         try? FileManager.default.removeItem(at: url)
     }
 }
+
+final class TokenHistoryTests: XCTestCase {
+    var calendar: Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        calendar.firstWeekday = 2
+        return calendar
+    }
+
+    func testStreakCountsBackFromTodayOrYesterday() {
+        var history = TokenHistory()
+        let today = Date(timeIntervalSince1970: 1_800_000_000)
+        for back in 1...4 { history.record(100, on: today.addingTimeInterval(Double(-back) * 86_400), calendar: calendar) }
+        XCTAssertEqual(history.streak(now: today, calendar: calendar), 4)
+        history.record(5, on: today, calendar: calendar)
+        XCTAssertEqual(history.streak(now: today, calendar: calendar), 5)
+        XCTAssertEqual(history.streak(now: today.addingTimeInterval(3 * 86_400), calendar: calendar), 0)
+    }
+
+    func testBestRunAndRecordKeepsMax() {
+        var history = TokenHistory()
+        let start = Date(timeIntervalSince1970: 1_800_000_000)
+        for day in [0, 1, 2, 5, 6] { history.record(10, on: start.addingTimeInterval(Double(day) * 86_400), calendar: calendar) }
+        XCTAssertEqual(history.best(calendar: calendar), 3)
+        XCTAssertFalse(history.record(5, on: start, calendar: calendar))
+        XCTAssertEqual(history.value(on: start, calendar: calendar), 10)
+    }
+
+    func testGridHasWeeksOfSevenAndNoFuture() {
+        var history = TokenHistory()
+        let today = Date(timeIntervalSince1970: 1_800_000_000)
+        history.record(42, on: today, calendar: calendar)
+        let grid = history.grid(weeks: 4, now: today, calendar: calendar)
+        XCTAssertEqual(grid.count, 4)
+        XCTAssertTrue(grid.allSatisfy { $0.count == 7 })
+        XCTAssertTrue(grid.last!.contains { $0 == 42 })
+        let flat = grid.flatMap { $0 }
+        XCTAssertEqual(flat.last { $0 != nil } ?? nil, 42)
+    }
+}
