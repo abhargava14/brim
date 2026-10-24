@@ -255,10 +255,20 @@ final class AppSettings: ObservableObject {
     @Published var closedMusic: Bool { didSet { defaults.set(closedMusic, forKey: "closedMusic") } }
     @Published var closedTimer: Bool { didSet { defaults.set(closedTimer, forKey: "closedTimer") } }
     @Published var closedAI: Bool { didSet { defaults.set(closedAI, forKey: "closedAI") } }
+    @Published var closedClock: Bool { didSet { defaults.set(closedClock, forKey: "closedClock") } }
+    @Published var closedWeather: Bool { didSet { defaults.set(closedWeather, forKey: "closedWeather") } }
+    @Published var closedEvent: Bool { didSet { defaults.set(closedEvent, forKey: "closedEvent") } }
+    /// Seconds each item in the rotation stays.
+    @Published var closedRotation: Double { didSet { defaults.set(closedRotation, forKey: "closedRotation") } }
     @Published var interruptLimits: Bool { didSet { defaults.set(interruptLimits, forKey: "interruptLimits") } }
     @Published var interruptAccounts: Bool { didSet { defaults.set(interruptAccounts, forKey: "interruptAccounts") } }
     @Published var interruptTimerDone: Bool { didSet { defaults.set(interruptTimerDone, forKey: "interruptTimerDone") } }
     @Published var interruptEvents: Bool { didSet { defaults.set(interruptEvents, forKey: "interruptEvents") } }
+
+    /// How long the pointer rests on the notch before it opens, in milliseconds.
+    @Published var hoverDelay: Double { didSet { defaults.set(hoverDelay, forKey: "hoverDelay") } }
+    /// A light trackpad tap when the island opens or you switch tabs.
+    @Published var haptics: Bool { didSet { defaults.set(haptics, forKey: "haptics") } }
 
     /// Look for a new Brim once a day.
     @Published var autoCheckUpdates: Bool { didSet { defaults.set(autoCheckUpdates, forKey: "autoCheckUpdates") } }
@@ -304,11 +314,17 @@ final class AppSettings: ObservableObject {
         closedMusic = defaults.object(forKey: "closedMusic") as? Bool ?? true
         closedTimer = defaults.object(forKey: "closedTimer") as? Bool ?? true
         closedAI = defaults.object(forKey: "closedAI") as? Bool ?? true
+        closedClock = defaults.object(forKey: "closedClock") as? Bool ?? false
+        closedWeather = defaults.object(forKey: "closedWeather") as? Bool ?? false
+        closedEvent = defaults.object(forKey: "closedEvent") as? Bool ?? false
+        closedRotation = defaults.object(forKey: "closedRotation") as? Double ?? 8
         interruptLimits = defaults.object(forKey: "interruptLimits") as? Bool ?? true
         interruptAccounts = defaults.object(forKey: "interruptAccounts") as? Bool ?? true
         interruptTimerDone = defaults.object(forKey: "interruptTimerDone") as? Bool ?? true
         interruptEvents = defaults.object(forKey: "interruptEvents") as? Bool ?? false
         autoCheckUpdates = defaults.object(forKey: "autoCheckUpdates") as? Bool ?? true
+        hoverDelay = defaults.object(forKey: "hoverDelay") as? Double ?? 120
+        haptics = defaults.object(forKey: "haptics") as? Bool ?? true
         skippedVersion = defaults.string(forKey: "skippedVersion") ?? ""
         isReady = true
         save()

@@ -8,13 +8,13 @@ public enum TabID: String, CaseIterable, Codable, Sendable, Identifiable {
     case notes
     case calendar
     case timers
+    case clocks
     case stats
     case screen
     case weather
     case links
     case sounds
     case scratchpad
-    case shelf
     case clipboard
     case files
     case units
@@ -29,13 +29,13 @@ public enum TabID: String, CaseIterable, Codable, Sendable, Identifiable {
         case .notes: return "Notes"
         case .calendar: return "Calendar"
         case .timers: return "Timers"
+        case .clocks: return "Clocks"
         case .stats: return "Stats"
         case .screen: return "Screen Time"
         case .weather: return "Weather"
         case .links: return "Links"
         case .sounds: return "Sounds"
         case .scratchpad: return "Scratchpad"
-        case .shelf: return "Shelf"
         case .clipboard: return "Clipboard"
         case .files: return "Files"
         case .units: return "Units"
@@ -46,19 +46,19 @@ public enum TabID: String, CaseIterable, Codable, Sendable, Identifiable {
     public var blurb: String {
         switch self {
         case .home: return "Now playing, your next event and a launcher"
-        case .ai: return "Tokens and plan limits for your coding agents"
+        case .ai: return "Tokens, plan limits and your activity streak"
         case .analytics: return "Visitors, pages and sources for your sites"
         case .notes: return "Longer thoughts, kept next to the notch"
-        case .calendar: return "Seven-day agenda and reminders"
+        case .calendar: return "Day, week and month views, plus reminders"
         case .timers: return "Pomodoro, countdown, stopwatch and hydration"
+        case .clocks: return "Your time and three cities, with a planner"
         case .stats: return "CPU, memory, disk, network and battery"
         case .screen: return "Where the day went, app by app"
-        case .weather: return "Current conditions and a seven-day forecast"
-        case .links: return "Search the web and keep the sites you use"
-        case .sounds: return "Rain, brown noise and more, layered"
+        case .weather: return "Hour by hour, seven days and air quality, for several cities"
+        case .links: return "Search with any engine and keep the sites you use"
+        case .sounds: return "Rain, night, birdsong and your own loops, in mixes"
         case .scratchpad: return "One always-there text box"
-        case .shelf: return "Drag files in, drag them out anywhere else"
-        case .clipboard: return "Searchable history of what you copied"
+        case .clipboard: return "Searchable history of what you copied, by kind"
         case .files: return "Convert and shrink images to JPEG, PNG, HEIC or PDF"
         case .units: return "Units and currencies, without a browser tab"
         }
@@ -205,6 +205,94 @@ public struct QuotaHistory: Codable, Equatable, Sendable {
     public static func load(from url: URL) -> QuotaHistory {
         guard let data = try? Data(contentsOf: url),
               let history = try? JSONDecoder().decode(QuotaHistory.self, from: data) else { return QuotaHistory() }
+        return history
+    }
+
+    public func save(to url: URL) {
+        try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        if let data = try? JSONEncoder().encode(self) { try? data.write(to: url, options: .atomic) }
+    }
+}
+
+/// Tokens per day across every log-reading account, kept for about a year so the AI tab can draw
+/// an activity heatmap and count streaks beyond the 30 days the logs are scanned for.
+public struct TokenHistory: Codable, Equatable, Sendable {
+    /// "yyyy-MM-dd" → tokens that day.
+    public var days: [String: Double] = [:]
+
+    public init() {}
+
+    /// Records a day's total; keeps the higher of the old and new values. Returns true when it changed.
+    @discardableResult
+    public mutating func record(_ total: Double, on date: Date, calendar: Calendar = .current) -> Bool {
+        let key = QuotaHistory.key(for: date, calendar: calendar)
+        guard total > (days[key] ?? 0) else { return false }
+        days[key] = total
+        if days.count > 400 {
+            for old in days.keys.sorted().prefix(days.count - 400) { days[old] = nil }
+        }
+        return true
+    }
+
+    public func value(on date: Date, calendar: Calendar = .current) -> Double {
+        days[QuotaHistory.key(for: date, calendar: calendar)] ?? 0
+    }
+
+    /// Days in a row with tokens, ending today (or yesterday, so the streak survives until you start).
+    public func streak(now: Date = Date(), calendar: Calendar = .current) -> Int {
+        var day = calendar.startOfDay(for: now)
+        if value(on: day, calendar: calendar) <= 0 { day = calendar.date(byAdding: .day, value: -1, to: day) ?? day }
+        var count = 0
+        while value(on: day, calendar: calendar) > 0 {
+            count += 1
+            day = calendar.date(byAdding: .day, value: -1, to: day) ?? day
+        }
+        return count
+    }
+
+    /// The longest run of days with tokens.
+    public func best(calendar: Calendar = .current) -> Int {
+        let formatter = DateFormatter()
+        formatter.calendar = calendar
+        formatter.timeZone = calendar.timeZone
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd"
+        let active = days.filter { $0.value > 0 }.keys.compactMap(formatter.date(from:)).sorted()
+        var best = 0, run = 0
+        var previous: Date?
+        for date in active {
+            if let previous, calendar.dateComponents([.day], from: previous, to: date).day == 1 { run += 1 } else { run = 1 }
+            best = max(best, run)
+            previous = date
+        }
+        return best
+    }
+
+    public func activeDays(last count: Int, now: Date = Date(), calendar: Calendar = .current) -> Int {
+        (0..<count).filter { back in
+            value(on: calendar.date(byAdding: .day, value: -back, to: now) ?? now, calendar: calendar) > 0
+        }.count
+    }
+
+    /// Weeks as columns (oldest first), each with seven days in the calendar's week order. Days
+    /// after today are nil.
+    public func grid(weeks: Int, now: Date = Date(), calendar: Calendar = .current) -> [[Double?]] {
+        let today = calendar.startOfDay(for: now)
+        let weekday = calendar.component(.weekday, from: today)
+        let intoWeek = (weekday - calendar.firstWeekday + 7) % 7
+        guard let thisWeek = calendar.date(byAdding: .day, value: -intoWeek, to: today),
+              let start = calendar.date(byAdding: .day, value: -7 * (weeks - 1), to: thisWeek) else { return [] }
+        return (0..<weeks).map { column in
+            (0..<7).map { row in
+                guard let date = calendar.date(byAdding: .day, value: column * 7 + row, to: start), date <= today else { return nil }
+                return value(on: date, calendar: calendar)
+            }
+        }
+    }
+
+    public static func load(from url: URL) -> TokenHistory {
+        guard let data = try? Data(contentsOf: url),
+              let history = try? JSONDecoder().decode(TokenHistory.self, from: data) else { return TokenHistory() }
         return history
     }
 

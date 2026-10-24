@@ -22,6 +22,10 @@ final class ClosedNotchState: ObservableObject {
         case ai
         case music
         case timer
+        case scratch
+        case clock
+        case weather
+        case event
         case notice(Notice)
 
         /// Modes that need the wider wings from the design (118pt).
@@ -37,8 +41,6 @@ final class ClosedNotchState: ObservableObject {
     private var lastFinished: String?
     private var timer: Timer?
     private weak var hub: BrimHub?
-    /// How long each rotating item stays.
-    static let rotation: TimeInterval = 8
 
     func start(_ hub: BrimHub) {
         self.hub = hub
@@ -80,12 +82,17 @@ final class ClosedNotchState: ObservableObject {
             next = .notice(notice)
         } else if settings.closedTimer, hub.timers.state.pomodoroRunning || hub.timers.state.countdownRunning {
             next = .timer
+        } else if hub.scratch.pinned, !hub.scratch.firstLine.isEmpty {
+            next = .scratch
         } else {
             var rotation: [Mode] = []
             if settings.closedMusic, hub.music.track?.playing == true { rotation.append(.music) }
             if settings.closedAI { rotation.append(.ai) }
+            if settings.closedEvent, let event = hub.calendar.nextEvent, Calendar.current.isDateInToday(event.start) { rotation.append(.event) }
+            if settings.closedWeather, hub.weather.forecast != nil { rotation.append(.weather) }
+            if settings.closedClock { rotation.append(.clock) }
             if rotation.isEmpty { rotation = settings.closedMusic && hub.music.track != nil ? [.music] : [.ai] }
-            next = rotation[Int(now.timeIntervalSince1970 / Self.rotation) % rotation.count]
+            next = rotation[Int(now.timeIntervalSince1970 / max(3, settings.closedRotation)) % rotation.count]
         }
         if next != mode { mode = next }
     }
@@ -95,7 +102,7 @@ final class ClosedNotchState: ObservableObject {
         // Timer finished.
         if let finished = hub.timers.finished, finished != lastFinished {
             lastFinished = finished
-            push(Notice(id: "timer-\(now.timeIntervalSince1970)", symbol: "timer", tint: Palette.coral, title: "Timer",
+            push(Notice(id: "timer-\(now.timeIntervalSince1970)", symbol: "timer", tint: .white, title: "Timer",
                         detail: finished.replacingOccurrences(of: ".", with: ""), tab: .timers, until: now.addingTimeInterval(6)))
         } else if hub.timers.finished == nil {
             lastFinished = nil
@@ -128,6 +135,7 @@ struct ClosedNotchView: View {
     @ObservedObject var hub: BrimHub
     @ObservedObject var music: NowPlaying
     @ObservedObject var timers: TimerService
+    @ObservedObject var scratch: ScratchStore
     @ObservedObject var state: IslandState
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -152,6 +160,10 @@ struct ClosedNotchView: View {
         case .ai: return "ai"
         case .music: return "music"
         case .timer: return "timer"
+        case .scratch: return "scratch"
+        case .clock: return "clock"
+        case .weather: return "weather"
+        case .event: return "event"
         case .notice(let notice): return notice.id
         }
     }
@@ -165,7 +177,7 @@ struct ClosedNotchView: View {
                     if let art = music.artwork {
                         Image(nsImage: art).resizable().scaledToFill()
                     } else {
-                        Color(red: 0.75, green: 0.36, blue: 0.29)
+                        Color.white.opacity(0.2)
                     }
                 }
                 .frame(width: 16, height: 16)
@@ -179,11 +191,38 @@ struct ClosedNotchView: View {
                 : state.countdownRemaining(at: timers.now) / max(state.countdownTotal, 1)
             HStack(spacing: 6) {
                 ZStack {
-                    Circle().stroke(Palette.coral.opacity(0.3), lineWidth: 2.4)
-                    Circle().trim(from: 0, to: fraction).stroke(Palette.coral, style: StrokeStyle(lineWidth: 2.4, lineCap: .round)).rotationEffect(.degrees(-90))
+                    Circle().stroke(Color.white.opacity(0.3), lineWidth: 2.4)
+                    Circle().trim(from: 0, to: fraction).stroke(Color.white, style: StrokeStyle(lineWidth: 2.4, lineCap: .round)).rotationEffect(.degrees(-90))
                 }
                 .frame(width: 12, height: 12)
                 Text(state.pomodoroRunning ? state.phase.title : "Timer")
+            }
+        case .scratch:
+            HStack(spacing: 6) {
+                Image(systemName: "pin.fill").font(.system(size: 10, weight: .bold)).foregroundStyle(.white.opacity(0.6))
+                Text(scratch.firstLine).truncationMode(.tail)
+            }
+        case .clock:
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                HStack(spacing: 6) {
+                    Image(systemName: "clock").font(.system(size: 10, weight: .bold)).foregroundStyle(.white.opacity(0.6))
+                    Text(ClocksTabView.time(context.date, zone: .current))
+                }
+            }
+        case .weather:
+            if let forecast = hub.weather.forecast {
+                HStack(spacing: 6) {
+                    Image(systemName: OpenMeteo.symbol(forecast.current.code, isDay: forecast.current.isDay))
+                        .symbolRenderingMode(.hierarchical).font(.system(size: 12))
+                    Text("\(Int(forecast.current.temperature.rounded()))°")
+                }
+            }
+        case .event:
+            if let event = hub.calendar.nextEvent {
+                HStack(spacing: 6) {
+                    Circle().fill(.white.opacity(0.7)).frame(width: 6, height: 6)
+                    Text(event.title).truncationMode(.tail)
+                }
             }
         case .notice(let notice):
             HStack(spacing: 6) {
@@ -193,6 +232,19 @@ struct ClosedNotchView: View {
         default:
             EmptyView()
         }
+    }
+
+    /// The first world clock as "LDN 4:41 PM", or the date when there are none.
+    private func secondClock(_ date: Date) -> String {
+        guard let clock = hub.clocks.clocks.first else {
+            let formatter = DateFormatter()
+            formatter.setLocalizedDateFormatFromTemplate("EEE d")
+            return formatter.string(from: date)
+        }
+        let words = clock.label.split(separator: " ")
+        let short = words.count > 1 ? words.compactMap(\.first).map(String.init).joined().uppercased()
+            : clock.label.count <= 6 ? clock.label : String(clock.label.prefix(3)).uppercased()
+        return short + " " + ClocksTabView.time(date, zone: clock.timeZone)
     }
 
     @ViewBuilder
@@ -209,6 +261,20 @@ struct ClosedNotchView: View {
         case .timer:
             let state = timers.state
             Text(Clock.mmss(state.pomodoroRunning ? state.pomodoroRemaining(at: timers.now) : state.countdownRemaining(at: timers.now)))
+        case .scratch:
+            Text("\(scratch.wordCount) words").foregroundStyle(.white.opacity(0.55))
+        case .clock:
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                Text(secondClock(context.date)).foregroundStyle(.white.opacity(0.6))
+            }
+        case .weather:
+            if let forecast = hub.weather.forecast {
+                Text(OpenMeteo.describe(forecast.current.code)).foregroundStyle(.white.opacity(0.6)).truncationMode(.tail)
+            }
+        case .event:
+            if let event = hub.calendar.nextEvent {
+                Text(event.start > Date() ? When.until(event.start) : "now").foregroundStyle(.white.opacity(0.6))
+            }
         case .notice(let notice):
             Text(notice.detail).foregroundStyle(notice.tint)
         default:
@@ -226,7 +292,7 @@ struct EqualizerBars: View {
         HStack(alignment: .bottom, spacing: 2) {
             ForEach(0..<4, id: \.self) { index in
                 RoundedRectangle(cornerRadius: 1.5)
-                    .fill(Color(red: 0.86, green: 0.46, blue: 0.38))
+                    .fill(Color.white.opacity(0.85))
                     .frame(width: 2.5, height: playing ? (phase ? [12, 6, 10, 4][index] : [5, 12, 4, 10][index]) : 4)
                     .animation(playing ? .easeInOut(duration: 0.45 + Double(index) * 0.13).repeatForever(autoreverses: true) : .default, value: phase)
             }

@@ -3,8 +3,8 @@ import Foundation
 import IslandCore
 import IslandServices
 
-/// Site analytics from DataFast (API key) or Google Analytics 4 (service-account key). Keys stay in
-/// the Keychain; Brim only reads stats and can't change anything.
+/// Site analytics from DataFast, Google Analytics 4, Plausible, Umami or Fathom. Keys stay in the
+/// Keychain; Brim only reads stats and can't change anything.
 @MainActor
 final class AnalyticsService: ObservableObject {
     @Published private(set) var sites: [AnalyticsSite] = []
@@ -34,15 +34,19 @@ final class AnalyticsService: ObservableObject {
     // MARK: Sites
 
     /// Adds a site after checking the key works. Returns an error message to show, or nil.
-    func add(name: String, provider: AnalyticsSite.Provider, secret: String, propertyID: String) async -> String? {
-        let site = AnalyticsSite(name: name.trimmingCharacters(in: .whitespaces).ifEmpty(provider.title), provider: provider,
-                                 propertyID: propertyID.trimmingCharacters(in: .whitespaces))
+    func add(name: String, provider: AnalyticsSite.Provider, secret: String, propertyID: String, host: String = "") async -> String? {
+        let property = propertyID.trimmingCharacters(in: .whitespaces)
+        let site = AnalyticsSite(name: name.trimmingCharacters(in: .whitespaces).ifEmpty(provider == .plausible ? property.ifEmpty(provider.title) : provider.title),
+                                 provider: provider, propertyID: property, host: provider.selfHostable ? host : nil)
         let secret = secret.trimmingCharacters(in: .whitespacesAndNewlines)
-        if provider == .google {
+        switch provider {
+        case .google:
             guard GoogleAnalytics.parseServiceAccount(secret) != nil else { return "Paste the whole service-account JSON file." }
             guard GoogleAnalytics.reportURL(property: site.propertyID) != nil else { return "The property ID is the number in GA4 › Admin › Property details." }
-        } else if !secret.hasPrefix("df_") {
-            return "DataFast website keys start with df_. Find yours in Website settings › Developer."
+        case .datafast:
+            guard secret.hasPrefix("df_") else { return "DataFast website keys start with df_. Find yours in Website settings › Developer." }
+        case .plausible, .umami, .fathom:
+            guard !property.isEmpty else { return provider.siteLabel + " is needed." }
         }
         do {
             _ = try await fetch(site, secret: secret, range: .today)
@@ -130,7 +134,120 @@ final class AnalyticsService: ObservableObject {
         switch site.provider {
         case .datafast: return try await fetchDataFast(secret: secret, range: range)
         case .google: return try await fetchGoogle(site, secret: secret, range: range)
+        case .plausible: return try await fetchPlausible(site, secret: secret, range: range)
+        case .umami: return try await fetchUmami(site, secret: secret, range: range)
+        case .fathom: return try await fetchFathom(site, secret: secret, range: range)
         }
+    }
+
+    /// One authorised request; 401/403 mean the key was refused.
+    private func request(_ url: URL?, provider: String, headers: [String: String], body: Data? = nil,
+                         message: (Data) -> String? = { _ in nil }) async throws -> Data {
+        guard let url else { throw FetchError.service("That site doesn't look right.") }
+        var request = URLRequest(url: url)
+        for (key, value) in headers { request.setValue(value, forHTTPHeaderField: key) }
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        if let body {
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = body
+        }
+        let (data, response) = try await URLSession.shared.data(for: request)
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        if status == 401 || status == 403 { throw FetchError.revoked(provider) }
+        guard status == 200 else { throw FetchError.service(message(data) ?? "\(provider) answered with HTTP \(status).") }
+        return data
+    }
+
+    // Plausible
+
+    private func fetchPlausible(_ site: AnalyticsSite, secret: String, range: AnalyticsRange) async throws -> AnalyticsReport {
+        let url = Plausible.queryURL(host: site.customHost)
+        let headers = ["Authorization": "Bearer \(secret)"]
+        @Sendable func query(_ body: Data) async throws -> Data {
+            try await request(url, provider: "Plausible", headers: headers, body: body, message: Plausible.error)
+        }
+        var report = AnalyticsReport()
+        let totals = try await query(Plausible.body(site: site.propertyID, metrics: ["visitors", "pageviews", "bounce_rate", "visit_duration"],
+                                                    dateRange: Plausible.dateRange(range)))
+        guard let values = Plausible.rows(totals).first?.metrics, values.count >= 4 else {
+            throw FetchError.service("Plausible answered in a format Brim doesn't understand yet.")
+        }
+        report.visitors = values[0]
+        report.pageviews = values[1]
+        report.bounceRate = values[2] / 100
+        report.sessionSeconds = values[3]
+        async let previous = try? query(Plausible.body(site: site.propertyID, metrics: ["visitors"], dateRange: Plausible.dateRange(range, previous: true)))
+        async let series = try? query(Plausible.body(site: site.propertyID, metrics: ["visitors"], dateRange: Plausible.dateRange(range),
+                                                     dimensions: [range == .today ? "time:hour" : "time:day"], timeLabels: true))
+        async let pages = try? query(Plausible.body(site: site.propertyID, metrics: ["visitors"], dateRange: Plausible.dateRange(range),
+                                                    dimensions: ["event:page"], limit: 6))
+        async let sources = try? query(Plausible.body(site: site.propertyID, metrics: ["visitors"], dateRange: Plausible.dateRange(range),
+                                                      dimensions: ["visit:source"], limit: 6))
+        async let online = try? query(Plausible.body(site: site.propertyID, metrics: ["visitors"], dateRange: Plausible.realtimeRange()))
+        if let data = await previous { report.previousVisitors = Plausible.rows(data).first?.metrics.first }
+        if let data = await series { report.series = Plausible.series(data) }
+        if let data = await pages { report.pages = Plausible.rows(data).map { .init(label: $0.dimensions.first ?? "", value: $0.metrics.first ?? 0) } }
+        if let data = await sources {
+            report.sources = Plausible.rows(data).map { .init(label: ($0.dimensions.first ?? "").ifEmpty("Direct/None"), value: $0.metrics.first ?? 0) }
+        }
+        if let data = await online { report.online = Plausible.rows(data).first?.metrics.first.map { Int($0) } }
+        report.seriesStart = range.dates().start
+        return report
+    }
+
+    // Umami
+
+    private func fetchUmami(_ site: AnalyticsSite, secret: String, range: AnalyticsRange) async throws -> AnalyticsReport {
+        let host = site.customHost
+        let headers = host == nil ? ["x-umami-api-key": secret] : ["Authorization": "Bearer \(secret)"]
+        let window = Umami.window(range.dates()), before = Umami.window(range.previous())
+        @Sendable func get(_ path: String, _ window: (start: Date, end: Date), _ extra: [String: String] = [:]) async throws -> Data {
+            try await request(Umami.url(host: host, website: site.propertyID, path: path, window: window, extra: extra), provider: "Umami", headers: headers)
+        }
+        var report = AnalyticsReport()
+        guard Umami.parseStats(try await get("stats", window), into: &report) else {
+            throw FetchError.service("Umami answered in a format Brim doesn't understand yet.")
+        }
+        let unit = range == .today ? "hour" : "day"
+        async let previous = try? get("stats", before)
+        async let series = try? get("pageviews", window, ["unit": unit, "timezone": TimeZone.current.identifier])
+        async let pages = try? get("metrics", window, ["type": "path", "limit": "6"])
+        async let sources = try? get("metrics", window, ["type": "referrer", "limit": "6"])
+        async let active = try? request(Umami.activeURL(host: host, website: site.propertyID), provider: "Umami", headers: headers)
+        if report.previousVisitors == nil, let data = await previous { report.previousVisitors = Umami.parseVisitors(data) }
+        if let data = await series { report.series = Umami.parseSeries(data) }
+        if let data = await pages { report.pages = Umami.parseMetrics(data) }
+        // Versions before 2.x name the page metric "url".
+        if report.pages.isEmpty, let data = try? await get("metrics", window, ["type": "url", "limit": "6"]) { report.pages = Umami.parseMetrics(data) }
+        if let data = await sources { report.sources = Umami.parseMetrics(data) }
+        if let data = await active { report.online = Umami.parseActive(data) }
+        report.seriesStart = window.start
+        return report
+    }
+
+    // Fathom
+
+    private func fetchFathom(_ site: AnalyticsSite, secret: String, range: AnalyticsRange) async throws -> AnalyticsReport {
+        let headers = ["Authorization": "Bearer \(secret)"]
+        let dates = range.dates()
+        @Sendable func get(_ url: URL?) async throws -> Data { try await request(url, provider: "Fathom", headers: headers) }
+        var report = AnalyticsReport()
+        let totals = try await get(Fathom.aggregationURL(site: site.propertyID, dates: dates, aggregates: "visits,uniques,pageviews,avg_duration,bounce_rate"))
+        guard Fathom.parseTotals(totals, into: &report) else { throw FetchError.service("Fathom answered in a format Brim doesn't understand yet.") }
+        async let previous = try? get(Fathom.aggregationURL(site: site.propertyID, dates: range.previous(), aggregates: "uniques"))
+        async let series = try? get(Fathom.aggregationURL(site: site.propertyID, dates: dates, aggregates: "uniques",
+                                                          grouping: range == .today ? "hour" : "day", sort: "timestamp:asc"))
+        async let pages = try? get(Fathom.aggregationURL(site: site.propertyID, dates: dates, aggregates: "uniques", field: "pathname", sort: "uniques:desc", limit: 6))
+        async let sources = try? get(Fathom.aggregationURL(site: site.propertyID, dates: dates, aggregates: "uniques", field: "referrer_hostname", sort: "uniques:desc", limit: 6))
+        async let current = try? get(Fathom.currentURL(site: site.propertyID))
+        if let data = await previous { report.previousVisitors = Fathom.parseUniques(data) }
+        if let data = await series { report.series = Fathom.parseSeries(data) }
+        if let data = await pages { report.pages = Fathom.parseRows(data, field: "pathname") }
+        if let data = await sources { report.sources = Fathom.parseRows(data, field: "referrer_hostname") }
+        if let data = await current { report.online = Fathom.parseCurrent(data) }
+        report.seriesStart = dates.start
+        return report
     }
 
     // DataFast
@@ -217,7 +334,7 @@ final class AnalyticsService: ObservableObject {
 
     private func loadSample() {
         let site = AnalyticsSite(id: "sample-site", name: "brim.app", provider: .datafast)
-        let docs = AnalyticsSite(id: "sample-docs", name: "docs.brim.app", provider: .datafast)
+        let docs = AnalyticsSite(id: "sample-docs", name: "docs.brim.app", provider: .plausible, propertyID: "docs.brim.app")
         sites = [site, docs]
         var report = AnalyticsReport()
         report.visitors = 2840

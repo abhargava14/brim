@@ -18,8 +18,17 @@ public func canAsk(_ infoKey: String) -> Bool {
     Bundle.main.object(forInfoDictionaryKey: infoKey) != nil
 }
 
+/// One calendar on this Mac (iCloud "Home", Google "Work"…).
+public struct CalendarInfo: Identifiable, Equatable, Sendable {
+    public let id: String
+    public let title: String
+    public let account: String
+    public let color: [Double]
+}
+
 public struct CalendarEvent: Identifiable, Equatable, Sendable {
     public let id: String
+    public let calendarID: String
     public let title: String
     public let start: Date
     public let end: Date
@@ -56,6 +65,17 @@ public final class CalendarReader: ObservableObject {
     @Published public private(set) var events: [CalendarEvent] = []
     @Published public private(set) var reminders: [ReminderItem] = []
     @Published public private(set) var accounts: [CalendarAccount] = []
+    @Published public private(set) var calendars: [CalendarInfo] = []
+    /// Calendars the user switched off; their events are left out everywhere in Brim.
+    @Published public var hidden: Set<String> = Set(UserDefaults.standard.stringArray(forKey: "hiddenCalendars") ?? []) {
+        didSet {
+            UserDefaults.standard.set(Array(hidden), forKey: "hiddenCalendars")
+            reload()
+        }
+    }
+    /// Bumps whenever events may have changed, so views asking for other ranges redraw.
+    @Published public private(set) var revision = 0
+    private var samples: [CalendarEvent] = []
     @Published public private(set) var waiting = false
 
     private let store = EKEventStore()
@@ -116,24 +136,50 @@ public final class CalendarReader: ObservableObject {
         refreshAccess()
         if access == .allowed { loadEvents() }
         if reminderAccess == .allowed { loadReminders() }
+        if !samples.isEmpty { events = Array(visible(samples).prefix(40)) }
+        revision += 1
+    }
+
+    /// Visible events between two dates (any view: a day, a week, a month), sorted by start.
+    public func events(from start: Date, to end: Date) -> [CalendarEvent] {
+        if !samples.isEmpty { return visible(samples).filter { $0.end > start && $0.start < end } }
+        guard access == .allowed else { return [] }
+        let shown = store.calendars(for: .event).filter { !hidden.contains($0.calendarIdentifier) }
+        guard !shown.isEmpty else { return [] }
+        let predicate = store.predicateForEvents(withStart: start, end: end, calendars: shown)
+        return store.events(matching: predicate)
+            .filter { $0.status != .canceled }
+            .sorted { $0.startDate < $1.startDate }
+            .map(Self.event)
+    }
+
+    private func visible(_ list: [CalendarEvent]) -> [CalendarEvent] {
+        list.filter { !hidden.contains($0.calendarID) }
+    }
+
+    static func event(_ event: EKEvent) -> CalendarEvent {
+        CalendarEvent(id: event.eventIdentifier ?? UUID().uuidString, calendarID: event.calendar.calendarIdentifier,
+                      title: event.title ?? "Untitled", start: event.startDate, end: event.endDate, allDay: event.isAllDay,
+                      calendar: event.calendar.title, account: event.calendar.source.title,
+                      color: rgb(event.calendar.cgColor),
+                      meeting: MeetingLink.find(in: [event.url?.absoluteString, event.location, event.notes]),
+                      location: event.location)
+    }
+
+    public func openCalendarApp() {
+        if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.iCal") {
+            NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
+        }
     }
 
     private func loadEvents() {
         let calendar = Calendar.current
         let start = calendar.startOfDay(for: Date())
         let end = calendar.date(byAdding: .day, value: 7, to: start) ?? start
-        let predicate = store.predicateForEvents(withStart: start, end: end, calendars: nil)
-        events = store.events(matching: predicate)
-            .filter { $0.status != .canceled }
-            .sorted { $0.startDate < $1.startDate }
-            .map { event in
-                CalendarEvent(id: event.eventIdentifier ?? UUID().uuidString, title: event.title ?? "Untitled",
-                              start: event.startDate, end: event.endDate, allDay: event.isAllDay,
-                              calendar: event.calendar.title, account: event.calendar.source.title,
-                              color: Self.rgb(event.calendar.cgColor),
-                              meeting: MeetingLink.find(in: [event.url?.absoluteString, event.location, event.notes]),
-                              location: event.location)
-            }
+        events = events(from: start, to: end)
+        calendars = store.calendars(for: .event)
+            .map { CalendarInfo(id: $0.calendarIdentifier, title: $0.title, account: $0.source.title, color: Self.rgb($0.cgColor)) }
+            .sorted { ($0.account, $0.title) < ($1.account, $1.title) }
         var grouped: [String: [EKCalendar]] = [:]
         for calendar in store.calendars(for: .event) { grouped[calendar.source.title, default: []].append(calendar) }
         accounts = grouped.map { name, calendars in
@@ -201,21 +247,39 @@ public final class CalendarReader: ObservableObject {
         func at(_ day: Int, _ hour: Int, _ minute: Int = 0) -> Date {
             calendar.date(byAdding: DateComponents(day: day, hour: hour, minute: minute), to: today)!
         }
-        let work = [0.75, 0.35, 0.95], icloud = [0.04, 0.52, 1.0], google = [0.19, 0.82, 0.35]
-        let sample: [(Int, Int, Int, String, [Double], String)] = [
-            (0, 9, 30, "Standup", work, "Work"), (0, 14, 0, "Dentist", icloud, "iCloud"), (0, 23, 30, "Design review", google, "Google"),
-            (1, 10, 0, "Brim sync", work, "Work"), (1, 13, 0, "Lunch with Sam", icloud, "iCloud"), (2, 9, 30, "Standup", work, "Work"),
-            (2, 16, 0, "Launch prep", google, "Google"), (3, 11, 0, "User interview", google, "Google"), (4, 15, 0, "v0.4 release", google, "Google"),
-            (5, 10, 0, "Farmers market", icloud, "iCloud"),
+        let work = [0.75, 0.35, 0.95], icloud = [0.04, 0.52, 1.0], google = [0.19, 0.82, 0.35], family = [1.0, 0.62, 0.04]
+        calendars = [CalendarInfo(id: "home", title: "Home", account: "iCloud", color: icloud),
+                     CalendarInfo(id: "family", title: "Family", account: "iCloud", color: family),
+                     CalendarInfo(id: "launch", title: "Launch", account: "Google", color: google),
+                     CalendarInfo(id: "work", title: "Work", account: "Exchange", color: work)]
+        let byID = Dictionary(uniqueKeysWithValues: calendars.map { ($0.id, $0) })
+        var list: [(Int, Int, Int, Int, String, String)] = [
+            (0, 9, 30, 30, "Standup", "work"), (0, 11, 0, 60, "Roadmap review", "work"), (0, 14, 0, 45, "Dentist", "home"),
+            (0, 16, 30, 30, "Pick up Maya", "family"), (0, 20, 45, 30, "Design review", "launch"),
+            (1, 10, 0, 60, "Brim sync", "work"), (1, 13, 0, 60, "Lunch with Sam", "home"), (2, 9, 30, 30, "Standup", "work"),
+            (2, 16, 0, 90, "Launch prep", "launch"), (3, 11, 0, 60, "User interview", "launch"), (4, 15, 0, 30, "v0.4 release", "launch"),
+            (5, 10, 0, 120, "Farmers market", "family"),
         ]
-        events = sample.map { day, hour, minute, title, color, account in
-            CalendarEvent(id: UUID().uuidString, title: title, start: at(day, hour, minute), end: at(day, hour, minute + 30), allDay: false,
-                          calendar: account, account: account, color: color,
-                          meeting: title == "Design review" ? URL(string: "https://meet.google.com/abc-defg-hij") : nil, location: nil)
+        // A month of routine so Month view has something to show.
+        for day in -24...30 where day % 7 != 5 && day % 7 != -2 && !(0...5).contains(day) {
+            list.append((day, 9, 30, 30, "Standup", "work"))
+            if day % 3 == 0 { list.append((day, 18, 0, 60, "Climbing", "home")) }
+            if day % 5 == 0 { list.append((day, 14, 0, 60, "Launch sync", "launch")) }
         }
-        accounts = [CalendarAccount(id: "iCloud", name: "iCloud", calendars: 4, color: icloud),
-                    CalendarAccount(id: "Google", name: "Google", calendars: 2, color: google),
-                    CalendarAccount(id: "Work", name: "Work", calendars: 2, color: work)]
+        samples = list.map { day, hour, minute, length, title, id in
+            let info = byID[id]!
+            return CalendarEvent(id: UUID().uuidString, calendarID: id, title: title, start: at(day, hour, minute),
+                                 end: at(day, hour, minute + length), allDay: false, calendar: info.title, account: info.account,
+                                 color: info.color, meeting: title == "Design review" ? URL(string: "https://meet.google.com/abc-defg-hij") : nil,
+                                 location: nil)
+        }
+        samples.append(CalendarEvent(id: "holiday", calendarID: "family", title: "Diwali", start: at(0, 0), end: at(1, 0), allDay: true,
+                                     calendar: "Family", account: "iCloud", color: family, meeting: nil, location: nil))
+        samples.sort { $0.start < $1.start }
+        events = visible(samples).filter { $0.end > today }
+        accounts = [CalendarAccount(id: "iCloud", name: "iCloud", calendars: 2, color: icloud),
+                    CalendarAccount(id: "Google", name: "Google", calendars: 1, color: google),
+                    CalendarAccount(id: "Exchange", name: "Exchange", calendars: 1, color: work)]
         reminders = [
             ReminderItem(id: "1", title: "Renew Cursor Teams seat", due: today, done: false, list: "Work", color: work),
             ReminderItem(id: "2", title: "Reply to Priya about launch", due: at(0, 21), done: false, list: "Work", color: work),

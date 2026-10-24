@@ -10,8 +10,8 @@ Brim is a small, free, open-source Mac app. The closed notch quietly shows what 
 Brim used to be called AI Island. Updating moves your connections, saved tokens, settings and
 the Claude Code status line over on first launch, and the old `ai-island` command still works.
 
-- **Sixteen tabs, pick your own.** Home, AI, Analytics, Notes, Calendar, Timers, Stats, Screen
-  Time, Weather, Links, Sounds, Scratchpad, Shelf, Clipboard, Files and Units.
+- **Sixteen tabs, pick your own.** Home, AI, Analytics, Notes, Calendar, Timers, Clocks, Stats,
+  Screen Time, Weather, Links, Sounds, Scratchpad, Clipboard, Files and Units.
   Eight show by default; the rest wait under the grid button. Reorder and hide them in Settings.
 - **AI usage, still first class.** Claude Code, Codex, GitHub Copilot, Cursor, Windsurf,
   OpenRouter, and anything else that writes logs or reports usage at a URL. As many accounts as
@@ -32,9 +32,9 @@ the Claude Code status line over on first launch, and the old `ai-island` comman
 <p align="center"><em>Home — now playing, your next event, a launcher, and a glance row.</em></p>
 
 <p align="center">
-  <img src="media/readme/island-ai.png" alt="Brim AI tab overview with tokens today, nearest limit and every account" width="760">
+  <img src="media/readme/island-ai.png" alt="Brim AI tab overview with tokens today, nearest limit, an activity heatmap with a streak, and every account" width="760">
 </p>
-<p align="center"><em>AI — every account, highest limit first. Broken accounts sort to the top with one fix.</em></p>
+<p align="center"><em>AI — every account, highest limit first, and half a year of activity with your streak. Broken accounts sort to the top with one fix.</em></p>
 
 <p align="center">
   <img src="media/readme/island-ai-account.png" alt="Cursor account showing Cursor models and Other models usage separately" width="760">
@@ -43,7 +43,7 @@ the Claude Code status line over on first launch, and the old `ai-island` comman
 
 <table>
 <tr>
-<td><img src="media/readme/island-calendar.png" alt="Calendar tab with a seven-day agenda"></td>
+<td><img src="media/readme/island-calendar.png" alt="Calendar week view with a legend of calendars and their accounts"></td>
 <td><img src="media/readme/island-timers.png" alt="Timers tab with a Pomodoro ring"></td>
 </tr>
 <tr>
@@ -51,12 +51,20 @@ the Claude Code status line over on first launch, and the old `ai-island` comman
 <td align="center"><em>Timers</em></td>
 </tr>
 <tr>
-<td><img src="media/readme/island-weather.png" alt="Weather tab with current conditions and a seven-day forecast"></td>
+<td><img src="media/readme/island-weather.png" alt="Weather tab with saved cities, air quality, an hourly chart and a seven-day forecast"></td>
 <td><img src="media/readme/island-stats.png" alt="Stats tab with CPU, memory, disk, network, battery and top apps"></td>
 </tr>
 <tr>
 <td align="center"><em>Weather</em></td>
 <td align="center"><em>Stats</em></td>
+</tr>
+<tr>
+<td><img src="media/readme/island-clocks.png" alt="Clocks tab with four analog clocks and a time planner"></td>
+<td><img src="media/readme/island-sounds.png" alt="Sounds tab with ambient sound tiles and mixes"></td>
+</tr>
+<tr>
+<td align="center"><em>Clocks</em></td>
+<td align="center"><em>Sounds and mixes</em></td>
 </tr>
 <tr>
 <td><img src="media/readme/island-units.png" alt="Units tab converting US dollars to Indian rupees"></td>
@@ -240,10 +248,10 @@ brim add claude --name "Claude · Work" --path ~/work/.claude/projects
 
 | You do | What happens |
 |---|---|
-| Glance at the notch | It rotates between the song playing and your AI limits. A running timer takes over |
+| Glance at the notch | It rotates between the song playing and your AI limits, plus your next event, the weather or a clock if you turn them on. A running timer or a pinned scratchpad takes over |
 | Hover over the notch, or press ⌥ Space | It opens to the tab you used last. Click a tab to switch; the grid button lists every tab |
 | Click into a text field (notes, links, reminders) | The island stays open while you type. Esc or a click elsewhere closes it |
-| Drag a file onto the notch | It opens on the Shelf, ready for the drop |
+| Drag images onto the notch | It opens Files with them queued to convert |
 | Click the gear | Settings: General, Tabs, Closed notch, Connections, Permissions and About |
 
 **The tabs**
@@ -251,18 +259,19 @@ brim add claude --name "Claude · Work" --path ~/work/.claude/projects
 | Tab | What it does | Needs |
 |---|---|---|
 | Home | Now playing, up next with a Join button, a launcher, and a glance row | Calendar access (optional) |
-| AI | Overview plus one pill per account: limits, tokens, 14-day chart, what broke and the fix | Local logs or sign-in |
-| Analytics | Visitors, pages and sources for your sites | A DataFast key or a Google service account |
-| Notes, Scratchpad | Longer notes with search; one always-there text box | Nothing |
-| Calendar | Seven-day agenda and reminders you can tick off or add with Return | Calendars and Reminders access |
+| AI | Overview plus one pill per account: limits, tokens, a 14-day chart or a half-year activity heatmap with your streak, what broke and the fix | Local logs or sign-in |
+| Analytics | Visitors, pages and sources for your sites | A key from DataFast, Plausible, Umami (Cloud or self-hosted) or Fathom, or a Google service account |
+| Notes, Scratchpad | Longer notes with search and pins; one always-there text box you can pin to the closed notch | Nothing |
+| Calendar | Day, week and month views with a legend of your calendars (tap one to hide it), and reminders you can tick off or add with Return | Calendars and Reminders access |
 | Timers | Pomodoro, countdown, stopwatch and hydration reminders | Notifications (optional) |
+| Clocks | Your time and up to three cities, each with its offset and whether people there are working; drag the planner to see them all at another time | Nothing |
 | Stats | CPU, memory, disk, network, battery health and the busiest apps | Nothing |
 | Screen Time | Where the day went, app by app, counted by Brim from the day you turn it on | Nothing |
-| Weather | Now, the next hours and seven days, from Open-Meteo | Location, or a city you pick |
-| Links | Search the web or your saved sites, in folders | Nothing |
-| Sounds | Rain, ocean, stream, wind, fireplace, thunder and noise, layered, with a fade-out timer | Nothing |
-| Shelf, Files | Park files and drag them out; convert and shrink images to JPEG, PNG, HEIC or PDF | Nothing |
-| Clipboard | A searchable history of what you copy, with pins (off until you turn it on) | Nothing |
+| Weather | Now, an hour-by-hour chart for any of the next seven days, air quality, wind and sun times, for your location and saved cities, from Open-Meteo | Location, or a city you pick |
+| Links | Search with Google, DuckDuckGo, Perplexity, ChatGPT, Claude, YouTube and more (or your own engine and keyword, like `yt cats`), plus your saved sites in folders | Nothing |
+| Sounds | Rain, thunder, ocean, stream, wind, fireplace, night, birdsong and noise, layered, plus your own recorded loops; built-in and saved mixes; a fade-out timer | Nothing |
+| Files | Convert and shrink images to JPEG, PNG, HEIC or PDF, then drag the results out | Nothing |
+| Clipboard | A searchable history of what you copy, filtered by kind, with pins and app icons. Off until you turn it on; skips password managers and any app you ignore | Nothing |
 | Units | Units and currencies: "5 km to mi", "100 usd to inr". Exchange rates from the European Central Bank via Frankfurter, refreshed daily | Nothing |
 
 **The closed notch interrupts once when something happens:** a plan passed 80% or 95%, an account
@@ -354,9 +363,10 @@ safely).
 - **No account, no analytics, no tracking.** Brim asks for a macOS permission only when you use
   the tab that needs it, and Settings → Permissions shows what's allowed.
 - **Stays on your Mac:** notes, scratchpad, links, timers, screen time (app names and minutes
-  only, never window titles), shelf and pinned clipboard items live in
-  `~/Library/Application Support/Brim/`. Clipboard history is kept in memory only, is off until
-  you turn it on, and skips anything password managers mark as concealed or transient.
+  only, never window titles), and pinned clipboard items live in
+  `~/Library/Application Support/Brim/`. Clipboard history is off until you turn it on, is kept
+  in memory only unless you switch on **Keep after quitting**, and skips anything password
+  managers mark as concealed or transient, plus anything copied in an app you ignore.
 - **Calendar and reminders** are read through macOS (EventKit). Brim never sees your Google or
   Exchange passwords.
 - **Music:** song names come from Spotify's and Music's own notifications. Play, pause, skip and
@@ -375,10 +385,13 @@ safely).
   asset). Custom Usage URLs must be `https://` (no cleartext `http://`). Brim trusts macOS
   system roots (no certificate pinning — see security notes in the engineering review
   deliverable).
-  The tabs add: **Open-Meteo** (`api.open-meteo.com`, `geocoding-api.open-meteo.com`) for
-  weather, with your coordinates rounded to about 100 m; **DataFast** (`datafa.st`) or
-  **Google** (`oauth2.googleapis.com`, `analyticsdata.googleapis.com`) only for sites you add to
-  Analytics; Spotify's artwork server for the album cover; and links you open yourself.
+  The tabs add: **Open-Meteo** (`api.open-meteo.com`, `geocoding-api.open-meteo.com`,
+  `air-quality-api.open-meteo.com`) for weather, with your coordinates rounded to about 100 m;
+  **Frankfurter** (`api.frankfurter.dev`) for exchange rates; for sites you add to Analytics only,
+  **DataFast** (`datafa.st`), **Google** (`oauth2.googleapis.com`, `analyticsdata.googleapis.com`),
+  **Plausible** (`plausible.io` or your own server), **Umami** (`api.umami.is` or your own
+  server) or **Fathom** (`api.usefathom.com`); Spotify's artwork server for the album cover; and
+  links you open yourself.
 - Your connection list lives in `~/Library/Application Support/Brim/connections.json`
   (mode `600`). It holds no secrets.
 - Custom log folders must resolve under your home directory; symlink escapes are refused.

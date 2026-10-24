@@ -21,7 +21,7 @@ struct TimersTabView: View {
         VStack(spacing: 10) {
             HStack {
                 SegmentedPills(options: [(Sub.pomodoro, "Pomodoro"), (.countdown, "Countdown"), (.stopwatch, "Stopwatch"), (.water, "Hydration")],
-                               selection: $sub, dot: { running($0) ? Palette.coral : nil })
+                               selection: $sub, dot: { running($0) ? theme.fg : nil })
                 Spacer()
                 Text("Running timers show in the closed notch")
                     .font(.brim(11, .bold))
@@ -71,18 +71,18 @@ struct TimersTabView: View {
                     Circle().stroke(theme.f(0.08), lineWidth: 9)
                     Circle()
                         .trim(from: 0, to: fraction)
-                        .stroke(Palette.coral, style: StrokeStyle(lineWidth: 9, lineCap: .round))
+                        .stroke(theme.fg, style: StrokeStyle(lineWidth: 9, lineCap: .round))
                         .rotationEffect(.degrees(-90))
                         .animation(.linear(duration: 1), value: fraction)
                     VStack(spacing: 2) {
                         Text(Clock.mmss(remaining)).font(.brim(40)).monospacedDigit()
-                        Text(state.phase.title).font(.brim(12)).foregroundStyle(Palette.coral)
+                        Text(state.phase.title).font(.brim(12)).foregroundStyle(theme.f(0.6))
                     }
                 }
                 .frame(width: 170, height: 170)
                 buttons([
                     ("Reset", nil, { timers.state.resetPomodoro() }),
-                    (state.pomodoroRunning ? "Pause" : "Start", Palette.coral, { timers.state.togglePomodoro() }),
+                    (state.pomodoroRunning ? "Pause" : "Start", theme.fg, { timers.state.togglePomodoro() }),
                     ("Skip", nil, { timers.state.advancePomodoro() }),
                 ])
             }
@@ -91,11 +91,11 @@ struct TimersTabView: View {
             VStack(spacing: 14) {
                 Text(Clock.mmss(remaining)).font(.brim(54)).monospacedDigit()
                 Text(state.countdownRunning ? "Running" : "Pick a length").font(.brim(12)).foregroundStyle(theme.f(0.5))
-                MiniBar(fraction: remaining / max(state.countdownTotal, 1), color: Palette.amber, height: 6)
+                MiniBar(fraction: remaining / max(state.countdownTotal, 1), height: 6)
                     .frame(maxWidth: 360)
                 buttons([
                     ("Reset", nil, { timers.state.resetCountdown() }),
-                    (state.countdownRunning ? "Pause" : "Start", Palette.amber, { timers.state.toggleCountdown() }),
+                    (state.countdownRunning ? "Pause" : "Start", theme.fg, { timers.state.toggleCountdown() }),
                 ])
             }
         case .stopwatch:
@@ -104,7 +104,7 @@ struct TimersTabView: View {
                 Text("\(state.laps.count) lap\(state.laps.count == 1 ? "" : "s")").font(.brim(12)).foregroundStyle(theme.f(0.5))
                 buttons([
                     ("Lap", nil, { timers.state.lap() }),
-                    (state.stopwatchRunning ? "Stop" : "Start", Palette.green, { timers.state.toggleStopwatch() }),
+                    (state.stopwatchRunning ? "Stop" : "Start", theme.fg, { timers.state.toggleStopwatch() }),
                     ("Reset", nil, { timers.state.resetStopwatch() }),
                 ])
             }
@@ -115,7 +115,7 @@ struct TimersTabView: View {
                         ZStack(alignment: .bottom) {
                             UnevenGlass().stroke(theme.f(0.2), lineWidth: 1.6)
                             UnevenGlass()
-                                .fill(Palette.cyan)
+                                .fill(theme.f(0.85))
                                 .frame(height: index < state.glasses ? 56 : 0)
                                 .animation(.spring(response: 0.4, dampingFraction: 0.7), value: state.glasses)
                         }
@@ -129,7 +129,7 @@ struct TimersTabView: View {
                 }
                 buttons([
                     ("−", nil, { timers.state.addGlass(-1) }),
-                    ("+ Glass", Palette.cyan, { timers.state.addGlass(1) }),
+                    ("+ Glass", theme.fg, { timers.state.addGlass(1) }),
                 ])
             }
         }
@@ -138,7 +138,7 @@ struct TimersTabView: View {
     private func buttons(_ items: [(String, Color?, () -> Void)]) -> some View {
         HStack(spacing: 10) {
             ForEach(Array(items.enumerated()), id: \.offset) { _, item in
-                IslandButton(title: item.0, style: item.1.map { .tint($0) } ?? .secondary, height: 34, fontSize: 13, action: item.2)
+                IslandButton(title: item.0, style: item.1 == nil ? .secondary : .primary, height: 34, fontSize: 13, action: item.2)
             }
         }
     }
@@ -154,7 +154,7 @@ struct TimersTabView: View {
                     .padding(.horizontal, 6).padding(.bottom, 6)
                 HStack(spacing: 6) {
                     ForEach(0..<state.sessionsPerSet, id: \.self) { i in
-                        Capsule().fill(i < state.sessionsToday % state.sessionsPerSet ? Palette.coral : theme.f(0.12)).frame(width: 22, height: 8)
+                        Capsule().fill(i < state.sessionsToday % state.sessionsPerSet ? theme.fg : theme.f(0.12)).frame(width: 22, height: 8)
                     }
                 }
                 .padding(.horizontal, 6).padding(.bottom, 8)

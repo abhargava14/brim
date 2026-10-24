@@ -67,9 +67,9 @@ struct ConnectionLine<Trailing: View>: View {
         HStack(spacing: 12) {
             Image(systemName: symbol)
                 .font(.system(size: 13, weight: .bold))
-                .foregroundStyle(.white)
+                .foregroundStyle(theme.fg)
                 .frame(width: 28, height: 28)
-                .background(RoundedRectangle(cornerRadius: 8).fill(tint))
+                .background(RoundedRectangle(cornerRadius: 8).fill(theme.f(0.1)))
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(.brim(13, .bold))
                 Text(detail).font(.brim(11.5, .medium)).foregroundStyle(theme.f(0.5)).lineLimit(2)

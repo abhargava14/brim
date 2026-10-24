@@ -2,7 +2,7 @@ import AppKit
 import IslandCore
 import SwiftUI
 
-/// Analytics: visitors, pages and sources for your sites, from DataFast or Google Analytics.
+/// Analytics: visitors, pages and sources for your sites, from DataFast, Google Analytics, Plausible, Umami or Fathom.
 struct AnalyticsTabView: View {
     @ObservedObject var analytics: AnalyticsService
     let connect: () -> Void
@@ -12,9 +12,8 @@ struct AnalyticsTabView: View {
         if analytics.sites.isEmpty {
             ConnectCard(symbol: "chart.bar", color: Palette.amber, title: "Connect your site analytics",
                         message: "See visitors, top pages and sources for your sites. Brim only reads stats and can't change anything.",
-                        actions: [.init(title: "DataFast", sub: "API key", run: connect),
-                                  .init(title: "Google Analytics", sub: "Service account", primary: false, run: connect)],
-                        note: "Keys stay in your macOS Keychain.")
+                        actions: [.init(title: "Add a site", run: connect)],
+                        note: "Works with DataFast, Google Analytics, Plausible, Umami and Fathom. Keys stay in your macOS Keychain.")
         } else {
             VStack(spacing: 10) {
                 if let site = analytics.current, let error = analytics.errors[site.id] {
@@ -94,7 +93,7 @@ struct AnalyticsTabView: View {
         return [
             StatItem(key: "Visitors", value: Self.short(report.visitors),
                      sub: change.map { ($0 >= 0 ? "↑ " : "↓ ") + "\(abs($0))% vs prior" } ?? "",
-                     subColor: (change ?? 0) > 0 ? Palette.green : nil),
+                     subColor: nil),
             StatItem(key: "Pageviews", value: Self.short(report.pageviews),
                      sub: report.visitors > 0 ? String(format: "%.1f per visitor", report.pageviews / report.visitors) : ""),
             StatItem(key: "Bounce", value: report.bounceRate.map { "\(Int(($0 * 100).rounded()))%" } ?? "–", sub: "single page"),
@@ -145,6 +144,7 @@ struct AnalyticsConnections: View {
     @State private var name = ""
     @State private var secret = ""
     @State private var property = ""
+    @State private var host = ""
     @State private var problem: String?
     @State private var checking = false
     @State private var replacing: String?
@@ -165,9 +165,9 @@ struct AnalyticsConnections: View {
                 }
                 ForEach(Array(analytics.sites.enumerated()), id: \.element.id) { index, site in
                     let error = analytics.errors[site.id]
-                    ConnectionLine(symbol: site.provider == .datafast ? "bolt.fill" : "chart.line.uptrend.xyaxis",
-                                   tint: site.provider == .datafast ? Palette.amber : Color(red: 0.98, green: 0.67, blue: 0),
-                                   title: site.name, detail: error ?? site.provider.title + (site.propertyID.isEmpty ? "" : " · property \(site.propertyID)"),
+                    ConnectionLine(symbol: Self.symbol(site.provider), tint: theme.fg,
+                                   title: site.name, detail: error ?? site.provider.title + (site.propertyID.isEmpty || site.provider == .plausible ? "" : " · \(site.propertyID)")
+                                       + (site.customHost.map { " · " + ($0.replacingOccurrences(of: "https://", with: "")) } ?? ""),
                                    divider: index > 0) {
                         StatusPill(text: error == nil ? "Connected" : "Needs attention", kind: error == nil ? .ok : .warn)
                         IslandButton(title: "Update key", height: 26, fontSize: 11.5) { replacing = site.id; secret = "" }
@@ -175,7 +175,7 @@ struct AnalyticsConnections: View {
                     }
                     if replacing == site.id {
                         HStack(spacing: 8) {
-                            SecureField(site.provider == .datafast ? "df_…" : "Paste the service-account JSON", text: $secret)
+                            SecureField(Self.keyPlaceholder(site.provider), text: $secret)
                                 .textFieldStyle(.roundedBorder)
                             IslandButton(title: "Save", style: .primary, height: 26, fontSize: 11.5) {
                                 analytics.updateKey(site.id, secret: secret)
@@ -199,6 +199,15 @@ struct AnalyticsConnections: View {
                 SecureField("Website API key (df_…)", text: $secret).textFieldStyle(.roundedBorder)
                 Text("DataFast › your website › Settings › Developer › API key.")
                     .font(.brim(11.5, .medium)).foregroundStyle(theme.f(0.5))
+            } else if provider != .google {
+                TextField(provider.siteLabel, text: $property).textFieldStyle(.roundedBorder)
+                if provider.selfHostable {
+                    TextField("Self-hosted address (leave empty for \(provider == .plausible ? "plausible.io" : "Umami Cloud"))", text: $host)
+                        .textFieldStyle(.roundedBorder)
+                }
+                SecureField(Self.keyPlaceholder(provider), text: $secret).textFieldStyle(.roundedBorder)
+                Text(Self.keyHelp(provider))
+                    .font(.brim(11.5, .medium)).foregroundStyle(theme.f(0.5)).fixedSize(horizontal: false, vertical: true)
             } else {
                 TextField("GA4 property ID (numbers only)", text: $property).textFieldStyle(.roundedBorder)
                 TextEditor(text: $secret)
@@ -218,11 +227,11 @@ struct AnalyticsConnections: View {
                     checking = true
                     problem = nil
                     Task {
-                        let result = await analytics.add(name: name, provider: provider, secret: secret, propertyID: property)
+                        let result = await analytics.add(name: name, provider: provider, secret: secret, propertyID: property, host: host)
                         checking = false
                         if let result { problem = result } else {
                             adding = false
-                            name = ""; secret = ""; property = ""
+                            name = ""; secret = ""; property = ""; host = ""
                         }
                     }
                 }
@@ -231,5 +240,34 @@ struct AnalyticsConnections: View {
         }
         .padding(14)
         .background(RoundedRectangle(cornerRadius: 12).fill(theme.f(0.05)))
+    }
+
+    static func symbol(_ provider: AnalyticsSite.Provider) -> String {
+        switch provider {
+        case .datafast: return "bolt.fill"
+        case .google: return "chart.line.uptrend.xyaxis"
+        case .plausible: return "chart.bar.fill"
+        case .umami: return "chart.pie.fill"
+        case .fathom: return "chart.dots.scatter"
+        }
+    }
+
+    static func keyPlaceholder(_ provider: AnalyticsSite.Provider) -> String {
+        switch provider {
+        case .datafast: return "df_…"
+        case .google: return "Paste the service-account JSON"
+        case .plausible: return "Stats API key"
+        case .umami: return "API key (Cloud) or token (self-hosted)"
+        case .fathom: return "API token"
+        }
+    }
+
+    static func keyHelp(_ provider: AnalyticsSite.Provider) -> String {
+        switch provider {
+        case .plausible: return "Plausible › Settings › API keys › New API key, choose Stats API. The Stats API needs a Business plan or a self-hosted server."
+        case .umami: return "Umami Cloud › Settings › API keys. Self-hosted: paste a token from /api/auth/login and add your server's address."
+        case .fathom: return "Fathom › Settings › API › Create token with read access to this site."
+        default: return ""
+        }
     }
 }

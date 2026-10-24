@@ -14,9 +14,10 @@
 
 **Brim** is a free, open-source macOS app that sits around the MacBook notch (like the
 iPhone's Dynamic Island). Since 0.4 it is a general notch app: the open island has sixteen tabs
-(Home, AI, Analytics, Notes, Calendar, Timers, Stats, Screen Time, Weather, Links, Sounds,
-Scratchpad, Shelf, Clipboard, Files, Units) and the closed notch rotates between
-now playing, a running timer and AI limits. AI usage is still the core: tokens and plan-limit
+(Home, AI, Analytics, Notes, Calendar, Timers, Clocks, Stats, Screen Time, Weather, Links, Sounds,
+Scratchpad, Clipboard, Files, Units) and the closed notch rotates between
+now playing, AI limits and, if turned on, the next event, weather and a clock; a running timer or
+a pinned scratchpad takes over. AI usage is still the core: tokens and plan-limit
 percentages per account. Users connect **any number** of tools (Claude Code, Codex,
 GitHub Copilot, Cursor, Windsurf, OpenRouter, any log folder, any JSON usage URL), including
 several accounts of one tool. There are two ways to connect: the app's Settings window and the
@@ -35,9 +36,10 @@ tests and run. Then polish.
    code content from the logs, only usage metadata. Tokens go in the Keychain, never in files.
    Account-based tools may only talk to their own service. Tabs ask for a macOS permission only
    when used, and every request first checks the usage text exists (`canAsk`), because asking
-   without it terminates the app. Clipboard history stays in memory and skips concealed types.
-   Network hosts beyond the AI services: Open-Meteo (weather), DataFast / Google (only for sites
-   the user adds), Spotify artwork.
+   without it terminates the app. Clipboard history stays in memory unless the user turns on "Keep after quitting", and skips
+   concealed types and ignored apps. Network hosts beyond the AI services: Open-Meteo (weather
+   and air quality), Frankfurter (exchange rates), DataFast / Google / Plausible / Umami / Fathom
+   (only for sites the user adds), Spotify artwork.
 4. **Never guess plan limits.** Percentages must come from the tool or its service.
 5. **Keep `IslandCore` Foundation-only** (no AppKit, SwiftUI, Security, SQLite or CryptoKit), so
    its tests run anywhere. macOS readers (EventKit, CoreLocation, IOKit, AppleScript, ImageIO)
@@ -98,7 +100,7 @@ Sources/BrimApp/                 the app (AppKit + SwiftUI)
                                   Settings hooks, ⌥Space hot key
   Tabs/                           one view per tab
   Services/                       app-side stores: notes, links, timers, stats, sounds, clipboard,
-                                  shelf, launcher, analytics
+                                  converter, launcher, analytics
   Settings/BrimSettingsView.swift the Settings window (General, Tabs, Closed notch, Connections,
                                   Permissions, About)
   Snapshot.swift                  BRIM_SNAPSHOT_DIR=… renders every screen to PNG with fixtures

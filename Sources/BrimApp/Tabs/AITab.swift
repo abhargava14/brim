@@ -147,9 +147,11 @@ struct AITabView: View {
     @State private var selected: String?
     @State private var adding = false
     @State private var spins = 0.0
+    private let chart: AIOverview.Chart?
 
     init(model: UsageModel, settings: AppSettings, addAccount: @escaping (AddAccountRequest) -> Void,
-         manage: @escaping () -> Void, selected: String? = nil, adding: Bool = false) {
+         manage: @escaping () -> Void, selected: String? = nil, adding: Bool = false, chart: String? = nil) {
+        self.chart = chart.flatMap(AIOverview.Chart.init(rawValue:))
         self.model = model
         self.settings = settings
         self.addAccount = addAccount
@@ -171,7 +173,7 @@ struct AITabView: View {
             } else if let current {
                 AIAccountDetail(account: current, model: model, addAccount: addAccount)
             } else {
-                AIOverview(accounts: accounts, model: model) { selected = $0 }
+                AIOverview(accounts: accounts, model: model, pick: { selected = $0 }, chart: chart)
             }
         }
         .overlay(alignment: .topTrailing) {
@@ -306,10 +308,16 @@ struct AccountPill: View {
 // MARK: - Overview
 
 struct AIOverview: View {
+    enum Chart: String { case trend, activity }
+
     let accounts: AIAccounts
     @ObservedObject var model: UsageModel
     let pick: (String) -> Void
+    var chart: Chart?
+    @AppStorage("aiChart") private var savedChart = Chart.trend.rawValue
     @Environment(\.islandTheme) private var theme
+
+    private var shownChart: Chart { chart ?? Chart(rawValue: savedChart) ?? .trend }
 
     var body: some View {
         let logs = accounts.items.filter(\.hasTokens)
@@ -320,9 +328,21 @@ struct AIOverview: View {
                     StatStrip(items: stats(series: series))
                 }
                 .fixedSize(horizontal: false, vertical: true)
-                IslandCard(padding: EdgeInsets(top: 14, leading: 18, bottom: 12, trailing: 18)) {
-                    TokensChart(title: "Tokens · 14 days", aside: "\(logs.count) log source\(logs.count == 1 ? "" : "s")",
-                                values: series, color: nil)
+                IslandCard(padding: EdgeInsets(top: 12, leading: 18, bottom: 12, trailing: 18)) {
+                    VStack(spacing: 8) {
+                        HStack(spacing: 8) {
+                            SegmentedPills(options: [(Chart.trend, "14 days"), (.activity, "Activity")],
+                                           selection: Binding(get: { shownChart }, set: { savedChart = $0.rawValue }), height: 22)
+                            Spacer()
+                            Text(shownChart == .trend ? "\(logs.count) log source\(logs.count == 1 ? "" : "s")" : streakText)
+                                .font(.brim(11, .bold)).foregroundStyle(theme.f(0.45)).lineLimit(1)
+                        }
+                        if shownChart == .trend {
+                            TokensChart(title: "", aside: "", values: series, color: nil, showHeader: false)
+                        } else {
+                            ActivityHeatmap(history: model.tokenHistory)
+                        }
+                    }
                 }
             }
             .frame(maxWidth: .infinity)
@@ -343,6 +363,12 @@ struct AIOverview: View {
         }
     }
 
+    private var streakText: String {
+        let streak = model.tokenHistory.streak(), best = model.tokenHistory.best()
+        guard best > 0 else { return "no activity yet" }
+        return "\(streak)-day streak · best \(best)"
+    }
+
     private var sorted: [AIAccount] {
         accounts.items.sorted {
             let a = ($0.problem != nil ? 1 : 0, $0.lead ?? -1), b = ($1.problem != nil ? 1 : 0, $1.lead ?? -1)
@@ -359,7 +385,7 @@ struct AIOverview: View {
         if average > 0 {
             let delta = Int(((series.last ?? 0) / average - 1) * 100)
             deltaText = (delta >= 0 ? "↑ " : "↓ ") + "\(abs(delta))% vs avg"
-            deltaColor = delta >= 0 ? Palette.green : nil
+            deltaColor = nil
         }
         let working = accounts.items.filter(\.working)
         let near = accounts.items.filter { $0.problem == nil && $0.lead != nil }.max { ($0.lead ?? 0) < ($1.lead ?? 0) }
@@ -400,7 +426,7 @@ struct AccountRow: View {
                             .fixedSize()
                     }
                     if account.working {
-                        PulseDot(color: account.kind.tint)
+                        PulseDot(color: Palette.green)
                     }
                 }
                 if let plan = account.tool?.planName, account.problem == nil {
@@ -477,13 +503,16 @@ struct TokensChart: View {
     var color: Color?
     var peakText: String?
     var formatter: (Double) -> String = { Format.tokens(Int64($0)) }
+    var showHeader = true
     @Environment(\.islandTheme) private var theme
 
     var body: some View {
         VStack(spacing: 8) {
-            HStack(spacing: 8) {
-                Image(systemName: "chart.xyaxis.line").font(.system(size: 11, weight: .bold))
-                SectionTitle(title: title, aside: aside)
+            if showHeader {
+                HStack(spacing: 8) {
+                    Image(systemName: "chart.xyaxis.line").font(.system(size: 11, weight: .bold))
+                    SectionTitle(title: title, aside: aside)
+                }
             }
             if values.contains(where: { $0 > 0 }) {
                 CurveChart(values: values, color: color, endDot: true)
@@ -508,6 +537,64 @@ struct TokensChart: View {
     private var peak: String {
         guard let top = values.max(), top > 0, let index = values.firstIndex(of: top) else { return "" }
         return "peak \(formatter(top)) · \(AIStats.dayLabel(back: values.count - 1 - index))"
+    }
+}
+
+/// Half a year of daily tokens as a grid of weeks, darker for busier days.
+struct ActivityHeatmap: View {
+    let history: TokenHistory
+    var weeks = 26
+    @Environment(\.islandTheme) private var theme
+
+    var body: some View {
+        let grid = history.grid(weeks: weeks)
+        let values = grid.flatMap { $0 }.compactMap { $0 }.filter { $0 > 0 }.sorted()
+        // Quartiles, so one huge day doesn't wash out the rest.
+        let cuts = [0.25, 0.5, 0.75].map { values.isEmpty ? 0 : values[min(values.count - 1, Int(Double(values.count) * $0))] }
+        let total = values.reduce(0, +)
+        VStack(spacing: 6) {
+            GeometryReader { geo in
+                let gap: CGFloat = 3
+                let side = max(4, min((geo.size.width - gap * CGFloat(weeks - 1)) / CGFloat(weeks), (geo.size.height - gap * 6) / 7))
+                HStack(alignment: .top, spacing: gap) {
+                    ForEach(grid.indices, id: \.self) { column in
+                        VStack(spacing: gap) {
+                            ForEach(0..<7, id: \.self) { row in
+                                let value = grid[column][row]
+                                RoundedRectangle(cornerRadius: side * 0.25)
+                                    .fill(value == nil ? .clear : theme.f(Self.opacity(value ?? 0, cuts: cuts)))
+                                    .frame(width: side, height: side)
+                                    .help(value.map { Format.tokens(Int64($0)) + " tokens" } ?? "")
+                            }
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            }
+            HStack(spacing: 4) {
+                Text("\(history.activeDays(last: weeks * 7)) active days · \(Format.tokens(Int64(total))) tokens")
+                Spacer()
+                Text("Less")
+                ForEach([0.0, 1, 2, 3, 4], id: \.self) { level in
+                    RoundedRectangle(cornerRadius: 2).fill(theme.f(Self.levels[Int(level)])).frame(width: 9, height: 9)
+                }
+                Text("More")
+            }
+            .font(.brim(10.5, .bold))
+            .foregroundStyle(theme.f(0.4))
+        }
+        .accessibilityElement()
+        .accessibilityLabel("Activity over \(weeks) weeks, \(history.activeDays(last: weeks * 7)) active days")
+    }
+
+    static let levels = [0.07, 0.28, 0.48, 0.72, 1.0]
+
+    static func opacity(_ value: Double, cuts: [Double]) -> Double {
+        guard value > 0 else { return levels[0] }
+        if value <= cuts[0] { return levels[1] }
+        if value <= cuts[1] { return levels[2] }
+        if value <= cuts[2] { return levels[3] }
+        return levels[4]
     }
 }
 
@@ -563,13 +650,13 @@ struct AIAccountDetail: View {
                 } else if account.hasTokens {
                     IslandCard(padding: EdgeInsets(top: 14, leading: 18, bottom: 12, trailing: 18)) {
                         TokensChart(title: "Tokens · 14 days", aside: account.tool?.planName ?? account.source,
-                                    values: AIStats.dailySeries(account.tool.map { [$0] } ?? []), color: account.kind.tint)
+                                    values: AIStats.dailySeries(account.tool.map { [$0] } ?? []), color: nil)
                     }
                 } else {
                     let history = model.quotaHistory.series(account.id).map { $0 ?? 0 }
                     IslandCard(padding: EdgeInsets(top: 14, leading: 18, bottom: 12, trailing: 18)) {
                         TokensChart(title: "Cycle used · 14 days", aside: account.tool?.planName ?? "",
-                                    values: history, color: account.kind.tint,
+                                    values: history, color: nil,
                                     peakText: account.lead.map { Format.percent($0) + " today" },
                                     formatter: { Format.percent($0) })
                     }
@@ -703,12 +790,11 @@ struct AIAccountDetail: View {
     }
 
     private func breakdown(_ tool: ToolSnapshot) -> some View {
-        let tint = account.kind.tint
         let parts: [(String, Int64, Color)] = [
-            ("Input", tool.today.input, theme.f(0.9)),
-            ("Output", tool.today.output, tint),
-            ("Cache write", tool.today.cacheWrite, tint.opacity(0.55)),
-            ("Cache read", tool.today.cacheRead, tint.opacity(0.28)),
+            ("Input", tool.today.input, theme.f(0.95)),
+            ("Output", tool.today.output, theme.f(0.7)),
+            ("Cache write", tool.today.cacheWrite, theme.f(0.45)),
+            ("Cache read", tool.today.cacheRead, theme.f(0.25)),
         ]
         let sum = max(Double(tool.today.total), 1)
         return VStack(alignment: .leading, spacing: 2) {
@@ -899,7 +985,7 @@ struct AIAddPopover: View {
                     Spacer()
                     Text(n > 0 ? "\(n) connected" : Self.hint(for: kind))
                         .font(.brim(11, .bold))
-                        .foregroundStyle(n > 0 ? Palette.green : theme.f(0.45))
+                        .foregroundStyle(n > 0 ? theme.f(0.8) : theme.f(0.45))
                 }
                 .padding(.leading, 8)
                 .padding(.trailing, 10)

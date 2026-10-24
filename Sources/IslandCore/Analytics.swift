@@ -5,21 +5,57 @@ public struct AnalyticsSite: Codable, Equatable, Identifiable, Sendable {
     public enum Provider: String, Codable, CaseIterable, Sendable {
         case datafast
         case google
+        case plausible
+        case umami
+        case fathom
 
-        public var title: String { self == .datafast ? "DataFast" : "Google Analytics" }
+        public var title: String {
+            switch self {
+            case .datafast: return "DataFast"
+            case .google: return "Google Analytics"
+            case .plausible: return "Plausible"
+            case .umami: return "Umami"
+            case .fathom: return "Fathom"
+            }
+        }
+
+        /// What the site field means for this provider ("" when there is none).
+        public var siteLabel: String {
+            switch self {
+            case .datafast: return ""
+            case .google: return "GA4 property ID (numbers only)"
+            case .plausible: return "Site domain, as added in Plausible (example.com)"
+            case .umami: return "Website ID (Settings › Websites › Edit)"
+            case .fathom: return "Site ID (the code in your embed, e.g. ABCDEFG)"
+            }
+        }
+
+        /// Plausible and Umami can be self-hosted.
+        public var selfHostable: Bool { self == .plausible || self == .umami }
     }
 
     public var id: String
     public var name: String
     public var provider: Provider
-    /// GA4 property ID (Google only).
+    /// GA4 property ID, Plausible domain, Umami website ID or Fathom site ID.
     public var propertyID: String
+    /// Base URL of a self-hosted Plausible or Umami; nil or empty for the hosted service.
+    public var host: String?
 
-    public init(id: String = UUID().uuidString, name: String, provider: Provider, propertyID: String = "") {
+    public init(id: String = UUID().uuidString, name: String, provider: Provider, propertyID: String = "", host: String? = nil) {
         self.id = id
         self.name = name
         self.provider = provider
         self.propertyID = propertyID
+        self.host = host
+    }
+
+    /// The host without a trailing slash, or nil for the hosted service.
+    public var customHost: String? {
+        guard var value = host?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty else { return nil }
+        if !value.hasPrefix("http") { value = "https://" + value }
+        while value.hasSuffix("/") { value.removeLast() }
+        return value
     }
 }
 
@@ -307,5 +343,224 @@ public enum GoogleAnalytics {
         guard let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
               let error = json["error"] as? [String: Any] else { return nil }
         return error["message"] as? String
+    }
+}
+
+// MARK: - Plausible
+
+/// Plausible Stats API v2: `POST /api/v2/query` with a Bearer key (https://plausible.io/docs/stats-api).
+public enum Plausible {
+    public static func queryURL(host: String?) -> URL {
+        URL(string: (host ?? "https://plausible.io") + "/api/v2/query")!
+    }
+
+    static func day(_ date: Date) -> String { QuotaHistory.key(for: date) }
+
+    /// "day", "7d", "30d" for the tab's ranges, or exact dates for the period before.
+    public static func dateRange(_ range: AnalyticsRange, previous: Bool = false) -> Any {
+        if previous {
+            let dates = range.previous()
+            return [day(dates.start), day(dates.end)]
+        }
+        switch range {
+        case .today: return "day"
+        case .week: return "7d"
+        case .month: return "30d"
+        }
+    }
+
+    public static func body(site: String, metrics: [String], dateRange: Any, dimensions: [String] = [], limit: Int? = nil,
+                            timeLabels: Bool = false) -> Data {
+        var object: [String: Any] = ["site_id": site, "metrics": metrics, "date_range": dateRange]
+        if !dimensions.isEmpty { object["dimensions"] = dimensions }
+        if let limit {
+            object["pagination"] = ["limit": limit, "offset": 0]
+            object["order_by"] = [[metrics[0], "desc"]]
+        }
+        if timeLabels { object["include"] = ["time_labels": true] }
+        return (try? JSONSerialization.data(withJSONObject: object)) ?? Data()
+    }
+
+    /// The last five minutes, for "online now".
+    public static func realtimeRange(now: Date = Date()) -> [String] {
+        let formatter = ISO8601DateFormatter()
+        formatter.timeZone = .current
+        return [formatter.string(from: now.addingTimeInterval(-300)), formatter.string(from: now)]
+    }
+
+    public struct Row: Equatable {
+        public var dimensions: [String]
+        public var metrics: [Double]
+    }
+
+    public static func rows(_ data: Data) -> [Row] {
+        guard let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let results = json["results"] as? [[String: Any]] else { return [] }
+        return results.map { row in
+            Row(dimensions: (row["dimensions"] as? [Any] ?? []).map { "\($0)" },
+                metrics: (row["metrics"] as? [Any] ?? []).map { DataFast.number($0) ?? 0 })
+        }
+    }
+
+    /// Values for every time label in order, zero where Plausible had no row.
+    public static func series(_ data: Data) -> [Double] {
+        guard let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return [] }
+        let values = Dictionary(rows(data).map { ($0.dimensions.first ?? "", $0.metrics.first ?? 0) }, uniquingKeysWith: +)
+        if let labels = (json["meta"] as? [String: Any])?["time_labels"] as? [String] {
+            return labels.map { label in values[label] ?? values[String(label.prefix(10))] ?? 0 }
+        }
+        return rows(data).map { $0.metrics.first ?? 0 }
+    }
+
+    public static func error(_ data: Data) -> String? {
+        ((try? JSONSerialization.jsonObject(with: data)) as? [String: Any])?["error"] as? String
+    }
+}
+
+// MARK: - Umami
+
+/// Umami's API: Umami Cloud at api.umami.is/v1 with `x-umami-api-key`, or a self-hosted `/api` with a
+/// Bearer token. Older and newer versions shape stats differently, so the parser accepts both.
+public enum Umami {
+    public static func base(host: String?) -> String {
+        host.map { $0 + "/api" } ?? "https://api.umami.is/v1"
+    }
+
+    static func millis(_ date: Date) -> String { String(Int64(date.timeIntervalSince1970 * 1000)) }
+
+    /// Start of the first day to now (or end of the last day, for past periods).
+    public static func window(_ dates: (start: Date, end: Date), now: Date = Date(), calendar: Calendar = .current) -> (start: Date, end: Date) {
+        let endOfDay = calendar.date(byAdding: .day, value: 1, to: dates.end)?.addingTimeInterval(-1) ?? dates.end
+        return (dates.start, min(endOfDay, now))
+    }
+
+    public static func url(host: String?, website: String, path: String, window: (start: Date, end: Date), extra: [String: String] = [:]) -> URL? {
+        var components = URLComponents(string: base(host: host) + "/websites/\(website)/\(path)")
+        var items = [URLQueryItem(name: "startAt", value: millis(window.start)), URLQueryItem(name: "endAt", value: millis(window.end))]
+        items += extra.sorted { $0.key < $1.key }.map { URLQueryItem(name: $0.key, value: $0.value) }
+        components?.queryItems = items
+        return components?.url
+    }
+
+    public static func activeURL(host: String?, website: String) -> URL? {
+        URL(string: base(host: host) + "/websites/\(website)/active")
+    }
+
+    /// A stat that may be a number or `{"value": n, "prev": m}`.
+    static func value(_ any: Any?) -> Double? {
+        if let object = any as? [String: Any] { return DataFast.number(object["value"]) }
+        return DataFast.number(any)
+    }
+
+    public static func parseStats(_ data: Data, into report: inout AnalyticsReport) -> Bool {
+        guard let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let visitors = value(json["visitors"]) else { return false }
+        report.visitors = visitors
+        report.pageviews = value(json["pageviews"]) ?? 0
+        if let visits = value(json["visits"]), visits > 0 {
+            if let bounces = value(json["bounces"]) { report.bounceRate = min(1, bounces / visits) }
+            if let total = value(json["totaltime"]) { report.sessionSeconds = total / visits }
+        }
+        // Newer versions include the previous period; older ones put it in "prev".
+        if let comparison = json["comparison"] as? [String: Any], let previous = value(comparison["visitors"]) {
+            report.previousVisitors = previous
+        } else if let object = json["visitors"] as? [String: Any], let previous = DataFast.number(object["prev"]) {
+            report.previousVisitors = previous
+        }
+        return true
+    }
+
+    public static func parseVisitors(_ data: Data) -> Double? {
+        guard let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return nil }
+        return value(json["visitors"])
+    }
+
+    /// `{"pageviews": [{x, y}], "sessions": [{x, y}]}`: sessions per bucket, as visitors.
+    public static func parseSeries(_ data: Data) -> [Double] {
+        guard let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return [] }
+        let points = (json["sessions"] as? [[String: Any]]) ?? (json["pageviews"] as? [[String: Any]]) ?? []
+        return points.map { DataFast.number($0["y"]) ?? 0 }
+    }
+
+    /// `[{x: "/path", y: 12}]`.
+    public static func parseMetrics(_ data: Data) -> [AnalyticsReport.Row] {
+        guard let rows = (try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]] else { return [] }
+        return rows.map { row in
+            let label = (row["x"] as? String) ?? ""
+            return AnalyticsReport.Row(label: label.isEmpty ? "Direct/None" : label, value: DataFast.number(row["y"]) ?? 0)
+        }
+    }
+
+    public static func parseActive(_ data: Data) -> Int? {
+        guard let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return nil }
+        return (DataFast.number(json["visitors"]) ?? DataFast.number(json["x"])).map { Int($0) }
+    }
+}
+
+// MARK: - Fathom
+
+/// Fathom's API (https://usefathom.com/api): `GET /v1/aggregations` with a Bearer token. Aggregation
+/// numbers come back as strings.
+public enum Fathom {
+    public static let base = "https://api.usefathom.com/v1"
+
+    static func stamp(_ date: Date, endOfDay: Bool) -> String {
+        QuotaHistory.key(for: date) + (endOfDay ? " 23:59:59" : " 00:00:00")
+    }
+
+    public static func aggregationURL(site: String, dates: (start: Date, end: Date), aggregates: String,
+                                      grouping: String? = nil, field: String? = nil, sort: String? = nil, limit: Int? = nil) -> URL? {
+        var components = URLComponents(string: base + "/aggregations")
+        var items = [URLQueryItem(name: "entity", value: "pageview"), URLQueryItem(name: "entity_id", value: site),
+                     URLQueryItem(name: "aggregates", value: aggregates),
+                     URLQueryItem(name: "date_from", value: stamp(dates.start, endOfDay: false)),
+                     URLQueryItem(name: "date_to", value: stamp(dates.end, endOfDay: true))]
+        if let grouping { items.append(URLQueryItem(name: "date_grouping", value: grouping)) }
+        if let field { items.append(URLQueryItem(name: "field_grouping", value: field)) }
+        if let sort { items.append(URLQueryItem(name: "sort_by", value: sort)) }
+        if let limit { items.append(URLQueryItem(name: "limit", value: String(limit))) }
+        components?.queryItems = items
+        return components?.url
+    }
+
+    public static func currentURL(site: String) -> URL? {
+        var components = URLComponents(string: base + "/current_visitors")
+        components?.queryItems = [URLQueryItem(name: "site_id", value: site)]
+        return components?.url
+    }
+
+    static func objects(_ data: Data) -> [[String: Any]] {
+        (try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]] ?? []
+    }
+
+    public static func parseTotals(_ data: Data, into report: inout AnalyticsReport) -> Bool {
+        guard let row = objects(data).first, let uniques = DataFast.number(row["uniques"]) else { return false }
+        report.visitors = uniques
+        report.pageviews = DataFast.number(row["pageviews"]) ?? 0
+        if var bounce = DataFast.number(row["bounce_rate"]) {
+            if bounce > 1 { bounce /= 100 }
+            report.bounceRate = bounce
+        }
+        report.sessionSeconds = DataFast.number(row["avg_duration"])
+        return true
+    }
+
+    public static func parseUniques(_ data: Data) -> Double? {
+        objects(data).first.flatMap { DataFast.number($0["uniques"]) }
+    }
+
+    public static func parseSeries(_ data: Data) -> [Double] {
+        objects(data).map { DataFast.number($0["uniques"]) ?? 0 }
+    }
+
+    public static func parseRows(_ data: Data, field: String) -> [AnalyticsReport.Row] {
+        objects(data).map { row in
+            let label = (row[field] as? String) ?? ""
+            return AnalyticsReport.Row(label: label.isEmpty ? "Direct/None" : label, value: DataFast.number(row["uniques"]) ?? 0)
+        }
+    }
+
+    public static func parseCurrent(_ data: Data) -> Int? {
+        ((try? JSONSerialization.jsonObject(with: data)) as? [String: Any]).flatMap { DataFast.number($0["total"]) }.map { Int($0) }
     }
 }

@@ -62,7 +62,10 @@ struct IslandView: View {
         ZStack(alignment: .top) {
             if state.isExpanded {
                 IslandShellView(hub: hub, settings: settings, model: model, state: state,
-                                openSettings: openSettings, addAccount: addAccount)
+                                openSettings: openSettings, addAccount: addAccount) {
+                    state.isPinned = false
+                    state.isExpanded = false
+                }
                     .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .top)))
             } else if let event {
                 EventView(event: event, state: state, playful: settings.playful)
@@ -70,7 +73,7 @@ struct IslandView: View {
                     .transition(.asymmetric(insertion: .opacity.combined(with: .offset(y: 4)).animation(.easeOut(duration: 0.2).delay(0.08)),
                                             removal: .opacity))
             } else if closed.mode != .ai {
-                ClosedNotchView(mode: closed.mode, hub: hub, music: hub.music, timers: hub.timers, state: state)
+                ClosedNotchView(mode: closed.mode, hub: hub, music: hub.music, timers: hub.timers, scratch: hub.scratch, state: state)
             } else if state.isEmpty {
                 EmptyCompactView(state: state)
                     .transition(.opacity)
@@ -136,6 +139,14 @@ struct IslandView: View {
                 closed.dismissNotice()
             } else if closed.mode == .timer {
                 settings.selectedTab = .timers
+            } else if closed.mode == .scratch {
+                settings.selectedTab = .scratchpad
+            } else if closed.mode == .clock {
+                settings.selectedTab = .clocks
+            } else if closed.mode == .weather {
+                settings.selectedTab = .weather
+            } else if closed.mode == .event {
+                settings.selectedTab = .calendar
             }
             // A click opens it for good: it stays until Esc or a click elsewhere.
             state.isPinned = true
@@ -270,11 +281,8 @@ struct ToolGlyph: View {
 
     private var animated: Bool { playful && !reduceMotion }
 
-    /// Cursor's mark and custom tools are near-white; on a light island they turn dark.
-    private var tint: Color {
-        if !theme.isDark, [.cursor, .customLogs, .customEndpoint].contains(kind) { return Color(white: 0.23) }
-        return kind.tint
-    }
+    /// Logos are monochrome: the island's foreground, so colour is left for attention.
+    private var tint: Color { theme.fg.opacity(0.92) }
 
     var body: some View {
         mark

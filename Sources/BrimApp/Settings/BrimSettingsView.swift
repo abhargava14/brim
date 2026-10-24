@@ -227,8 +227,17 @@ struct GeneralPage: View {
                 SettingsRow(title: "Launch at login", divider: false) {
                     IslandSwitch(isOn: Binding(get: { launchAtLogin }, set: setLaunch), label: "Launch at login")
                 }
-                SettingsRow(title: "Open the island", sub: "Hover waits 120 ms, so passing the cursor over the notch does nothing") {
+                SettingsRow(title: "Open the island", sub: "Hover opens it after a short pause; Click waits for a click") {
                     SegmentedPills(options: [(true, "Hover"), (false, "Click")], selection: $settings.expandOnHover, look: .strong, height: 24)
+                }
+                if settings.expandOnHover {
+                    SettingsRow(title: "Hover delay", sub: "How long the pointer rests on the notch before it opens") {
+                        SegmentedPills(options: [(0.0, "Instant"), (120.0, "Short"), (300.0, "Medium"), (600.0, "Long")],
+                                       selection: $settings.hoverDelay, look: .strong, height: 24)
+                    }
+                }
+                SettingsRow(title: "Haptic feedback", sub: "A light tap on the trackpad when the island opens or you switch tabs") {
+                    IslandSwitch(isOn: $settings.haptics, label: "Haptic feedback")
                 }
                 SettingsRow(title: "Show on") {
                     SegmentedPills(options: IslandDisplay.allCases.map { ($0, $0.title) }, selection: $settings.display, look: .strong, height: 24)
@@ -379,7 +388,7 @@ struct NotchPage: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            SettingsGroup(title: "Rotates through") {
+            SettingsGroup(title: "Resting view, rotates through") {
                 SettingsRow(title: "Now playing", sub: "Song and time left", divider: false) {
                     IslandSwitch(isOn: $settings.closedMusic, label: "Now playing")
                 }
@@ -388,6 +397,18 @@ struct NotchPage: View {
                 }
                 SettingsRow(title: "AI limits", sub: "Two accounts at a time, highest usage first") {
                     IslandSwitch(isOn: $settings.closedAI, label: "AI limits")
+                }
+                SettingsRow(title: "Next event", sub: "Today's next meeting and how long until it starts") {
+                    IslandSwitch(isOn: $settings.closedEvent, label: "Next event")
+                }
+                SettingsRow(title: "Weather", sub: "Temperature and conditions") {
+                    IslandSwitch(isOn: $settings.closedWeather, label: "Weather")
+                }
+                SettingsRow(title: "Clock", sub: "Your time, plus your first city from Clocks") {
+                    IslandSwitch(isOn: $settings.closedClock, label: "Clock")
+                }
+                SettingsRow(title: "Switch every", sub: "How long each item stays before the next") {
+                    SegmentedPills(options: [(5.0, "5s"), (8.0, "8s"), (15.0, "15s"), (30.0, "30s")], selection: $settings.closedRotation, look: .strong)
                 }
             }
             SettingsGroup(title: "Interrupts with") {
