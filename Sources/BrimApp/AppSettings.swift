@@ -260,6 +260,11 @@ final class AppSettings: ObservableObject {
     @Published var interruptTimerDone: Bool { didSet { defaults.set(interruptTimerDone, forKey: "interruptTimerDone") } }
     @Published var interruptEvents: Bool { didSet { defaults.set(interruptEvents, forKey: "interruptEvents") } }
 
+    /// Look for a new Brim once a day.
+    @Published var autoCheckUpdates: Bool { didSet { defaults.set(autoCheckUpdates, forKey: "autoCheckUpdates") } }
+    /// A version the user chose to skip; newer ones still show.
+    @Published var skippedVersion: String { didSet { defaults.set(skippedVersion, forKey: "skippedVersion") } }
+
     private static let keys = ["showIsland", "placement", "hideInFullScreen", "showInMenuBar", "compactMetric",
                                "expandOnHover", "playful", "pinnedID", "refreshSeconds", "didOnboard",
                                "emptyIsland", "showAccountEmails", "placementMovedForCrowding", "claudeCardStyle",
@@ -303,6 +308,8 @@ final class AppSettings: ObservableObject {
         interruptAccounts = defaults.object(forKey: "interruptAccounts") as? Bool ?? true
         interruptTimerDone = defaults.object(forKey: "interruptTimerDone") as? Bool ?? true
         interruptEvents = defaults.object(forKey: "interruptEvents") as? Bool ?? false
+        autoCheckUpdates = defaults.object(forKey: "autoCheckUpdates") as? Bool ?? true
+        skippedVersion = defaults.string(forKey: "skippedVersion") ?? ""
         isReady = true
         save()
     }

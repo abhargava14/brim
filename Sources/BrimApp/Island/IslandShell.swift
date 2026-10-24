@@ -24,6 +24,7 @@ final class BrimHub: ObservableObject {
     let launcher = LauncherService()
     let analytics = AnalyticsService()
     let currency = CurrencyService()
+    let updates = UpdateWatcher()
     let closed = ClosedNotchState()
     /// The Connections group Settings should open on next time.
     var pendingGroup: ConnectionGroup?
@@ -37,7 +38,15 @@ final class BrimHub: ObservableObject {
         Notifier.status { [weak self] status in
             self?.notificationsAllowed = status.map { $0 == .authorized || $0 == .provisional }
         }
-        defer { closed.start(self) }
+        defer {
+            closed.start(self)
+            updates.onFound = { [weak self] update in
+                self?.closed.push(.init(id: ClosedNotchState.updateNoticePrefix + update.version, symbol: "arrow.down.circle.fill",
+                                        tint: Palette.green, title: "Brim \(update.version)", detail: "update ready",
+                                        tab: .home, until: Date().addingTimeInterval(8)))
+            }
+            updates.start(settings)
+        }
         if AppSettings.isSnapshot {
             music.loadSample()
             calendar.loadSamples()

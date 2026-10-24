@@ -127,7 +127,11 @@ struct IslandView: View {
         .onTapGesture {
             guard !state.isExpanded, !state.expansionLocked else { return }
             if model.event != nil { model.dismissEvent() }
-            if let notice {
+            if let notice, notice.id.hasPrefix(ClosedNotchState.updateNoticePrefix), let update = hub.updates.available {
+                closed.dismissNotice()
+                Task { @MainActor in BrimUpdateUI.offer(update, watcher: hub.updates) }
+                return
+            } else if let notice {
                 settings.selectedTab = notice.tab
                 closed.dismissNotice()
             } else if closed.mode == .timer {

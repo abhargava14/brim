@@ -136,7 +136,7 @@ struct BrimSettingsView: View {
         case .connections:
             ConnectionsPage(hub: hub, settings: settings, model: model, group: $group) { adding = $0 }
         case .perms: PermissionsPage(hub: hub)
-        case .about: AboutPage(settings: settings)
+        case .about: AboutPage(settings: settings, updates: hub.updates)
         }
     }
 }
@@ -708,6 +708,7 @@ struct PermissionInfo {
 
 struct AboutPage: View {
     @ObservedObject var settings: AppSettings
+    @ObservedObject var updates: UpdateWatcher
     @State private var copied = false
     @Environment(\.islandTheme) private var theme
 
@@ -725,7 +726,17 @@ struct AboutPage: View {
                 }
             }
             SettingsGroup {
-                SettingsRow(title: "Check for updates", sub: "From GitHub Releases", divider: false) {
+                if let update = updates.available {
+                    SettingsRow(title: "Brim \(update.version) is available", sub: "You have \(BrimVersion.string). Brim quits, installs and reopens.", divider: false) {
+                        IslandButton(title: "Update", style: .tint(Palette.green), height: 26, fontSize: 11.5) {
+                            BrimUpdateUI.offer(update, watcher: updates)
+                        }
+                    }
+                }
+                SettingsRow(title: "Check for updates automatically", sub: lastCheckText, divider: updates.available != nil) {
+                    IslandSwitch(isOn: $settings.autoCheckUpdates, label: "Check for updates automatically")
+                }
+                SettingsRow(title: "Check for updates", sub: "From GitHub Releases") {
                     IslandButton(title: "Check now", height: 26, fontSize: 11.5) {
                         Task { @MainActor in await BrimUpdateUI.check(from: nil) }
                     }
@@ -752,6 +763,11 @@ struct AboutPage: View {
                 .font(.brim(11.5, .medium))
                 .foregroundStyle(theme.f(0.45))
         }
+    }
+
+    private var lastCheckText: String {
+        guard let date = updates.lastCheck else { return "Once a day, from GitHub Releases" }
+        return "Once a day · last checked " + Format.ago(date)
     }
 
     private var diagnostics: String {

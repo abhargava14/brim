@@ -29,6 +29,8 @@ final class ClosedNotchState: ObservableObject {
     }
 
     @Published private(set) var mode: Mode = .ai
+    /// Notices whose ID starts with this offer the update instead of opening a tab.
+    static let updateNoticePrefix = "update-"
     private var notices: [Notice] = []
     private var seenProblems = Set<String>()
     private var seenEvents = Set<String>()

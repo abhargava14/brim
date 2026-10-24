@@ -101,6 +101,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .receive(on: RunLoop.main)
             .sink { [weak self] _, _, _, _ in self?.updateStatusItem() }
             .store(in: &cancellables)
+        hub.updates.$available
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.updateStatusItem() }
+            .store(in: &cancellables)
 
         // The island's right wing stops at this item, so lay it out again whenever the item moves or resizes.
         if let window = item.button?.window {
@@ -159,6 +163,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func buildEmptyMenu() -> NSMenu {
         let menu = NSMenu()
+        addUpdateItem(to: menu)
         let header = NSMenuItem(title: "No AI tools connected.", action: nil, keyEquivalent: "")
         header.isEnabled = false
         menu.addItem(header)
@@ -178,8 +183,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return menu
     }
 
+    /// "Update to Brim X…" at the top of the menu when the daily check found a release.
+    private func addUpdateItem(to menu: NSMenu) {
+        guard let update = hub.updates.available else { return }
+        let item = menuItem("Update to Brim \(update.version)…", action: #selector(offerUpdate), symbol: "arrow.down.circle")
+        item.attributedTitle = NSAttributedString(string: "Update to Brim \(update.version)…",
+                                                  attributes: [.font: NSFont.systemFont(ofSize: NSFont.systemFontSize, weight: .semibold)])
+        menu.addItem(item)
+        menu.addItem(.separator())
+    }
+
+    @objc private func offerUpdate() {
+        guard let update = hub.updates.available else { return }
+        BrimUpdateUI.offer(update, watcher: hub.updates)
+    }
+
     private func buildMenu() -> NSMenu {
         let menu = NSMenu()
+        addUpdateItem(to: menu)
         let tools = model.featuredTools
         let header = NSMenuItem(title: "", action: nil, keyEquivalent: "")
         let title = NSMutableAttributedString(string: "Today  ", attributes: [.foregroundColor: NSColor.secondaryLabelColor])
