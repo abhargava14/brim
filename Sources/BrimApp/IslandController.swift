@@ -171,7 +171,7 @@ final class IslandController {
     /// Status icons come and go; re-measure clearance a few times a minute.
     private var clearanceTimer: Timer?
     private var hotKey: HotKey?
-    /// The drag pasteboard as last seen, so one file drag opens the Shelf only once.
+    /// The drag pasteboard as last seen, so one file drag opens Files only once.
     private var lastDragCount = NSPasteboard(name: .drag).changeCount
 
     init(hub: BrimHub, setup: SetupWindows,
@@ -350,6 +350,7 @@ final class IslandController {
 
     private func expansionChanged(_ expanded: Bool) {
         panel.allowsKey = expanded
+        if expanded { Haptics.tap(settings) }
         if !expanded {
             state.isPinned = false
             if panel.isKeyWindow {
@@ -640,12 +641,12 @@ final class IslandController {
         let margin = state.isExpanded ? Self.expandedHoverMargin : Self.hoverMargin
         let inside = rect.insetBy(dx: -margin, dy: -margin).contains(mouse)
 
-        // Dragging files onto the closed notch opens the Shelf to drop them on.
+        // Dragging files onto the closed notch opens Files to drop them on.
         if inside, !state.isExpanded, !state.expansionLocked, NSEvent.pressedMouseButtons & 1 != 0 {
             let drag = NSPasteboard(name: .drag)
             if drag.changeCount != lastDragCount, drag.types?.contains(.fileURL) == true {
                 lastDragCount = drag.changeCount
-                settings.selectedTab = .shelf
+                settings.selectedTab = .files
                 state.isPinned = true
                 state.isExpanded = true
                 return
@@ -657,7 +658,7 @@ final class IslandController {
             collapseTask = nil
             if !state.isExpanded, !state.expansionLocked, settings.expandOnHover, expandTask == nil {
                 expandTask = Task { [weak self] in
-                    try? await Task.sleep(nanoseconds: 120_000_000)
+                    try? await Task.sleep(nanoseconds: UInt64(max(0, self?.settings.hoverDelay ?? 120) * 1_000_000))
                     guard let self, !Task.isCancelled else { return }
                     self.expandTask = nil
                     guard !self.state.expansionLocked else { return }
@@ -676,5 +677,14 @@ final class IslandController {
                 }
             }
         }
+    }
+}
+
+/// A light tap on Force Touch trackpads, when the user wants it.
+@MainActor
+enum Haptics {
+    static func tap(_ settings: AppSettings?) {
+        guard settings?.haptics ?? false, !AppSettings.isSnapshot else { return }
+        NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
     }
 }

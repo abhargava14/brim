@@ -37,13 +37,18 @@ public struct Note: Codable, Equatable, Identifiable, Sendable {
     public var title: String
     public var body: String
     public var updated: Date
+    /// Pinned notes stay at the top of the list. Optional so older notes files still load.
+    public var pinned: Bool?
 
-    public init(id: String = UUID().uuidString, title: String = "", body: String = "", updated: Date = Date()) {
+    public init(id: String = UUID().uuidString, title: String = "", body: String = "", updated: Date = Date(), pinned: Bool = false) {
         self.id = id
         self.title = title
         self.body = body
         self.updated = updated
+        self.pinned = pinned ? true : nil
     }
+
+    public var isPinned: Bool { pinned ?? false }
 
     public var displayTitle: String {
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -312,4 +317,74 @@ public enum Clock {
         let minutes = Int(seconds / 60)
         return minutes >= 60 ? "\(minutes / 60)h \(minutes % 60)m" : "\(minutes)m"
     }
+}
+
+// MARK: - Web search
+
+/// A search engine: a URL template with `%s` where the words go, and a short keyword.
+public struct SearchEngine: Codable, Equatable, Identifiable, Sendable {
+    public var id: String
+    public var name: String
+    public var template: String
+    /// Typing "yt cats" searches YouTube for "cats".
+    public var keyword: String
+    public var builtIn: Bool
+
+    public init(id: String = UUID().uuidString, name: String, template: String, keyword: String, builtIn: Bool = false) {
+        self.id = id
+        self.name = name
+        self.template = template
+        self.keyword = keyword.lowercased()
+        self.builtIn = builtIn
+    }
+
+    /// The search URL for these words, or nil if the template isn't a valid URL.
+    public func url(for terms: String) -> URL? {
+        let encoded = terms.addingPercentEncoding(withAllowedCharacters: .urlQueryValueAllowed) ?? terms
+        return URL(string: template.replacingOccurrences(of: "%s", with: encoded))
+    }
+
+    /// A template is usable when it's an http(s) URL with a `%s`.
+    public static func isValid(_ template: String) -> Bool {
+        let trimmed = template.trimmingCharacters(in: .whitespaces)
+        guard trimmed.contains("%s"), let url = URL(string: trimmed.replacingOccurrences(of: "%s", with: "x")),
+              let scheme = url.scheme?.lowercased(), scheme == "https" || scheme == "http", url.host != nil else { return false }
+        return true
+    }
+}
+
+public enum SearchEngines {
+    public static let builtIn: [SearchEngine] = [
+        SearchEngine(id: "google", name: "Google", template: "https://www.google.com/search?q=%s", keyword: "g", builtIn: true),
+        SearchEngine(id: "duckduckgo", name: "DuckDuckGo", template: "https://duckduckgo.com/?q=%s", keyword: "d", builtIn: true),
+        SearchEngine(id: "perplexity", name: "Perplexity", template: "https://www.perplexity.ai/search?q=%s", keyword: "p", builtIn: true),
+        SearchEngine(id: "chatgpt", name: "ChatGPT", template: "https://chatgpt.com/?q=%s", keyword: "c", builtIn: true),
+        SearchEngine(id: "claude", name: "Claude", template: "https://claude.ai/new?q=%s", keyword: "cl", builtIn: true),
+        SearchEngine(id: "youtube", name: "YouTube", template: "https://www.youtube.com/results?search_query=%s", keyword: "yt", builtIn: true),
+        SearchEngine(id: "github", name: "GitHub", template: "https://github.com/search?q=%s", keyword: "gh", builtIn: true),
+        SearchEngine(id: "brave", name: "Brave", template: "https://search.brave.com/search?q=%s", keyword: "b", builtIn: true),
+        SearchEngine(id: "kagi", name: "Kagi", template: "https://kagi.com/search?q=%s", keyword: "k", builtIn: true),
+        SearchEngine(id: "wikipedia", name: "Wikipedia", template: "https://en.wikipedia.org/w/index.php?search=%s", keyword: "w", builtIn: true),
+    ]
+
+    /// Splits "yt lofi beats" into YouTube + "lofi beats". A leading "!" works too ("!gh brim").
+    /// Without a known keyword the whole text goes to `fallback`.
+    public static func resolve(_ text: String, engines: [SearchEngine], fallback: SearchEngine) -> (engine: SearchEngine, terms: String) {
+        let trimmed = text.trimmingCharacters(in: .whitespaces)
+        guard let space = trimmed.firstIndex(of: " ") else { return (fallback, trimmed) }
+        var word = String(trimmed[..<space]).lowercased()
+        if word.hasPrefix("!") { word.removeFirst() }
+        let rest = trimmed[space...].trimmingCharacters(in: .whitespaces)
+        guard !rest.isEmpty, let engine = engines.first(where: { $0.keyword == word }) else { return (fallback, trimmed) }
+        return (engine, rest)
+    }
+}
+
+extension CharacterSet {
+    /// Characters left as they are inside a query value (so "&", "=", "+" and "#" get encoded).
+    static let urlQueryValueAllowed: CharacterSet = {
+        var set = CharacterSet.urlQueryAllowed
+        set.remove(charactersIn: "&=+#?")
+        return set
+    }()
 }

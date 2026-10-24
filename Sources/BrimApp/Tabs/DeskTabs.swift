@@ -61,7 +61,7 @@ struct ScreenTimeTabView: View {
                             if sub == .today {
                                 let delta = today.total - yesterday.total
                                 Text(yesterday.total > 0 ? "\(Clock.hm(abs(delta))) \(delta <= 0 ? "less" : "more") than yesterday" : "first day")
-                                    .font(.brim(12)).foregroundStyle(delta <= 0 ? Palette.green : theme.f(0.5))
+                                    .font(.brim(12)).foregroundStyle(theme.f(0.5))
                             } else {
                                 Text("avg \(Clock.hm(total / 7)) a day").font(.brim(12)).foregroundStyle(theme.f(0.5))
                             }
@@ -167,7 +167,7 @@ struct ClipboardTabView: View {
             Image(systemName: item.symbol).font(.system(size: 11, weight: .semibold)).frame(width: 16).opacity(0.6)
             Text(item.text.replacingOccurrences(of: "\n", with: " ")).font(.brim(12.5, .bold)).lineLimit(1)
             Spacer(minLength: 6)
-            if item.pinned { Image(systemName: "pin.fill").font(.system(size: 9)).foregroundStyle(Palette.amber) }
+            if item.pinned { Image(systemName: "pin.fill").font(.system(size: 9)).foregroundStyle(theme.f(0.7)) }
             Text(Format.ago(item.date)).font(.brim(10.5, .bold)).foregroundStyle(theme.f(0.4)).fixedSize()
         }
         .padding(.horizontal, 10)
@@ -223,31 +223,67 @@ struct ClipboardTabView: View {
     }
 }
 
-// MARK: - Shelf
+// MARK: - Files
 
-/// Shelf: drop files in to keep them handy, drag them out anywhere else.
-struct ShelfTabView: View {
-    @ObservedObject var shelf: ShelfService
+/// Files: drop images (here or on the closed notch), pick a format, convert. New files land next to
+/// the originals, which stay as they are, and can be dragged straight out.
+struct FilesTabView: View {
+    @ObservedObject var converter: ConvertService
     @State private var targeted = false
     @Environment(\.islandTheme) private var theme
 
     var body: some View {
-        VStack(spacing: 10) {
-            if shelf.files.isEmpty {
-                dropZone(big: true)
-            } else {
-                HStack {
-                    Text("\(shelf.files.count) file\(shelf.files.count == 1 ? "" : "s") on the shelf").font(.brim(12.5))
+        HStack(spacing: 10) {
+            filesPanel
+            convertPanel.frame(width: 470)
+        }
+    }
+
+    // MARK: Queue
+
+    private var filesPanel: some View {
+        IslandCard(padding: EdgeInsets(top: 12, leading: 10, bottom: 10, trailing: 10)) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 6) {
+                    Image(systemName: "square.stack.3d.up").font(.system(size: 11, weight: .semibold)).opacity(0.6)
+                    SectionTitle(title: "Files").fixedSize()
                     Spacer()
-                    IslandButton(title: "AirDrop", height: 28, fontSize: 11.5, symbol: "airplayaudio") { shelf.airDrop(shelf.files) }
-                    IslandButton(title: "Show in Finder", height: 28, fontSize: 11.5) { shelf.reveal(shelf.files) }
-                    IslandButton(title: "Clear", height: 28, fontSize: 11.5) { shelf.clear() }
+                    if converter.queuedBytes > 0 {
+                        Text(Bytes.format(Double(converter.queuedBytes))).font(.brim(11, .bold)).foregroundStyle(theme.f(0.45))
+                    }
+                    IconButton(symbol: "plus", help: "Add images", size: 24) { choose() }
+                    if !converter.queue.isEmpty {
+                        IconButton(symbol: "xmark", help: "Clear", size: 24) { converter.clear() }
+                    }
                 }
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 6), spacing: 8) {
-                    ForEach(shelf.files, id: \.self) { url in tile(url) }
+                .padding(.horizontal, 4)
+                if converter.queue.isEmpty && converter.results.isEmpty {
+                    dropZone
+                } else {
+                    IslandScroll {
+                        VStack(spacing: 4) {
+                            ForEach(converter.queue, id: \.self) { url in
+                                fileRow(url, detail: ImageConverter.size(url) > 0 ? Bytes.format(Double(ImageConverter.size(url))) : url.pathExtension.uppercased()) { converter.remove(url) }
+                            }
+                            if !converter.results.isEmpty {
+                                HStack {
+                                    SectionTitle(title: "Converted", aside: "drag out or reveal")
+                                    Text("Clear").font(.brim(11, .bold)).foregroundStyle(theme.f(0.45))
+                                        .onTapGesture { converter.clearResults() }
+                                        .accessibilityAddTraits(.isButton)
+                                }
+                                .padding(.horizontal, 6)
+                                .padding(.top, 8)
+                                ForEach(converter.results) { result in resultRow(result) }
+                            }
+                        }
+                    }
                 }
-                Spacer(minLength: 0)
-                dropZone(big: false)
+            }
+        }
+        .overlay {
+            if targeted {
+                RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(theme.f(0.6), style: StrokeStyle(lineWidth: 1.5, dash: [5, 4]))
             }
         }
         .fileDrop(isTargeted: $targeted) { providers in
@@ -256,135 +292,125 @@ struct ShelfTabView: View {
         }
     }
 
-    private func dropZone(big: Bool) -> some View {
+    private var dropZone: some View {
         VStack(spacing: 8) {
-            Image(systemName: "tray.and.arrow.down").font(.system(size: big ? 26 : 15, weight: .semibold))
-            Text(big ? "Drop files here" : "Drop more files").font(.brim(big ? 16 : 12.5))
-            if big {
-                Text("They stay on the shelf until you drag them out or clear it. Nothing is copied or moved.")
-                    .font(.brim(12.5, .bold)).foregroundStyle(theme.f(0.55))
-            }
+            Image(systemName: "photo.on.rectangle.angled").font(.system(size: 24, weight: .semibold)).opacity(0.7)
+            Text("Drop images here").font(.brim(15))
+            Text("Or drag them onto the closed notch.").font(.brim(12, .bold)).foregroundStyle(theme.f(0.5))
         }
-        .foregroundStyle(targeted ? theme.fg : theme.f(0.7))
-        .frame(maxWidth: .infinity, maxHeight: big ? .infinity : 52)
-        .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(theme.f(targeted ? 0.12 : 0.05)))
-        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous)
-            .strokeBorder(theme.f(targeted ? 0.6 : 0.25), style: StrokeStyle(lineWidth: 1.5, dash: [5, 4])))
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private func tile(_ url: URL) -> some View {
-        VStack(spacing: 6) {
-            Image(nsImage: NSWorkspace.shared.icon(forFile: url.path)).resizable().frame(width: 48, height: 48)
-            Text(url.lastPathComponent).font(.brim(11, .bold)).lineLimit(2).multilineTextAlignment(.center)
-            Text(Bytes.format(Double(ImageConverter.size(url)))).font(.brim(10, .bold)).foregroundStyle(theme.f(0.4))
-        }
-        .padding(8)
-        .frame(maxWidth: .infinity, minHeight: 116)
-        .hoverFill(14, base: theme.f(0.06), hover: theme.f(0.11))
-        .onDrag { NSItemProvider(contentsOf: url) ?? NSItemProvider() }
-        .onTapGesture(count: 2) { NSWorkspace.shared.open(url) }
-        .contextMenu {
-            Button("Open") { NSWorkspace.shared.open(url) }
-            Button("Show in Finder") { shelf.reveal([url]) }
-            Button("AirDrop") { shelf.airDrop([url]) }
-            Divider()
-            Button("Remove from shelf") { shelf.remove(url) }
-        }
-        .help(url.path)
-    }
-
-    private func load(_ providers: [NSItemProvider]) {
-        for provider in providers {
-            _ = provider.loadObject(ofClass: URL.self) { url, _ in
-                guard let url else { return }
-                Task { @MainActor in shelf.add([url]) }
-            }
-        }
-    }
-}
-
-// MARK: - Files
-
-/// Files: drop images to convert and shrink them to JPEG, PNG, HEIC or a PDF.
-struct FilesTabView: View {
-    @State private var format: ImageConverter.Format = .jpeg
-    @State private var quality = 0.8
-    @State private var maxSide = 0
-    @State private var results: [ImageConverter.Result] = []
-    @State private var targeted = false
-    @State private var working = false
-    @Environment(\.islandTheme) private var theme
-
-    var body: some View {
+    private func fileRow(_ url: URL, detail: String, remove: @escaping () -> Void) -> some View {
         HStack(spacing: 10) {
-            VStack(spacing: 10) {
-                VStack(spacing: 8) {
-                    if working {
-                        Spinner(size: 22, line: 3)
-                        Text("Converting…").font(.brim(14))
-                    } else {
-                        Image(systemName: "wand.and.stars").font(.system(size: 26, weight: .semibold)).foregroundStyle(Palette.purple)
-                        Text("Drop images to convert").font(.brim(16))
-                        Text("New files go next to the originals, which stay as they are.").font(.brim(12.5, .bold)).foregroundStyle(theme.f(0.55))
-                        IslandButton(title: "Choose images…", height: 30) { choose() }.padding(.top, 4)
-                    }
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(theme.f(targeted ? 0.12 : 0.05)))
-                .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .strokeBorder(theme.f(targeted ? 0.6 : 0.25), style: StrokeStyle(lineWidth: 1.5, dash: [5, 4])))
-                .fileDrop(isTargeted: $targeted) { providers in
-                    collect(providers)
-                    return true
-                }
-                if !results.isEmpty {
-                    IslandCard(padding: EdgeInsets(top: 10, leading: 12, bottom: 8, trailing: 12)) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            SectionTitle(title: "Done", aside: "before → after").padding(.horizontal, 4).padding(.bottom, 4)
-                            ForEach(results.prefix(3)) { result in
-                                HStack(spacing: 8) {
-                                    Image(systemName: result.error == nil ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
-                                        .foregroundStyle(result.error == nil ? Palette.green : Palette.amber)
-                                    Text(result.output?.lastPathComponent ?? result.source.lastPathComponent).font(.brim(12, .bold)).lineLimit(1)
-                                    Spacer()
-                                    Text(result.error ?? "\(Bytes.format(Double(result.before))) → \(Bytes.format(Double(result.after)))")
-                                        .font(.brim(11.5)).foregroundStyle(theme.f(0.6))
-                                    if let output = result.output {
-                                        Image(systemName: "magnifyingglass")
-                                            .font(.system(size: 10, weight: .bold))
-                                            .frame(width: 20, height: 20)
-                                            .hoverFill(10, hover: theme.f(0.1))
-                                            .onTapGesture { NSWorkspace.shared.activateFileViewerSelecting([output]) }
-                                            .accessibilityLabel("Show in Finder")
-                                    }
-                                }
-                                .frame(height: 24)
-                            }
-                        }
-                    }
-                    .fixedSize(horizontal: false, vertical: true)
-                }
+            Image(nsImage: NSWorkspace.shared.icon(forFile: url.path)).resizable().frame(width: 32, height: 32)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(url.lastPathComponent).font(.brim(12.5, .bold)).lineLimit(1).truncationMode(.middle)
+                Text(detail).font(.brim(11, .bold)).foregroundStyle(theme.f(0.45))
             }
-            IslandCard {
-                VStack(alignment: .leading, spacing: 12) {
+            Spacer(minLength: 4)
+            Image(systemName: "minus")
+                .font(.system(size: 10, weight: .bold))
+                .frame(width: 22, height: 22)
+                .background(Circle().fill(theme.f(0.1)))
+                .onTapGesture(perform: remove)
+                .accessibilityLabel("Remove \(url.lastPathComponent)")
+                .accessibilityAddTraits(.isButton)
+        }
+        .padding(.horizontal, 8)
+        .frame(height: 44)
+        .background(RoundedRectangle(cornerRadius: 12).fill(theme.f(0.05)))
+    }
+
+    private func resultRow(_ result: ImageConverter.Result) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: result.error == nil ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                .foregroundStyle(result.error == nil ? Palette.green : Palette.amber)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(result.output?.lastPathComponent ?? result.source.lastPathComponent).font(.brim(12.5, .bold)).lineLimit(1).truncationMode(.middle)
+                Text(result.error ?? "\(Bytes.format(Double(result.before))) → \(Bytes.format(Double(result.after)))\(Self.saving(result))")
+                    .font(.brim(11, .bold)).foregroundStyle(theme.f(0.5))
+            }
+            Spacer(minLength: 4)
+            if let output = result.output {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 10, weight: .bold))
+                    .frame(width: 22, height: 22)
+                    .hoverFill(11, hover: theme.f(0.1))
+                    .onTapGesture { NSWorkspace.shared.activateFileViewerSelecting([output]) }
+                    .help("Show in Finder")
+                    .accessibilityLabel("Show in Finder")
+            }
+        }
+        .padding(.horizontal, 8)
+        .frame(height: 44)
+        .background(RoundedRectangle(cornerRadius: 12).fill(theme.f(0.05)))
+        .onDrag { result.output.flatMap { NSItemProvider(contentsOf: $0) } ?? NSItemProvider() }
+    }
+
+    static func saving(_ result: ImageConverter.Result) -> String {
+        guard result.before > 0, result.after > 0, result.after < result.before else { return "" }
+        return " · \(Int((1 - Double(result.after) / Double(result.before)) * 100))% smaller"
+    }
+
+    // MARK: Convert
+
+    private var convertPanel: some View {
+        IslandCard(padding: EdgeInsets(top: 12, leading: 14, bottom: 12, trailing: 14)) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 6) {
+                    Image(systemName: "arrow.triangle.2.circlepath").font(.system(size: 11, weight: .semibold)).opacity(0.6)
                     SectionTitle(title: "Convert to")
-                    SegmentedPills(options: ImageConverter.Format.allCases.map { ($0, $0.title) }, selection: $format, look: .strong)
-                    if format == .jpeg || format == .heic {
-                        HStack {
-                            Text("Quality").font(.brim(12.5, .bold)).foregroundStyle(theme.f(0.7))
-                            Spacer()
-                            Text("\(Int(quality * 100))%").font(.brim(12.5))
+                }
+                HStack(spacing: 8) {
+                    ForEach(ImageConverter.Format.allCases) { format in
+                        let on = format == converter.format
+                        VStack(spacing: 8) {
+                            Image(systemName: Self.symbol(format)).font(.system(size: 18, weight: .semibold))
+                            Text(format.title).font(.brim(12))
                         }
-                        IslandSlider(value: $quality, range: 0.3...1, label: "Quality")
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 76)
+                        .foregroundStyle(on ? theme.bg : theme.fg)
+                        .hoverFill(14, base: on ? theme.fg : theme.f(0.07), hover: on ? theme.fg : theme.f(0.12))
+                        .onTapGesture { converter.format = format }
+                        .accessibilityLabel(format.title)
+                        .accessibilityAddTraits(on ? [.isButton, .isSelected] : .isButton)
                     }
-                    SectionTitle(title: "Longest side").padding(.top, 4)
-                    SegmentedPills(options: [(0, "Original"), (3000, "3000"), (1600, "1600"), (800, "800")], selection: $maxSide, height: 24)
-                    Spacer(minLength: 0)
-                    Text("HEIC keeps photos small with little loss. PDF puts every dropped image on its own page.")
-                        .font(.brim(11.5, .bold)).foregroundStyle(theme.f(0.45)).fixedSize(horizontal: false, vertical: true)
+                }
+                if converter.format == .jpeg || converter.format == .heic {
+                    HStack(spacing: 12) {
+                        Text("QUALITY").font(.brim(10)).kerning(1.2).foregroundStyle(theme.f(0.45)).frame(width: 70, alignment: .leading)
+                        IslandSlider(value: $converter.quality, range: 0.3...1, label: "Quality")
+                        Text("\(Int(converter.quality * 100))%").font(.brim(12)).frame(width: 36, alignment: .trailing)
+                    }
+                }
+                HStack(spacing: 12) {
+                    Text("MAX SIZE").font(.brim(10)).kerning(1.2).foregroundStyle(theme.f(0.45)).frame(width: 70, alignment: .leading)
+                    SegmentedPills(options: [(0, "Original"), (1024, "1,024px"), (1920, "1,920px"), (2560, "2,560px")],
+                                   selection: $converter.maxSide, look: .strong, height: 24)
+                }
+                Text("macOS reads WebP but can't write it. HEIC is usually smallest; JPEG is the safe choice for the web. PDF puts each image on its own page.")
+                    .font(.brim(11.5, .bold)).foregroundStyle(theme.f(0.45)).fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+                HStack {
+                    if converter.working { Spinner(size: 12); Text("Converting…").font(.brim(12, .bold)) }
+                    Spacer()
+                    IslandButton(title: converter.queue.isEmpty ? "Add images to convert" : "Convert \(converter.queue.count) to \(converter.format.title)",
+                                 style: converter.queue.isEmpty ? .secondary : .primary, height: 32, fontSize: 12.5) {
+                        if converter.queue.isEmpty { choose() } else { converter.convert() }
+                    }
                 }
             }
-            .frame(width: 320)
+        }
+    }
+
+    static func symbol(_ format: ImageConverter.Format) -> String {
+        switch format {
+        case .jpeg: return "photo"
+        case .png: return "photo.on.rectangle"
+        case .heic: return "photo.stack"
+        case .pdf: return "doc.richtext"
         }
     }
 
@@ -393,32 +419,14 @@ struct FilesTabView: View {
         panel.allowedContentTypes = [.image]
         panel.allowsMultipleSelection = true
         NSApp.activate(ignoringOtherApps: true)
-        if panel.runModal() == .OK { convert(panel.urls) }
+        if panel.runModal() == .OK { converter.add(panel.urls) }
     }
 
-    private func collect(_ providers: [NSItemProvider]) {
-        var urls: [URL] = []
-        let group = DispatchGroup()
-        let lock = NSLock()
+    private func load(_ providers: [NSItemProvider]) {
         for provider in providers {
-            group.enter()
             _ = provider.loadObject(ofClass: URL.self) { url, _ in
-                if let url { lock.lock(); urls.append(url); lock.unlock() }
-                group.leave()
-            }
-        }
-        group.notify(queue: .main) { convert(urls) }
-    }
-
-    private func convert(_ urls: [URL]) {
-        guard !urls.isEmpty else { return }
-        working = true
-        let format = self.format, quality = self.quality, maxSide = self.maxSide
-        Task.detached {
-            let done = ImageConverter.convert(urls, to: format, quality: quality, maxSide: maxSide)
-            await MainActor.run {
-                results = done + results
-                working = false
+                guard let url else { return }
+                Task { @MainActor in converter.add([url]) }
             }
         }
     }

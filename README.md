@@ -10,8 +10,8 @@ Brim is a small, free, open-source Mac app. The closed notch quietly shows what 
 Brim used to be called AI Island. Updating moves your connections, saved tokens, settings and
 the Claude Code status line over on first launch, and the old `ai-island` command still works.
 
-- **Sixteen tabs, pick your own.** Home, AI, Analytics, Notes, Calendar, Timers, Stats, Screen
-  Time, Weather, Links, Sounds, Scratchpad, Shelf, Clipboard, Files and Units.
+- **Fifteen tabs, pick your own.** Home, AI, Analytics, Notes, Calendar, Timers, Stats, Screen
+  Time, Weather, Links, Sounds, Scratchpad, Clipboard, Files and Units.
   Eight show by default; the rest wait under the grid button. Reorder and hide them in Settings.
 - **AI usage, still first class.** Claude Code, Codex, GitHub Copilot, Cursor, Windsurf,
   OpenRouter, and anything else that writes logs or reports usage at a URL. As many accounts as
@@ -243,7 +243,7 @@ brim add claude --name "Claude · Work" --path ~/work/.claude/projects
 | Glance at the notch | It rotates between the song playing and your AI limits. A running timer takes over |
 | Hover over the notch, or press ⌥ Space | It opens to the tab you used last. Click a tab to switch; the grid button lists every tab |
 | Click into a text field (notes, links, reminders) | The island stays open while you type. Esc or a click elsewhere closes it |
-| Drag a file onto the notch | It opens on the Shelf, ready for the drop |
+| Drag images onto the notch | It opens Files with them queued to convert |
 | Click the gear | Settings: General, Tabs, Closed notch, Connections, Permissions and About |
 
 **The tabs**
@@ -261,7 +261,7 @@ brim add claude --name "Claude · Work" --path ~/work/.claude/projects
 | Weather | Now, the next hours and seven days, from Open-Meteo | Location, or a city you pick |
 | Links | Search the web or your saved sites, in folders | Nothing |
 | Sounds | Rain, ocean, stream, wind, fireplace, thunder and noise, layered, with a fade-out timer | Nothing |
-| Shelf, Files | Park files and drag them out; convert and shrink images to JPEG, PNG, HEIC or PDF | Nothing |
+| Files | Convert and shrink images to JPEG, PNG, HEIC or PDF, then drag the results out | Nothing |
 | Clipboard | A searchable history of what you copy, with pins (off until you turn it on) | Nothing |
 | Units | Units and currencies: "5 km to mi", "100 usd to inr". Exchange rates from the European Central Bank via Frankfurter, refreshed daily | Nothing |
 
@@ -354,7 +354,7 @@ safely).
 - **No account, no analytics, no tracking.** Brim asks for a macOS permission only when you use
   the tab that needs it, and Settings → Permissions shows what's allowed.
 - **Stays on your Mac:** notes, scratchpad, links, timers, screen time (app names and minutes
-  only, never window titles), shelf and pinned clipboard items live in
+  only, never window titles), and pinned clipboard items live in
   `~/Library/Application Support/Brim/`. Clipboard history is kept in memory only, is off until
   you turn it on, and skips anything password managers mark as concealed or transient.
 - **Calendar and reminders** are read through macOS (EventKit). Brim never sees your Google or

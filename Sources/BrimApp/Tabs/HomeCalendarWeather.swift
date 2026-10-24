@@ -85,8 +85,8 @@ struct HomeTabView: View {
                                 Image(nsImage: art).resizable().scaledToFill()
                             } else {
                                 ZStack {
-                                    Color(red: 0.75, green: 0.36, blue: 0.29)
-                                    Image(systemName: "music.note").font(.system(size: 26, weight: .semibold)).foregroundStyle(.white.opacity(0.85))
+                                    theme.f(0.12)
+                                    Image(systemName: "music.note").font(.system(size: 26, weight: .semibold)).foregroundStyle(theme.f(0.6))
                                 }
                             }
                         }
@@ -142,7 +142,7 @@ struct HomeTabView: View {
                             .font(.brim(12, .bold)).foregroundStyle(theme.f(0.55)).fixedSize(horizontal: false, vertical: true)
                         HStack(spacing: 6) {
                             if NowPlaying.installed(.spotify) {
-                                IslandButton(title: "Open Spotify", style: .tint(Color(red: 0.11, green: 0.73, blue: 0.33))) { open(.spotify) }
+                                IslandButton(title: "Open Spotify", style: .primary) { open(.spotify) }
                             }
                             IslandButton(title: "Open Music") { open(.music) }
                         }
@@ -178,7 +178,7 @@ struct HomeTabView: View {
                 HStack {
                     SectionTitle(title: "Up next")
                     if let next = calendar.nextEvent, calendar.access == .allowed {
-                        Text(next.start > Date() ? When.until(next.start) : "now").font(.brim(11, .bold)).foregroundStyle(Palette.green).fixedSize()
+                        Text(next.start > Date() ? When.until(next.start) : "now").font(.brim(11, .bold)).foregroundStyle(theme.f(0.6)).fixedSize()
                     }
                 }
                 switch calendar.access {
@@ -190,7 +190,7 @@ struct HomeTabView: View {
                                 .font(.brim(12, .bold)).foregroundStyle(theme.f(0.6)).lineLimit(1)
                         }
                         if let meeting = next.meeting {
-                            IslandButton(title: "Join", style: .tint(Palette.green), height: 28) { NSWorkspace.shared.open(meeting) }
+                            IslandButton(title: "Join", style: .primary, height: 28) { NSWorkspace.shared.open(meeting) }
                         }
                         Rectangle().fill(theme.f(0.08)).frame(height: 1)
                         SectionTitle(title: "Later", opacity: 0.45)
@@ -304,7 +304,7 @@ struct HomeTabView: View {
         }
         let state = timers.state
         items.append((.timers, "timer", state.pomodoroRunning ? Clock.mmss(state.pomodoroRemaining(at: timers.now)) : Clock.mmss(state.phaseLength(.focus)),
-                      state.pomodoroRunning ? Palette.coral : nil, state.pomodoroRunning ? "\(state.phase.title) running" : "Start focus"))
+                      nil, state.pomodoroRunning ? "\(state.phase.title) running" : "Start focus"))
         let today = hub.screenTime.log.day(Date()).total
         items.append((.screen, "hourglass", hub.screenTime.enabled ? Clock.hm(today) : "–", nil, "screen time"))
         return items
@@ -320,17 +320,22 @@ extension String {
 
 /// Calendar: a seven-day agenda, and reminders you can tick off or add with Return.
 struct CalendarTabView: View {
-    enum Sub: String { case agenda, reminders }
+    enum Sub: String { case day, week, month, reminders }
 
     @ObservedObject var calendar: CalendarReader
     @State private var sub: Sub
+    /// The day the view is centred on; Today resets it.
+    @State private var anchor = Date()
     @State private var draft = ""
     @Environment(\.islandTheme) private var theme
 
     init(calendar: CalendarReader, sub: String? = nil) {
         self.calendar = calendar
-        _sub = State(initialValue: sub.flatMap(Sub.init(rawValue:)) ?? .agenda)
+        let saved = UserDefaults.standard.string(forKey: "calendarView").flatMap(Sub.init(rawValue:))
+        _sub = State(initialValue: sub.flatMap(Sub.init(rawValue:)) ?? saved ?? .week)
     }
+
+    private var cal: Calendar { Calendar.current }
 
     var body: some View {
         switch calendar.access {
@@ -346,66 +351,352 @@ struct CalendarTabView: View {
                         actions: [.init(title: "Open System Settings") { calendar.openSettings() }],
                         note: "Brim picks up the change as soon as you flip the switch.")
         case .allowed:
-            VStack(spacing: 10) {
-                HStack(spacing: 8) {
-                    SegmentedPills(options: [(Sub.agenda, "Agenda"), (.reminders, "Reminders")], selection: $sub)
-                    Spacer()
-                    ForEach(calendar.accounts.prefix(4)) { account in
-                        HStack(spacing: 6) {
-                            Circle().fill(Color(rgb: account.color)).frame(width: 7, height: 7)
-                            Text(account.name).lineLimit(1)
-                        }
+            VStack(spacing: 8) {
+                header
+                if sub != .reminders { calendarChips }
+                switch sub {
+                case .day: dayView
+                case .week: weekView
+                case .month: monthView
+                case .reminders: reminders
+                }
+            }
+            .onChange(of: sub) { UserDefaults.standard.set($0.rawValue, forKey: "calendarView") }
+        }
+    }
+
+    // MARK: Header
+
+    private var header: some View {
+        HStack(spacing: 8) {
+            SegmentedPills(options: [(Sub.day, "Day"), (.week, "Week"), (.month, "Month"), (.reminders, "Reminders")], selection: $sub)
+            if sub != .reminders {
+                HStack(spacing: 2) {
+                    IconButton(symbol: "chevron.left", help: "Earlier", size: 24) { step(-1) }
+                    Text("Today")
                         .font(.brim(11.5))
                         .padding(.horizontal, 10)
                         .frame(height: 24)
-                        .background(Capsule().fill(theme.f(0.06)))
+                        .background(Capsule().fill(theme.f(cal.isDateInToday(anchor) ? 0.06 : 0.14)))
+                        .onTapGesture { anchor = Date() }
+                        .accessibilityAddTraits(.isButton)
+                    IconButton(symbol: "chevron.right", help: "Later", size: 24) { step(1) }
+                }
+                Text(title).font(.brim(13)).lineLimit(1)
+            }
+            Spacer()
+            Text("Open Calendar")
+                .font(.brim(11.5))
+                .foregroundStyle(theme.f(0.6))
+                .onTapGesture { calendar.openCalendarApp() }
+                .accessibilityAddTraits(.isButton)
+        }
+    }
+
+    private var title: String {
+        let formatter = DateFormatter()
+        switch sub {
+        case .day: formatter.setLocalizedDateFormatFromTemplate("EEEE d MMM")
+        case .week:
+            formatter.setLocalizedDateFormatFromTemplate("d MMM")
+            return "Week of " + formatter.string(from: weekStart)
+        default: formatter.setLocalizedDateFormatFromTemplate("MMMM yyyy")
+        }
+        return formatter.string(from: anchor)
+    }
+
+    private func step(_ direction: Int) {
+        let unit: Calendar.Component = sub == .day ? .day : sub == .week ? .weekOfYear : .month
+        anchor = cal.date(byAdding: unit, value: direction, to: anchor) ?? anchor
+    }
+
+    /// Every calendar as a chip with its colour; tap to show or hide it.
+    private var calendarChips: some View {
+        IslandScroll(axis: .horizontal) {
+            HStack(spacing: 6) {
+                ForEach(calendar.calendars) { info in
+                    let on = !calendar.hidden.contains(info.id)
+                    HStack(spacing: 6) {
+                        Circle()
+                            .strokeBorder(Color(rgb: info.color), lineWidth: 1.5)
+                            .background(Circle().fill(on ? Color(rgb: info.color) : .clear))
+                            .frame(width: 8, height: 8)
+                        Text(info.title).lineLimit(1)
+                        Text(info.account).foregroundStyle(theme.f(0.4)).lineLimit(1)
+                    }
+                    .font(.brim(11.5))
+                    .padding(.horizontal, 10)
+                    .frame(height: 24)
+                    .opacity(on ? 1 : 0.5)
+                    .background(Capsule().fill(theme.f(on ? 0.08 : 0.03)))
+                    .onTapGesture {
+                        if on { calendar.hidden.insert(info.id) } else { calendar.hidden.remove(info.id) }
+                    }
+                    .help(on ? "Hide \(info.title)" : "Show \(info.title)")
+                    .accessibilityLabel("\(info.title), \(info.account)")
+                    .accessibilityValue(on ? "Shown" : "Hidden")
+                    .accessibilityAddTraits(.isButton)
+                }
+            }
+        }
+        .frame(height: 24)
+    }
+
+    // MARK: Day
+
+    private var dayView: some View {
+        let start = cal.startOfDay(for: anchor)
+        let end = cal.date(byAdding: .day, value: 1, to: start)!
+        let events = calendar.events(from: start, to: end)
+        let allDay = events.filter(\.allDay)
+        let timed = events.filter { !$0.allDay }
+        let firstHour = min(timed.map { cal.component(.hour, from: $0.start) }.min() ?? 8, 8)
+        let hourHeight: CGFloat = 34
+        return IslandCard(padding: EdgeInsets(top: 10, leading: 12, bottom: 10, trailing: 12)) {
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(allDay) { event in eventChip(event, compact: false) }
+                if events.isEmpty {
+                    Text("Nothing on \(title).").font(.brim(13, .bold)).foregroundStyle(theme.f(0.45))
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    IslandScroll {
+                        ZStack(alignment: .topLeading) {
+                            VStack(spacing: 0) {
+                                ForEach(firstHour..<24, id: \.self) { hour in
+                                    HStack(alignment: .top, spacing: 8) {
+                                        Text(Self.hourLabel(hour)).font(.brim(10.5, .bold)).foregroundStyle(theme.f(0.4)).frame(width: 44, alignment: .trailing)
+                                        Rectangle().fill(theme.f(0.07)).frame(height: 1).padding(.top, 6)
+                                    }
+                                    .frame(height: hourHeight, alignment: .top)
+                                }
+                            }
+                            ForEach(Self.columns(timed), id: \.event.id) { placed in
+                                GeometryReader { geo in
+                                    let width = (geo.size.width - 56) / CGFloat(placed.of)
+                                    let top = Self.offset(placed.event.start, from: firstHour, cal: cal) * hourHeight + 6
+                                    let height = max(22, Self.offset(placed.event.end, from: firstHour, cal: cal) * hourHeight + 6 - top - 2)
+                                    eventBlock(placed.event)
+                                        .frame(width: width - 4, height: height)
+                                        .offset(x: 56 + CGFloat(placed.column) * width, y: top)
+                                }
+                            }
+                            if cal.isDateInToday(anchor) {
+                                GeometryReader { geo in
+                                    let y = Self.offset(Date(), from: firstHour, cal: cal) * hourHeight + 6
+                                    HStack(spacing: 0) {
+                                        Circle().fill(Palette.red).frame(width: 6, height: 6)
+                                        Rectangle().fill(Palette.red).frame(height: 1)
+                                    }
+                                    .offset(x: 50, y: y - 3)
+                                    .frame(width: geo.size.width - 50)
+                                }
+                            }
+                        }
+                        .frame(height: CGFloat(24 - firstHour) * hourHeight)
                     }
                 }
-                if sub == .agenda { agenda } else { reminders }
             }
         }
     }
 
-    private var agenda: some View {
-        let cal = Calendar.current
-        let today = cal.startOfDay(for: Date())
+    static func hourLabel(_ hour: Int) -> String {
+        let formatter = DateFormatter()
+        formatter.setLocalizedDateFormatFromTemplate("j")
+        return formatter.string(from: Calendar.current.date(bySettingHour: hour, minute: 0, second: 0, of: Date())!)
+    }
+
+    static func offset(_ date: Date, from firstHour: Int, cal: Calendar) -> CGFloat {
+        let parts = cal.dateComponents([.hour, .minute], from: date)
+        return CGFloat((parts.hour ?? 0) - firstHour) + CGFloat(parts.minute ?? 0) / 60
+    }
+
+    /// Side-by-side columns for events that overlap.
+    static func columns(_ events: [CalendarEvent]) -> [(event: CalendarEvent, column: Int, of: Int)] {
+        var placed: [(event: CalendarEvent, column: Int, of: Int)] = []
+        var group: [(CalendarEvent, Int)] = []
+        var groupEnd = Date.distantPast
+        func flush() {
+            let width = (group.map(\.1).max() ?? 0) + 1
+            placed += group.map { ($0.0, $0.1, width) }
+            group = []
+        }
+        for event in events.sorted(by: { $0.start < $1.start }) {
+            if event.start >= groupEnd { flush() }
+            var column = 0
+            while group.contains(where: { $0.1 == column && $0.0.end > event.start }) { column += 1 }
+            group.append((event, column))
+            groupEnd = max(groupEnd, event.end)
+        }
+        flush()
+        return placed
+    }
+
+    private func eventBlock(_ event: CalendarEvent) -> some View {
+        let color = Color(rgb: event.color)
+        let short = event.end.timeIntervalSince(event.start) < 50 * 60
+        return HStack(spacing: 6) {
+            RoundedRectangle(cornerRadius: 2).fill(color).frame(width: 3)
+            if short {
+                Text(event.title).font(.brim(11.5)).lineLimit(1)
+                Text("\(When.time(event.start)) · \(event.calendar)").font(.brim(10.5, .bold)).foregroundStyle(theme.f(0.55)).lineLimit(1)
+            } else {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(event.title).font(.brim(12)).lineLimit(1)
+                    Text("\(When.time(event.start)) · \(event.calendar)").font(.brim(10.5, .bold)).foregroundStyle(theme.f(0.55)).lineLimit(1)
+                }
+            }
+            Spacer(minLength: 0)
+            if let meeting = event.meeting, event.end > Date() {
+                Text("Join").font(.brim(11)).padding(.horizontal, 8).frame(height: 20)
+                    .foregroundStyle(theme.bg).background(Capsule().fill(theme.fg))
+                    .onTapGesture { NSWorkspace.shared.open(meeting) }
+                    .accessibilityAddTraits(.isButton)
+            }
+        }
+        .padding(.vertical, 3)
+        .padding(.trailing, 6)
+        .background(RoundedRectangle(cornerRadius: 7).fill(color.opacity(0.14)))
+        .opacity(event.end < Date() ? 0.55 : 1)
+        .help("\(event.title)\n\(event.calendar) · \(event.account)")
+    }
+
+    private func eventChip(_ event: CalendarEvent, compact: Bool) -> some View {
+        let color = Color(rgb: event.color)
+        return HStack(spacing: 6) {
+            RoundedRectangle(cornerRadius: 2).fill(color).frame(width: 3, height: compact ? 14 : 18)
+            if !compact || !event.allDay {
+                Text(event.allDay ? "All day" : When.time(event.start)).font(.brim(10.5)).foregroundStyle(theme.f(0.55)).fixedSize()
+            }
+            Text(event.title).font(.brim(compact ? 11 : 12)).lineLimit(1)
+            if !compact {
+                Spacer(minLength: 4)
+                Text(event.calendar).font(.brim(10.5, .bold)).foregroundStyle(theme.f(0.45)).lineLimit(1)
+            }
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 3)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 6).fill(color.opacity(compact ? 0 : 0.12)))
+        .opacity(event.end < Date() ? 0.5 : 1)
+        .onTapGesture { if let meeting = event.meeting { NSWorkspace.shared.open(meeting) } }
+        .help("\(event.title)\n\(event.calendar) · \(event.account)")
+    }
+
+    // MARK: Week
+
+    private var weekStart: Date {
+        cal.dateInterval(of: .weekOfYear, for: anchor)?.start ?? cal.startOfDay(for: anchor)
+    }
+
+    private var weekView: some View {
+        let start = weekStart
+        let events = calendar.events(from: start, to: cal.date(byAdding: .day, value: 7, to: start)!)
         let formatter = DateFormatter()
         formatter.setLocalizedDateFormatFromTemplate("EEE")
         return HStack(spacing: 6) {
             ForEach(0..<7, id: \.self) { offset in
-                let day = cal.date(byAdding: .day, value: offset, to: today)!
-                let events = calendar.events.filter { cal.isDate($0.start, inSameDayAs: day) }
-                VStack(alignment: .leading, spacing: 6) {
+                let day = cal.date(byAdding: .day, value: offset, to: start)!
+                let dayEvents = events.filter { cal.isDate($0.start, inSameDayAs: day) || ($0.allDay && $0.start <= day && $0.end > day) }
+                let today = cal.isDateInToday(day)
+                VStack(alignment: .leading, spacing: 5) {
                     HStack(alignment: .firstTextBaseline, spacing: 5) {
                         Text(formatter.string(from: day)).font(.brim(11)).foregroundStyle(theme.f(0.5))
-                        Text("\(cal.component(.day, from: day))").font(.brim(17)).foregroundStyle(offset == 0 ? Palette.red : theme.fg)
+                        Text("\(cal.component(.day, from: day))").font(.brim(16)).foregroundStyle(today ? theme.bg : theme.fg)
+                            .padding(.horizontal, today ? 5 : 0)
+                            .background(Capsule().fill(today ? Palette.red : .clear))
                     }
                     .padding(.horizontal, 3)
-                    if events.isEmpty {
-                        Text("Nothing yet").font(.brim(11, .bold)).foregroundStyle(theme.f(0.35)).padding(.horizontal, 3)
+                    .onTapGesture { anchor = day; sub = .day }
+                    if dayEvents.isEmpty {
+                        Text("Free").font(.brim(11, .bold)).foregroundStyle(theme.f(0.3)).padding(.horizontal, 3)
                     }
-                    ForEach(events.prefix(5)) { event in
+                    ForEach(dayEvents.prefix(5)) { event in
                         VStack(alignment: .leading, spacing: 1) {
-                            Text(event.allDay ? "All day" : When.time(event.start)).font(.brim(10.5)).foregroundStyle(Color(rgb: event.color))
+                            HStack(spacing: 4) {
+                                Circle().fill(Color(rgb: event.color)).frame(width: 6, height: 6)
+                                Text(event.allDay ? "All day" : When.time(event.start)).font(.brim(10)).foregroundStyle(theme.f(0.55)).lineLimit(1)
+                            }
                             Text(event.title).font(.brim(11.5)).lineLimit(2)
                         }
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 6)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 5)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(RoundedRectangle(cornerRadius: 10).fill(Color(rgb: event.color).opacity(0.16)))
+                        .background(alignment: .leading) {
+                            RoundedRectangle(cornerRadius: 9).fill(Color(rgb: event.color).opacity(0.13))
+                                .overlay(alignment: .leading) { Rectangle().fill(Color(rgb: event.color)).frame(width: 2.5) }
+                                .clipShape(RoundedRectangle(cornerRadius: 9))
+                        }
                         .opacity(event.end < Date() ? 0.5 : 1)
                         .onTapGesture { if let meeting = event.meeting { NSWorkspace.shared.open(meeting) } }
-                        .help(event.meeting.map { "Join on \(MeetingLink.service($0))" } ?? event.calendar)
+                        .help("\(event.title)\n\(event.calendar) · \(event.account)")
                     }
-                    if events.count > 5 {
-                        Text("+\(events.count - 5) more").font(.brim(10.5, .bold)).foregroundStyle(theme.f(0.45)).padding(.horizontal, 3)
+                    if dayEvents.count > 5 {
+                        Text("+\(dayEvents.count - 5) more").font(.brim(10.5, .bold)).foregroundStyle(theme.f(0.45)).padding(.horizontal, 3)
+                            .onTapGesture { anchor = day; sub = .day }
                     }
                     Spacer(minLength: 0)
                 }
-                .padding(.horizontal, 7)
-                .padding(.vertical, 10)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 9)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(theme.f(offset == 0 ? 0.09 : 0.05)))
+                .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(theme.f(today ? 0.09 : 0.05)))
+            }
+        }
+    }
+
+    // MARK: Month
+
+    private var monthView: some View {
+        let month = cal.dateInterval(of: .month, for: anchor)!
+        let gridStart = cal.dateInterval(of: .weekOfYear, for: month.start)?.start ?? month.start
+        let days = (0..<42).map { cal.date(byAdding: .day, value: $0, to: gridStart)! }
+        let shownDays = Array(days.prefix(cal.isDate(days[35], equalTo: month.start, toGranularity: .month) ? 42 : 35))
+        let events = calendar.events(from: gridStart, to: cal.date(byAdding: .day, value: shownDays.count, to: gridStart)!)
+        let symbols = cal.veryShortStandaloneWeekdaySymbols
+        let first = cal.firstWeekday - 1
+        return VStack(spacing: 3) {
+            HStack(spacing: 4) {
+                ForEach(0..<7, id: \.self) { i in
+                    Text(symbols[(i + first) % 7]).font(.brim(10.5)).foregroundStyle(theme.f(0.45)).frame(maxWidth: .infinity)
+                }
+            }
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 4), count: 7), spacing: 3) {
+                ForEach(shownDays, id: \.self) { day in
+                    let inMonth = cal.isDate(day, equalTo: anchor, toGranularity: .month)
+                    let today = cal.isDateInToday(day)
+                    let dayEvents = events.filter { cal.isDate($0.start, inSameDayAs: day) }
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: 3) {
+                            Text("\(cal.component(.day, from: day))")
+                                .font(.brim(11))
+                                .foregroundStyle(today ? theme.bg : inMonth ? theme.fg : theme.f(0.3))
+                                .padding(.horizontal, today ? 5 : 0)
+                                .background(Capsule().fill(today ? Palette.red : .clear))
+                            Spacer(minLength: 0)
+                            // One dot per further event, in its calendar's colour.
+                            ForEach(Array(dayEvents.dropFirst().prefix(4).enumerated()), id: \.offset) { _, event in
+                                Circle().fill(Color(rgb: event.color)).frame(width: 4, height: 4)
+                            }
+                        }
+                        if let first = dayEvents.first {
+                            HStack(spacing: 3) {
+                                RoundedRectangle(cornerRadius: 1).fill(Color(rgb: first.color)).frame(width: 2, height: 10)
+                                Text(first.title).font(.brim(9.5, .bold)).lineLimit(1)
+                            }
+                            .opacity(inMonth ? 1 : 0.4)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 4)
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                    .frame(height: shownDays.count > 35 ? 36 : 44)
+                    .hoverFill(8, base: theme.f(today ? 0.09 : 0.04), hover: theme.f(0.1))
+                    .onTapGesture { anchor = day; sub = .day }
+                    .help(dayEvents.isEmpty ? "Free" : dayEvents.map { "\(When.time($0.start)) \($0.title) · \($0.calendar)" }.joined(separator: "\n"))
+                    .accessibilityElement(children: .combine)
+                    .accessibilityAddTraits(.isButton)
+                }
             }
         }
     }
@@ -548,7 +839,7 @@ struct WeatherTabView: View {
                     }
                     HStack(spacing: 14) {
                         Image(systemName: OpenMeteo.symbol(f.current.code, isDay: f.current.isDay))
-                            .symbolRenderingMode(.multicolor)
+                            .symbolRenderingMode(.hierarchical)
                             .font(.system(size: 44))
                         Text("\(Int(f.current.temperature.rounded()))°").font(.brim(58)).kerning(-1.5)
                         VStack(alignment: .leading, spacing: 2) {
@@ -568,7 +859,7 @@ struct WeatherTabView: View {
                         ForEach(Array(f.upcomingHours().enumerated()), id: \.offset) { index, hour in
                             VStack(spacing: 5) {
                                 Text(index == 0 ? "Now" : Self.hour(hour.time)).font(.brim(10.5, .bold)).foregroundStyle(theme.f(0.5))
-                                Image(systemName: OpenMeteo.symbol(hour.code)).symbolRenderingMode(.multicolor).font(.system(size: 14))
+                                Image(systemName: OpenMeteo.symbol(hour.code)).symbolRenderingMode(.hierarchical).font(.system(size: 14))
                                 Text("\(Int(hour.temperature.rounded()))°").font(.brim(12.5))
                             }
                             .frame(maxWidth: .infinity)
@@ -583,14 +874,14 @@ struct WeatherTabView: View {
                     ForEach(Array(f.days.enumerated()), id: \.offset) { index, day in
                         HStack(spacing: 10) {
                             Text(index == 0 ? "Today" : Self.weekday(day.date)).frame(width: 44, alignment: .leading)
-                            Image(systemName: OpenMeteo.symbol(day.code)).symbolRenderingMode(.multicolor).font(.system(size: 14)).frame(width: 20)
+                            Image(systemName: OpenMeteo.symbol(day.code)).symbolRenderingMode(.hierarchical).font(.system(size: 14)).frame(width: 20)
                             Text("\(Int(day.low.rounded()))°").foregroundStyle(theme.f(0.5)).frame(width: 30, alignment: .trailing)
                             GeometryReader { geo in
                                 let span = max(highest - lowest, 1)
                                 ZStack(alignment: .leading) {
                                     Capsule().fill(theme.f(0.08))
                                     Capsule()
-                                        .fill(LinearGradient(colors: [Palette.cyan, Palette.yellow], startPoint: .leading, endPoint: .trailing))
+                                        .fill(LinearGradient(colors: [theme.f(0.35), theme.fg], startPoint: .leading, endPoint: .trailing))
                                         .frame(width: max(6, geo.size.width * (day.high - day.low) / span))
                                         .offset(x: geo.size.width * (day.low - lowest) / span)
                                 }

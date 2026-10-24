@@ -94,7 +94,7 @@ struct AnalyticsTabView: View {
         return [
             StatItem(key: "Visitors", value: Self.short(report.visitors),
                      sub: change.map { ($0 >= 0 ? "↑ " : "↓ ") + "\(abs($0))% vs prior" } ?? "",
-                     subColor: (change ?? 0) > 0 ? Palette.green : nil),
+                     subColor: nil),
             StatItem(key: "Pageviews", value: Self.short(report.pageviews),
                      sub: report.visitors > 0 ? String(format: "%.1f per visitor", report.pageviews / report.visitors) : ""),
             StatItem(key: "Bounce", value: report.bounceRate.map { "\(Int(($0 * 100).rounded()))%" } ?? "–", sub: "single page"),

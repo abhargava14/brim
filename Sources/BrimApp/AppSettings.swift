@@ -260,6 +260,11 @@ final class AppSettings: ObservableObject {
     @Published var interruptTimerDone: Bool { didSet { defaults.set(interruptTimerDone, forKey: "interruptTimerDone") } }
     @Published var interruptEvents: Bool { didSet { defaults.set(interruptEvents, forKey: "interruptEvents") } }
 
+    /// How long the pointer rests on the notch before it opens, in milliseconds.
+    @Published var hoverDelay: Double { didSet { defaults.set(hoverDelay, forKey: "hoverDelay") } }
+    /// A light trackpad tap when the island opens or you switch tabs.
+    @Published var haptics: Bool { didSet { defaults.set(haptics, forKey: "haptics") } }
+
     /// Look for a new Brim once a day.
     @Published var autoCheckUpdates: Bool { didSet { defaults.set(autoCheckUpdates, forKey: "autoCheckUpdates") } }
     /// A version the user chose to skip; newer ones still show.
@@ -309,6 +314,8 @@ final class AppSettings: ObservableObject {
         interruptTimerDone = defaults.object(forKey: "interruptTimerDone") as? Bool ?? true
         interruptEvents = defaults.object(forKey: "interruptEvents") as? Bool ?? false
         autoCheckUpdates = defaults.object(forKey: "autoCheckUpdates") as? Bool ?? true
+        hoverDelay = defaults.object(forKey: "hoverDelay") as? Double ?? 120
+        haptics = defaults.object(forKey: "haptics") as? Bool ?? true
         skippedVersion = defaults.string(forKey: "skippedVersion") ?? ""
         isReady = true
         save()

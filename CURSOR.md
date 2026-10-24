@@ -13,9 +13,9 @@
 ## 1. What you're working on
 
 **Brim** is a free, open-source macOS app that sits around the MacBook notch (like the
-iPhone's Dynamic Island). Since 0.4 it is a general notch app: the open island has sixteen tabs
+iPhone's Dynamic Island). Since 0.4 it is a general notch app: the open island has fifteen tabs
 (Home, AI, Analytics, Notes, Calendar, Timers, Stats, Screen Time, Weather, Links, Sounds,
-Scratchpad, Shelf, Clipboard, Files, Units) and the closed notch rotates between
+Scratchpad, Clipboard, Files, Units) and the closed notch rotates between
 now playing, a running timer and AI limits. AI usage is still the core: tokens and plan-limit
 percentages per account. Users connect **any number** of tools (Claude Code, Codex,
 GitHub Copilot, Cursor, Windsurf, OpenRouter, any log folder, any JSON usage URL), including
@@ -98,7 +98,7 @@ Sources/BrimApp/                 the app (AppKit + SwiftUI)
                                   Settings hooks, ⌥Space hot key
   Tabs/                           one view per tab
   Services/                       app-side stores: notes, links, timers, stats, sounds, clipboard,
-                                  shelf, launcher, analytics
+                                  converter, launcher, analytics
   Settings/BrimSettingsView.swift the Settings window (General, Tabs, Closed notch, Connections,
                                   Permissions, About)
   Snapshot.swift                  BRIM_SNAPSHOT_DIR=… renders every screen to PNG with fixtures

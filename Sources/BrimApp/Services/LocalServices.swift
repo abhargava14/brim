@@ -24,8 +24,23 @@ final class NotesStore: ObservableObject {
     init() {
         notes = file.load() ?? []
         if AppSettings.isSnapshot, notes.isEmpty { notes = Self.samples }
-        notes.sort { $0.updated > $1.updated }
+        sortNotes()
     }
+
+    /// Pinned first, then newest.
+    private func sortNotes() {
+        notes.sort { ($0.isPinned ? 1 : 0, $0.updated) > ($1.isPinned ? 1 : 0, $1.updated) }
+    }
+
+    func togglePin(_ id: String) {
+        guard let index = notes.firstIndex(where: { $0.id == id }) else { return }
+        notes[index].pinned = notes[index].isPinned ? nil : true
+        sortNotes()
+        save()
+    }
+
+    /// When the open note was last saved, for "Saved 3s ago".
+    @Published private(set) var savedAt = Date()
 
     @discardableResult
     func add() -> Note {
@@ -59,6 +74,7 @@ final class NotesStore: ObservableObject {
     }
 
     func save() {
+        savedAt = Date()
         guard !AppSettings.isSnapshot else { return }
         file.save(notes)
     }
@@ -77,18 +93,83 @@ final class LinksStore: ObservableObject {
     struct Saved: Codable {
         var links: [SavedLink]
         var folders: [String]
+        /// Engines the user added; built-ins aren't saved.
+        var customEngines: [SearchEngine]?
+        /// Engine IDs shown as pills, in order.
+        var pinnedEngines: [String]?
+        var defaultEngine: String?
     }
 
     @Published private(set) var links: [SavedLink]
     @Published private(set) var folders: [String]
+    @Published private(set) var customEngines: [SearchEngine]
+    @Published private(set) var pinnedEngines: [String]
+    @Published private(set) var defaultEngineID: String
     private let file = JSONFile<Saved>("links.json", directory: LocalData.directory)
+
+    static let standardPins = ["google", "duckduckgo", "perplexity", "chatgpt", "youtube", "github"]
 
     init() {
         let saved = file.load()
         links = saved?.links ?? []
         folders = saved?.folders ?? Links.defaultFolders
+        customEngines = saved?.customEngines ?? []
+        pinnedEngines = saved?.pinnedEngines ?? Self.standardPins
+        defaultEngineID = saved?.defaultEngine ?? "google"
         if AppSettings.isSnapshot, links.isEmpty { links = Self.samples }
     }
+
+    // MARK: Engines
+
+    var engines: [SearchEngine] { SearchEngines.builtIn + customEngines }
+
+    var defaultEngine: SearchEngine { engines.first { $0.id == defaultEngineID } ?? SearchEngines.builtIn[0] }
+
+    /// Pills in the search card; the default is always among them.
+    var pinned: [SearchEngine] {
+        var ids = pinnedEngines.filter { id in engines.contains { $0.id == id } }
+        if !ids.contains(defaultEngineID) { ids.insert(defaultEngineID, at: 0) }
+        return ids.compactMap { id in engines.first { $0.id == id } }
+    }
+
+    func setDefault(_ id: String) {
+        defaultEngineID = id
+        if !pinnedEngines.contains(id) { pinnedEngines.insert(id, at: 0) }
+        save()
+    }
+
+    func setPinned(_ id: String, _ pinned: Bool) {
+        if pinned {
+            if !pinnedEngines.contains(id) { pinnedEngines.append(id) }
+        } else if id != defaultEngineID {
+            pinnedEngines.removeAll { $0 == id }
+        }
+        save()
+    }
+
+    /// Adds a custom engine; returns a problem to show, or nil.
+    func addEngine(name: String, keyword: String, template: String) -> String? {
+        let name = name.trimmingCharacters(in: .whitespaces)
+        let keyword = keyword.trimmingCharacters(in: .whitespaces).lowercased()
+        let template = template.trimmingCharacters(in: .whitespaces)
+        guard !name.isEmpty else { return "Give the engine a name." }
+        guard SearchEngine.isValid(template) else { return "Use an https address with %s where the search goes." }
+        guard keyword.isEmpty || !engines.contains(where: { $0.keyword == keyword }) else { return "“\(keyword)” is already used by another engine." }
+        let engine = SearchEngine(name: name, template: template, keyword: keyword)
+        customEngines.append(engine)
+        pinnedEngines.append(engine.id)
+        save()
+        return nil
+    }
+
+    func removeEngine(_ id: String) {
+        customEngines.removeAll { $0.id == id }
+        pinnedEngines.removeAll { $0 == id }
+        if defaultEngineID == id { defaultEngineID = "google" }
+        save()
+    }
+
+    // MARK: Links
 
     func add(title: String, url: String, folder: String) {
         let clean = Links.normalized(url)
@@ -109,7 +190,7 @@ final class LinksStore: ObservableObject {
 
     private func save() {
         guard !AppSettings.isSnapshot else { return }
-        file.save(Saved(links: links, folders: folders))
+        file.save(Saved(links: links, folders: folders, customEngines: customEngines, pinnedEngines: pinnedEngines, defaultEngine: defaultEngineID))
     }
 
     static let samples: [SavedLink] = [
@@ -130,6 +211,18 @@ final class ScratchStore: ObservableObject {
     @Published var text: String {
         didSet { saveSoon() }
     }
+    /// Shown in the closed notch instead of the usual rotation.
+    @Published var pinned = UserDefaults.standard.bool(forKey: "scratchPinned") {
+        didSet { UserDefaults.standard.set(pinned, forKey: "scratchPinned") }
+    }
+    @Published private(set) var savedAt = Date()
+
+    /// The first non-empty line, for the closed notch.
+    var firstLine: String {
+        text.split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.first { !$0.isEmpty } ?? ""
+    }
+
+    var wordCount: Int { text.split { $0.isWhitespace || $0.isNewline }.count }
     private let file = JSONFile<String>("scratchpad.json", directory: LocalData.directory)
     private var saveTask: Task<Void, Never>?
 
@@ -141,10 +234,11 @@ final class ScratchStore: ObservableObject {
         guard !AppSettings.isSnapshot else { return }
         saveTask?.cancel()
         let value = text, file = self.file
-        saveTask = Task {
+        saveTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 400_000_000)
             guard !Task.isCancelled else { return }
             file.save(value)
+            self?.savedAt = Date()
         }
     }
 }

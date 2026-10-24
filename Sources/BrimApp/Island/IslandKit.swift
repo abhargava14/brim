@@ -66,9 +66,10 @@ enum Palette {
     static let yellow = Color(red: 1, green: 0xD6 / 255, blue: 0x0A / 255)
     static let coral = Color(red: 1, green: 0x6B / 255, blue: 0x4A / 255)
 
-    /// Green, then amber from 80%, then red at 100%: plan rings as fuel gauges.
-    static func fuel(_ percent: Double) -> Color {
-        percent >= 100 ? red : percent >= 80 ? amber : green
+    /// Plan bars: the foreground (nil) until 80%, then amber, then red at 100%.
+    /// Colour only appears when a limit needs attention.
+    static func fuel(_ percent: Double) -> Color? {
+        percent >= 100 ? red : percent >= 80 ? amber : nil
     }
 
     /// Amber or red text only when a value needs attention; otherwise nil (use the foreground).
@@ -100,7 +101,6 @@ extension TabID {
         case .links: return "bookmark"
         case .sounds: return "waveform"
         case .scratchpad: return "square.and.pencil"
-        case .shelf: return "tray"
         case .clipboard: return "doc.on.clipboard"
         case .files: return "wand.and.stars"
         case .units: return "arrow.left.arrow.right"
@@ -313,10 +313,10 @@ struct IslandSwitch: View {
 
     var body: some View {
         Capsule()
-            .fill(isOn ? Palette.green : theme.f(0.2))
+            .fill(isOn ? theme.fg : theme.f(0.2))
             .frame(width: 30, height: 18)
             .overlay(alignment: isOn ? .trailing : .leading) {
-                Circle().fill(.white).frame(width: 14, height: 14).padding(2)
+                Circle().fill(isOn ? theme.bg : .white).frame(width: 14, height: 14).padding(2)
             }
             .onTapGesture { withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) { isOn.toggle() } }
             .accessibilityElement()
@@ -346,13 +346,16 @@ struct ConnectCard: View {
     var note: String?
     @Environment(\.islandTheme) private var theme
 
+    /// Only warnings keep their colour; everything else is monochrome.
+    private var tint: Color? { color == Palette.amber || color == Palette.red ? color : nil }
+
     var body: some View {
         VStack(spacing: 10) {
             Image(systemName: symbol)
                 .font(.system(size: 22, weight: .semibold))
-                .foregroundStyle(color)
+                .foregroundStyle(tint ?? theme.fg)
                 .frame(width: 52, height: 52)
-                .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(color.opacity(0.16)))
+                .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(tint?.opacity(0.16) ?? theme.f(0.1)))
                 .padding(.bottom, 4)
             Text(title).font(.brim(18))
             Text(message)

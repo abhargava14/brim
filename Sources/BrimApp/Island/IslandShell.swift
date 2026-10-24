@@ -20,7 +20,7 @@ final class BrimHub: ObservableObject {
     let weather = WeatherService(directory: LocalData.directory, persist: !AppSettings.isSnapshot)
     let screenTime = ScreenTimeTracker(directory: LocalData.directory, persist: !AppSettings.isSnapshot)
     let clipboard = ClipboardService()
-    let shelf = ShelfService()
+    let converter = ConvertService()
     let launcher = LauncherService()
     let analytics = AnalyticsService()
     let currency = CurrencyService()
@@ -90,7 +90,7 @@ final class BrimHub: ObservableObject {
         case .analytics: return analytics.current?.name ?? ""
         case .screen: return screenTime.enabled ? Clock.hm(screenTime.log.day(Date()).total) + " today" : ""
         case .clipboard: return clipboard.enabled ? "\(clipboard.items.count) items" : ""
-        case .shelf: return shelf.files.isEmpty ? "" : "\(shelf.files.count) files"
+        case .files: return converter.queue.isEmpty ? "" : "\(converter.queue.count) to convert"
         case .notes: return "\(notes.notes.count) note\(notes.notes.count == 1 ? "" : "s")"
         case .links: return "\(links.links.count) saved"
         case .sounds: return sounds.playing ? "\(sounds.levels.count) playing" : ""
@@ -116,6 +116,7 @@ struct IslandShellView: View {
     @ObservedObject var state: IslandState
     let openSettings: (SettingsSection) -> Void
     let addAccount: (AddAccountRequest) -> Void
+    var close: () -> Void = {}
     @State private var showMore = false
     @Environment(\.islandTheme) private var theme
     @Environment(\.tabPreset) private var preset
@@ -164,6 +165,7 @@ struct IslandShellView: View {
             }
         }
         .animation(.easeOut(duration: 0.18), value: showMore)
+        .onChange(of: settings.selectedTab) { _ in Haptics.tap(settings) }
         .onAppear { if preset["more"] != nil { showMore = true } }
     }
 
@@ -180,6 +182,7 @@ struct IslandShellView: View {
                 .foregroundStyle(theme.f(0.45))
                 .lineLimit(1)
             IconButton(symbol: "gearshape.fill", help: "Settings") { openSettings(.general) }
+            IconButton(symbol: "xmark", help: "Close (Esc)", action: close)
         }
         .padding(.leading, 20)
         .padding(.trailing, 12)
@@ -221,7 +224,7 @@ struct IslandShellView: View {
             case .notes: NotesTabView(store: hub.notes)
             case .timers: TimersTabView(timers: hub.timers, sub: preset["timers.sub"])
             case .stats: StatsTabView(stats: hub.stats)
-            case .links: LinksTabView(store: hub.links)
+            case .links: LinksTabView(store: hub.links, managing: preset["links.manage"] != nil)
             case .sounds: SoundsTabView(sounds: hub.sounds)
             case .scratchpad: ScratchpadTabView(store: hub.scratch)
             case .units: UnitsTabView(currency: hub.currency, start: preset["units.category"])
@@ -232,8 +235,7 @@ struct IslandShellView: View {
             case .weather: WeatherTabView(weather: hub.weather)
             case .screen: ScreenTimeTabView(tracker: hub.screenTime, sub: preset["screen.sub"])
             case .clipboard: ClipboardTabView(clipboard: hub.clipboard)
-            case .shelf: ShelfTabView(shelf: hub.shelf)
-            case .files: FilesTabView()
+            case .files: FilesTabView(converter: hub.converter)
             case .analytics:
                 AnalyticsTabView(analytics: hub.analytics) {
                     hub.pendingGroup = .analytics

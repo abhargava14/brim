@@ -359,7 +359,7 @@ struct AIOverview: View {
         if average > 0 {
             let delta = Int(((series.last ?? 0) / average - 1) * 100)
             deltaText = (delta >= 0 ? "↑ " : "↓ ") + "\(abs(delta))% vs avg"
-            deltaColor = delta >= 0 ? Palette.green : nil
+            deltaColor = nil
         }
         let working = accounts.items.filter(\.working)
         let near = accounts.items.filter { $0.problem == nil && $0.lead != nil }.max { ($0.lead ?? 0) < ($1.lead ?? 0) }
@@ -400,7 +400,7 @@ struct AccountRow: View {
                             .fixedSize()
                     }
                     if account.working {
-                        PulseDot(color: account.kind.tint)
+                        PulseDot(color: Palette.green)
                     }
                 }
                 if let plan = account.tool?.planName, account.problem == nil {
@@ -563,13 +563,13 @@ struct AIAccountDetail: View {
                 } else if account.hasTokens {
                     IslandCard(padding: EdgeInsets(top: 14, leading: 18, bottom: 12, trailing: 18)) {
                         TokensChart(title: "Tokens · 14 days", aside: account.tool?.planName ?? account.source,
-                                    values: AIStats.dailySeries(account.tool.map { [$0] } ?? []), color: account.kind.tint)
+                                    values: AIStats.dailySeries(account.tool.map { [$0] } ?? []), color: nil)
                     }
                 } else {
                     let history = model.quotaHistory.series(account.id).map { $0 ?? 0 }
                     IslandCard(padding: EdgeInsets(top: 14, leading: 18, bottom: 12, trailing: 18)) {
                         TokensChart(title: "Cycle used · 14 days", aside: account.tool?.planName ?? "",
-                                    values: history, color: account.kind.tint,
+                                    values: history, color: nil,
                                     peakText: account.lead.map { Format.percent($0) + " today" },
                                     formatter: { Format.percent($0) })
                     }
@@ -703,12 +703,11 @@ struct AIAccountDetail: View {
     }
 
     private func breakdown(_ tool: ToolSnapshot) -> some View {
-        let tint = account.kind.tint
         let parts: [(String, Int64, Color)] = [
-            ("Input", tool.today.input, theme.f(0.9)),
-            ("Output", tool.today.output, tint),
-            ("Cache write", tool.today.cacheWrite, tint.opacity(0.55)),
-            ("Cache read", tool.today.cacheRead, tint.opacity(0.28)),
+            ("Input", tool.today.input, theme.f(0.95)),
+            ("Output", tool.today.output, theme.f(0.7)),
+            ("Cache write", tool.today.cacheWrite, theme.f(0.45)),
+            ("Cache read", tool.today.cacheRead, theme.f(0.25)),
         ]
         let sum = max(Double(tool.today.total), 1)
         return VStack(alignment: .leading, spacing: 2) {
@@ -899,7 +898,7 @@ struct AIAddPopover: View {
                     Spacer()
                     Text(n > 0 ? "\(n) connected" : Self.hint(for: kind))
                         .font(.brim(11, .bold))
-                        .foregroundStyle(n > 0 ? Palette.green : theme.f(0.45))
+                        .foregroundStyle(n > 0 ? theme.f(0.8) : theme.f(0.45))
                 }
                 .padding(.leading, 8)
                 .padding(.trailing, 10)

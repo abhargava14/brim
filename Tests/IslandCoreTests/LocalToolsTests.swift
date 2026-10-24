@@ -118,3 +118,34 @@ final class UnitsTests: XCTestCase {
         XCTAssertEqual(UnitConverter.format(1200), "1,200")
     }
 }
+
+final class SearchEngineTests: XCTestCase {
+    let google = SearchEngines.builtIn[0]
+
+    func testKeywordsPickTheEngine() {
+        let (engine, terms) = SearchEngines.resolve("yt lofi beats", engines: SearchEngines.builtIn, fallback: google)
+        XCTAssertEqual(engine.id, "youtube")
+        XCTAssertEqual(terms, "lofi beats")
+        XCTAssertEqual(SearchEngines.resolve("!gh brim", engines: SearchEngines.builtIn, fallback: google).engine.id, "github")
+    }
+
+    func testUnknownWordsGoToTheDefault() {
+        let (engine, terms) = SearchEngines.resolve("swift concurrency", engines: SearchEngines.builtIn, fallback: google)
+        XCTAssertEqual(engine.id, "google")
+        XCTAssertEqual(terms, "swift concurrency")
+        XCTAssertEqual(SearchEngines.resolve("yt", engines: SearchEngines.builtIn, fallback: google).terms, "yt")
+    }
+
+    func testURLsEncodeTheWords() {
+        XCTAssertEqual(google.url(for: "a&b c")?.absoluteString, "https://www.google.com/search?q=a%26b%20c")
+        XCTAssertEqual(SearchEngines.builtIn.first { $0.id == "youtube" }?.url(for: "x")?.absoluteString,
+                       "https://www.youtube.com/results?search_query=x")
+    }
+
+    func testCustomTemplatesAreChecked() {
+        XCTAssertTrue(SearchEngine.isValid("https://example.com/find?q=%s"))
+        XCTAssertFalse(SearchEngine.isValid("https://example.com/find"))
+        XCTAssertFalse(SearchEngine.isValid("javascript:%s"))
+        XCTAssertEqual(Set(SearchEngines.builtIn.map(\.keyword)).count, SearchEngines.builtIn.count)
+    }
+}

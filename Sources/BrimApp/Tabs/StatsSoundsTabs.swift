@@ -17,7 +17,7 @@ struct StatsTabView: View {
             HStack(spacing: 10) {
                 card(key: "CPU", value: "\(Int(s.cpuPercent.rounded()))%",
                      sub: "\(s.cores) cores · load \(String(format: "%.1f", s.loadAverage))") {
-                    CurveChart(values: stats.cpuHistory, color: s.cpuPercent > 60 ? Palette.amber : Palette.green, fill: false, lineWidth: 2, padding: 3)
+                    CurveChart(values: stats.cpuHistory, color: s.cpuPercent > 85 ? Palette.amber : nil, fill: false, lineWidth: 2, padding: 3)
                         .frame(height: 30)
                         .padding(.top, 4)
                 }
@@ -32,7 +32,7 @@ struct StatsTabView: View {
                                total: Double(s.diskTotal))
                 }
                 card(key: "Network", value: Bytes.speed(s.netDown), sub: "↓ down · ↑ \(Bytes.speed(s.netUp))") {
-                    CurveChart(values: stats.netHistory, color: Palette.cyan, fill: false, lineWidth: 2, padding: 3)
+                    CurveChart(values: stats.netHistory, color: theme.f(0.7), fill: false, lineWidth: 2, padding: 3)
                         .frame(height: 30)
                         .padding(.top, 4)
                 }
@@ -68,7 +68,7 @@ struct StatsTabView: View {
                         BatteryGlyph(percent: battery.percent, charging: battery.charging)
                         Text(battery.charging ? "Charging" : battery.onPower ? "On power" : "On battery")
                             .font(.brim(12))
-                            .foregroundStyle(battery.charging || battery.onPower ? Palette.green : theme.f(0.6))
+                            .foregroundStyle(theme.f(0.6))
                     }
                     DetailRow(key: battery.charging ? "Full in" : "Time left",
                               value: battery.minutesLeft.map { Clock.hm(TimeInterval($0 * 60)) } ?? (battery.onPower && !battery.charging ? "Charged" : "Estimating…"), height: 22)
@@ -157,7 +157,7 @@ struct BatteryGlyph: View {
                 .frame(width: 44, height: 20)
                 .overlay(alignment: .leading) {
                     RoundedRectangle(cornerRadius: 3)
-                        .fill(percent <= 20 && !charging ? Palette.red : Palette.green)
+                        .fill(percent <= 20 && !charging ? Palette.red : theme.fg)
                         .frame(width: 38 * CGFloat(percent) / 100, height: 14)
                         .padding(.leading, 3)
                 }
@@ -206,21 +206,21 @@ struct SoundsTabView: View {
         let on = level != nil
         return VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
-                Image(systemName: "waveform").font(.system(size: 14, weight: .semibold)).foregroundStyle(sound.color)
+                Image(systemName: "waveform").font(.system(size: 14, weight: .semibold)).foregroundStyle(on ? theme.fg : theme.f(0.5))
                 Text(sound.title).font(.brim(13))
                 Spacer()
-                Text(level.map { "\(Int($0 * 100))%" } ?? "Off").font(.brim(11)).foregroundStyle(on ? sound.color : theme.f(0.4))
+                Text(level.map { "\(Int($0 * 100))%" } ?? "Off").font(.brim(11)).foregroundStyle(on ? theme.f(0.8) : theme.f(0.4))
             }
             if on {
                 IslandSlider(value: Binding(get: { sounds.levels[sound] ?? 0.5 }, set: { sounds.setLevel(sound, $0) }),
-                             tint: sound.color, label: "\(sound.title) volume")
+                             label: "\(sound.title) volume")
             }
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
         .frame(height: 84)
         .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(on ? theme.f(0.1) : theme.f(0.05)))
-        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(on ? sound.color : .clear, lineWidth: 1.5))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(on ? theme.f(0.5) : .clear, lineWidth: 1.5))
         .contentShape(RoundedRectangle(cornerRadius: 16))
         .onTapGesture { withAnimation(.easeOut(duration: 0.2)) { sounds.toggle(sound) } }
         .accessibilityElement(children: .combine)
@@ -408,7 +408,7 @@ struct UnitsTabView: View {
     private func result(_ text: String) -> some View {
         Text(text)
             .font(.brim(30))
-            .foregroundStyle(Palette.cyan)
+            .foregroundStyle(theme.fg)
             .lineLimit(1)
             .minimumScaleFactor(0.5)
             .frame(width: 150, alignment: .leading)

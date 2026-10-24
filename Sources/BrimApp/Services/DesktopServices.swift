@@ -1,6 +1,7 @@
 import AppKit
 import Combine
 import IslandCore
+import IslandSystem
 import UniformTypeIdentifiers
 
 // MARK: - Clipboard
@@ -161,47 +162,50 @@ final class ClipboardService: ObservableObject {
     }
 }
 
-// MARK: - Shelf
+// MARK: - Convert
 
-/// Files parked in the notch: drop them in, drag them out anywhere else.
+/// Images waiting to be converted, the chosen format, and what came out. Lives in the hub so files
+/// dropped on the closed notch are still queued when the Files tab opens.
 @MainActor
-final class ShelfService: ObservableObject {
-    @Published private(set) var files: [URL] = []
-    private let file = JSONFile<[String]>("shelf.json", directory: LocalData.directory)
+final class ConvertService: ObservableObject {
+    @Published private(set) var queue: [URL] = []
+    @Published private(set) var results: [ImageConverter.Result] = []
+    @Published var format: ImageConverter.Format = .jpeg
+    @Published var quality = 0.8
+    @Published var maxSide = 0
+    @Published private(set) var working = false
 
     init() {
-        files = (file.load() ?? []).map { URL(fileURLWithPath: $0) }.filter { FileManager.default.fileExists(atPath: $0.path) }
-        if AppSettings.isSnapshot, files.isEmpty {
-            files = ["Brim Island.dc.html", "launch-notes.md", "island-compact-v3-after.png", "brim-0.4.0.dmg"].map { URL(fileURLWithPath: "/tmp/\($0)") }
+        if AppSettings.isSnapshot {
+            queue = ["IMG_2041.HEIC", "launch-hero.png", "screenshot 2026-10-24.png"].map { URL(fileURLWithPath: "/tmp/\($0)") }
         }
     }
 
+    var queuedBytes: Int64 { queue.reduce(0) { $0 + ImageConverter.size($1) } }
+
     func add(_ urls: [URL]) {
-        for url in urls where !files.contains(url) { files.append(url) }
-        save()
+        let images = urls.filter { url in
+            (try? url.resourceValues(forKeys: [.contentTypeKey]).contentType)?.conforms(to: .image) ?? false
+        }
+        for url in images where !queue.contains(url) { queue.append(url) }
     }
 
-    func remove(_ url: URL) {
-        files.removeAll { $0 == url }
-        save()
-    }
+    func remove(_ url: URL) { queue.removeAll { $0 == url } }
+    func clear() { queue = [] }
+    func clearResults() { results = [] }
 
-    func clear() {
-        files = []
-        save()
-    }
-
-    func reveal(_ urls: [URL]) {
-        NSWorkspace.shared.activateFileViewerSelecting(urls)
-    }
-
-    func airDrop(_ urls: [URL]) {
-        NSSharingService(named: .sendViaAirDrop)?.perform(withItems: urls)
-    }
-
-    private func save() {
-        guard !AppSettings.isSnapshot else { return }
-        file.save(files.map(\.path))
+    func convert() {
+        guard !queue.isEmpty, !working else { return }
+        working = true
+        let urls = queue, format = self.format, quality = self.quality, maxSide = self.maxSide
+        Task.detached {
+            let done = ImageConverter.convert(urls, to: format, quality: quality, maxSide: maxSide)
+            await MainActor.run {
+                self.results = done + self.results
+                self.queue = []
+                self.working = false
+            }
+        }
     }
 }
 

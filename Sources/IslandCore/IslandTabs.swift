@@ -14,7 +14,6 @@ public enum TabID: String, CaseIterable, Codable, Sendable, Identifiable {
     case links
     case sounds
     case scratchpad
-    case shelf
     case clipboard
     case files
     case units
@@ -35,7 +34,6 @@ public enum TabID: String, CaseIterable, Codable, Sendable, Identifiable {
         case .links: return "Links"
         case .sounds: return "Sounds"
         case .scratchpad: return "Scratchpad"
-        case .shelf: return "Shelf"
         case .clipboard: return "Clipboard"
         case .files: return "Files"
         case .units: return "Units"
@@ -57,7 +55,6 @@ public enum TabID: String, CaseIterable, Codable, Sendable, Identifiable {
         case .links: return "Search the web and keep the sites you use"
         case .sounds: return "Rain, brown noise and more, layered"
         case .scratchpad: return "One always-there text box"
-        case .shelf: return "Drag files in, drag them out anywhere else"
         case .clipboard: return "Searchable history of what you copied"
         case .files: return "Convert and shrink images to JPEG, PNG, HEIC or PDF"
         case .units: return "Units and currencies, without a browser tab"
