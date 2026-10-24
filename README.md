@@ -165,7 +165,7 @@ These paths **compile Brim on your Mac**. They need Apple's small **Command Line
 **Pinned install script** (pins a release; about a minute the first time):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/abhargava14/brim/v0.3.2/install.sh -o install-brim.sh
+curl -fsSL https://raw.githubusercontent.com/abhargava14/brim/v0.4.0/install.sh -o install-brim.sh
 chmod +x install-brim.sh
 ./install-brim.sh
 ```
@@ -175,7 +175,7 @@ chmod +x install-brim.sh
 ```bash
 git clone https://github.com/abhargava14/brim.git
 cd brim
-git checkout v0.3.2
+git checkout v0.4.0
 ./scripts/build-app.sh --install
 ```
 
