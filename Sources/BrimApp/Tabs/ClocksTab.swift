@@ -182,8 +182,9 @@ struct PlannerRuler: View {
             .frame(height: geo.size.height)
             .contentShape(Rectangle())
             .gesture(DragGesture(minimumDistance: 0).onChanged { value in
-                let raw = (value.location.x / max(width, 1)) * 24 - 12
-                shift = min(12, max(-12, (raw * 2).rounded() / 2))
+                let raw = Double(value.location.x / max(width, 1)) * 24 - 12
+                let snapped: Double = (raw * 2).rounded() / 2
+                shift = min(12, max(-12, snapped))
             })
         }
         .frame(height: 40)
@@ -216,7 +217,7 @@ struct AnalogClock: View {
             context.fill(circle, with: .color(face))
             context.stroke(circle, with: .color(ring), lineWidth: 1)
             for tick in 0..<12 {
-                let angle = Double(tick) / 12 * 2 * .pi
+                let angle = CGFloat(tick) / 12 * 2 * CGFloat.pi
                 let outer = r - 5, inner = r - (tick % 3 == 0 ? 11 : 8)
                 var path = Path()
                 path.move(to: CGPoint(x: c.x + sin(angle) * inner, y: c.y - cos(angle) * inner))
@@ -224,7 +225,7 @@ struct AnalogClock: View {
                 context.stroke(path, with: .color(tick % 3 == 0 ? fg.opacity(0.7) : dim), style: StrokeStyle(lineWidth: tick % 3 == 0 ? 2 : 1.2, lineCap: .round))
             }
             func hand(_ fraction: Double, length: CGFloat, width: CGFloat, color: Color) {
-                let angle = fraction * 2 * .pi
+                let angle = CGFloat(fraction) * 2 * CGFloat.pi
                 var path = Path()
                 path.move(to: c)
                 path.addLine(to: CGPoint(x: c.x + sin(angle) * length, y: c.y - cos(angle) * length))
