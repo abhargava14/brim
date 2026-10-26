@@ -7,6 +7,17 @@ Brim is a small, free, open-source Mac app. The closed notch quietly shows what 
 (the song playing, a running timer, how close you are to a plan limit). Hover over it, or press
 **⌥ Space**, and it opens into tabs.
 
+<p align="center">
+  <a href="https://github.com/abhargava14/brim/releases/latest/download/Brim.dmg">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="media/readme/download-dark.svg">
+      <img src="media/readme/download-light.svg" alt="Download Brim for Mac (Brim.dmg)" width="260" height="64">
+    </picture>
+  </a>
+</p>
+<p align="center"><sub>Always the latest release · Apple silicon and Intel · free and open source ·
+<a href="#if-mac-says-brim-cant-be-opened">first open</a> · <a href="https://github.com/abhargava14/brim/releases">all releases</a></sub></p>
+
 Brim used to be called AI Island. Updating moves your connections, saved tokens, settings and
 the Claude Code status line over on first launch, and the old `ai-island` command still works.
 
@@ -114,10 +125,12 @@ What each install path needs: [docs/mac-requirements.md](docs/mac-requirements.m
 
 **No Xcode. No Terminal. No developer tools.**
 
-1. Open the latest release: **[Download Brim (GitHub Releases)](https://github.com/abhargava14/brim/releases/latest)**
-2. Download **`Brim.dmg`**
-3. Open the DMG and drag **Brim** into **Applications**.
-4. Open Brim from Applications (see below if macOS shows a warning).
+1. **[Download Brim.dmg](https://github.com/abhargava14/brim/releases/latest/download/Brim.dmg)**
+   (always the latest release; older ones are on the [Releases page](https://github.com/abhargava14/brim/releases)).
+2. Open the DMG and drag **Brim** into **Applications**. The DMG window shows the first-open steps too.
+3. Open Brim from Applications (see below if macOS shows a warning).
+4. Optional: check the download against `Brim.dmg.sha256` from the same release
+   (`shasum -a 256 -c Brim.dmg.sha256` in the folder you downloaded both to).
 
 You'll know it's running when you see the Brim mark in the menu bar and a black shape around the notch.
 
@@ -443,6 +456,7 @@ if you like.
 ## Contributing
 
 Bug reports and pull requests are welcome. Adding a tool is the most useful contribution.
+Cutting a release (tag, automatic DMG build and publish): [docs/releasing.md](docs/releasing.md).
 
 ```bash
 swift test                    # run the tests (needs Xcode)

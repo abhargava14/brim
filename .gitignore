@@ -4,3 +4,6 @@ build/
 *.xcodeproj/xcuserdata/
 DerivedData/
 .DS_Store
+
+# Local DMG layout tool (docs/releasing.md)
+.venv-dmg/

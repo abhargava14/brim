@@ -1,0 +1,103 @@
+name: Release
+
+# Pushing a tag like v0.6.0 tests, builds and publishes Brim.dmg (+ .sha256) as a GitHub release.
+# The README's download button points at releases/latest, so it serves the new DMG straight away.
+# Pull requests that touch the packaging (and manual runs) do a dry run: build and check the DMG,
+# upload it as a workflow artifact, publish nothing.
+on:
+  push:
+    tags: ["v*.*.*"]
+  pull_request:
+    paths:
+      - ".github/workflows/release.yml"
+      - "packaging/dmg/**"
+      - "scripts/build-app.sh"
+      - "scripts/build-dmg.sh"
+      - "scripts/checksum-artifact.sh"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the tag matches the app version
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          app="$(sed -n 's/.*static let string = "\([^"]*\)".*/\1/p' Sources/IslandCore/BrimVersion.swift | head -1)"
+          if [ "$tag" != "$app" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME doesn't match BrimVersion.string ($app). Bump the version first."
+            exit 1
+          fi
+
+      - name: Test
+        run: swift test
+
+      - name: Install the DMG layout tool
+        run: |
+          python3 -m venv "$RUNNER_TEMP/dmg"
+          "$RUNNER_TEMP/dmg/bin/pip" install --quiet --require-hashes -r packaging/dmg/requirements.txt
+          echo "DMGBUILD=$RUNNER_TEMP/dmg/bin/dmgbuild" >> "$GITHUB_ENV"
+
+      - name: Build Brim.dmg
+        run: ./scripts/build-dmg.sh
+
+      - name: Check the DMG
+        run: |
+          (cd build && shasum -a 256 -c Brim.dmg.sha256)
+          mount="$(mktemp -d)"
+          hdiutil attach -nobrowse -readonly -mountpoint "$mount" build/Brim.dmg
+          test -d "$mount/Brim.app"
+          test -L "$mount/Applications"
+          codesign --verify --strict "$mount/Brim.app"
+          codesign -dr - "$mount/Brim.app" 2>&1 | grep -q 'designated => identifier "com.brim.app"'
+          version="$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$mount/Brim.app/Contents/Info.plist")"
+          hdiutil detach "$mount"
+          echo "Brim.dmg holds Brim $version"
+          if [[ "$GITHUB_REF" == refs/tags/* && "$version" != "${GITHUB_REF_NAME#v}" ]]; then
+            echo "::error::DMG holds $version, not ${GITHUB_REF_NAME#v}"
+            exit 1
+          fi
+
+      - name: Keep the dry-run DMG
+        if: "!startsWith(github.ref, 'refs/tags/')"
+        uses: actions/upload-artifact@v4
+        with:
+          name: Brim-dmg
+          path: |
+            build/Brim.dmg
+            build/Brim.dmg.sha256
+
+      - name: Record build provenance
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: build/Brim.dmg
+
+      - name: Publish the release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          notes="docs/releases/${GITHUB_REF_NAME}.md"
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            # A release made by hand first: just attach the files.
+            gh release upload "$GITHUB_REF_NAME" build/Brim.dmg build/Brim.dmg.sha256 --clobber
+          elif [ -f "$notes" ]; then
+            gh release create "$GITHUB_REF_NAME" build/Brim.dmg build/Brim.dmg.sha256 \
+              --title "Brim ${GITHUB_REF_NAME#v}" --notes-file "$notes" --verify-tag
+          else
+            gh release create "$GITHUB_REF_NAME" build/Brim.dmg build/Brim.dmg.sha256 \
+              --title "Brim ${GITHUB_REF_NAME#v}" --generate-notes --verify-tag
+          fi

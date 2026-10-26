@@ -10,7 +10,8 @@ cd "$(dirname "$0")/.."
 FILE="$1"
 [[ -f "$FILE" ]] || { echo "error: missing $FILE" >&2; exit 1; }
 
-SUM="$(shasum -a 256 "$FILE")"
+# Only the file name goes in the line, so `shasum -c` works next to the downloaded file.
+SUM="$(cd "$(dirname "$FILE")" && shasum -a 256 "$(basename "$FILE")")"
 echo "$SUM"
 if [[ "${2:-}" == "--write" ]]; then
     echo "$SUM" > "${FILE}.sha256"
