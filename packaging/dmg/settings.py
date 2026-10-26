@@ -26,4 +26,3 @@ show_icon_preview = False
 icon_size = 96
 text_size = 13
 icon_locations = {appname: (170, 175), "Applications": (490, 175)}
-hide_extensions = [appname]
