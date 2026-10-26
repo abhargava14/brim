@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="260" height="64" viewBox="0 0 260 64" role="img" aria-label="Download Brim for Mac">
+  <title>Download Brim for Mac</title>
+  <rect x="0.5" y="0.5" width="259" height="63" rx="16" fill="#FFFFFF" stroke="#D1D1D6"/>
+  <g fill="none" stroke="#1D1D1F" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M36 20v16"/>
+    <path d="M29 30l7 7 7-7"/>
+    <path d="M27 44h18"/>
+  </g>
+  <text x="60" y="30" fill="#1D1D1F" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="18" font-weight="700">Download for Mac</text>
+  <text x="60" y="48" fill="#48484A" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="500">Brim.dmg · macOS 13 or later</text>
+</svg>
