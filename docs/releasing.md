@@ -8,14 +8,16 @@ newest release.
 
 ## Steps
 
-1. Bump `BrimVersion.string` in `Sources/IslandCore/BrimVersion.swift` (the build script reads it).
-2. Write the release notes in `docs/releases/vX.Y.Z.md` (optional; without it GitHub generates
-   notes from the merged pull requests).
-3. Merge that to `main` and wait for CI to pass.
-4. Point the installer and docs at the new version in a small pull request, as for every release:
-   `PINNED_COMMIT` in `install.sh` (the merge commit from step 3) and the `vX.Y.Z` tag in
-   `README.md`, `docs/how-to-update-brim.md` and `docs/quick-setup-cli.md`. Merge it.
-5. Tag that merge commit and push the tag:
+One pull request with two commits, then a tag:
+
+1. **Version commit:** bump `BrimVersion.string` in `Sources/IslandCore/BrimVersion.swift` (the
+   build script reads it) and write the notes in `docs/releases/vX.Y.Z.md` (optional; without it
+   GitHub generates notes from the merged pull requests).
+2. **Pin commit:** point the installer and docs at the release: `PINNED_COMMIT` in `install.sh`
+   set to the version commit's full SHA (merging keeps that commit, so the pin stays valid), and
+   the `vX.Y.Z` tag in `README.md`, `docs/how-to-update-brim.md` and `docs/quick-setup-cli.md`.
+3. Open the pull request, wait for CI to pass, merge.
+4. Tag the merge commit and push the tag:
 
    ```bash
    git tag -a vX.Y.Z -m "Brim X.Y.Z" <merge-commit>
