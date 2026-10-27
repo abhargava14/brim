@@ -129,11 +129,18 @@ final class UsageModel: ObservableObject {
         settings.reloadIfChangedOnDisk()
         claudeConnection = statusLine.state()
         scanLogs()
+        // Live plan % > silence: menu Refresh + post-update first fetch may Keychain-prompt once.
+        // Background timer stays Fail-UI (`allowPrompt: false`).
+        let allowPrompt = forceAccounts || PostUpdateLive.consume()
         let now = Date()
         for connection in settings.enabledConnections where connection.kind.source == .account || connection.kind == .claude {
             let due = (lastAccountFetch[connection.id] ?? .distantPast) < now.addingTimeInterval(-Self.accountInterval)
             guard forceAccounts || due else { continue }
-            if connection.kind == .claude { fetchClaudeLimits(connection) } else { fetchAccount(connection) }
+            if connection.kind == .claude {
+                fetchClaudeLimits(connection, allowPrompt: allowPrompt)
+            } else {
+                fetchAccount(connection, allowPrompt: allowPrompt)
+            }
         }
         publish()
     }
@@ -189,14 +196,14 @@ final class UsageModel: ObservableObject {
         }
     }
 
-    private func fetchAccount(_ connection: Connection) {
+    private func fetchAccount(_ connection: Connection, allowPrompt: Bool = false) {
         if BrimQA.skipCredentials { return }
         guard !fetching.contains(connection.id) else { return }
         fetching.insert(connection.id)
         publish()
         Task {
             do {
-                let usage = try await AccountFetcher.fetch(connection)
+                let usage = try await AccountFetcher.fetch(connection, allowPrompt: allowPrompt)
                 self.accountUsage[connection.id] = usage
                 self.accountErrors[connection.id] = nil
             } catch {
@@ -209,7 +216,7 @@ final class UsageModel: ObservableObject {
     }
 
     /// Reads who is signed in to the connection's Claude Code folder, then asks Anthropic for its limits.
-    private func fetchClaudeLimits(_ connection: Connection) {
+    private func fetchClaudeLimits(_ connection: Connection, allowPrompt: Bool = false) {
         if BrimQA.skipCredentials { return }
         guard !fetching.contains(connection.id), let configDir = connection.claudeConfigDir() else { return }
         fetching.insert(connection.id)
@@ -222,7 +229,7 @@ final class UsageModel: ObservableObject {
             }
             self.claudeAccounts[connection.id] = account
             do {
-                let windows = try await ClaudeUsageFetcher.fetch(account)
+                let windows = try await ClaudeUsageFetcher.fetch(account, allowPrompt: allowPrompt)
                 self.claudeLimits[connection.id] = windows
                 self.claudeErrors[connection.id] = nil
                 self.claudeLimitsCache.readings[account.key] = .init(windows: windows, fetchedAt: Date())
@@ -460,7 +467,7 @@ final class UsageModel: ObservableObject {
     /// Connects (or reconnects) a connection, optionally saving a token for it first.
     func connect(_ id: String, token: String? = nil) {
         if let token = token?.trimmingCharacters(in: .whitespacesAndNewlines), !token.isEmpty {
-            Keychain.save(token, for: id)
+            Keychain.save(token, for: id, allowPrompt: true)
         }
         accountErrors[id] = nil
         lastAccountFetch[id] = nil
@@ -469,7 +476,9 @@ final class UsageModel: ObservableObject {
             refresh(forceAccounts: true)
         } else {
             settings.setEnabled(id, true) // the connections sink refreshes
-            if let connection = settings.connection(id), connection.kind.source == .account { fetchAccount(connection) }
+            if let connection = settings.connection(id), connection.kind.source == .account {
+                fetchAccount(connection, allowPrompt: true)
+            }
         }
     }
 
@@ -511,7 +520,7 @@ final class UsageModel: ObservableObject {
     func add(_ kind: ToolKind) -> Connection {
         let connection = settings.add(kind)
         justConnected.insert(connection.id)
-        if kind.source == .account { fetchAccount(connection) }
+        if kind.source == .account { fetchAccount(connection, allowPrompt: true) }
         return connection
     }
 
@@ -524,10 +533,10 @@ final class UsageModel: ObservableObject {
             settings.update(connection)
         }
         if let token = token?.trimmingCharacters(in: .whitespacesAndNewlines), !token.isEmpty {
-            Keychain.save(token, for: connection.id)
+            Keychain.save(token, for: connection.id, allowPrompt: true)
         }
         justConnected.insert(connection.id)
-        if kind.source == .account { fetchAccount(connection) }
+        if kind.source == .account { fetchAccount(connection, allowPrompt: true) }
         return connection
     }
 
@@ -682,7 +691,7 @@ final class UsageModel: ObservableObject {
         settings.update(connection)
         claudeAccounts[connection.id] = account
         justConnected.insert(connection.id)
-        fetchClaudeLimits(connection)
+        fetchClaudeLimits(connection, allowPrompt: true)
         return connection
     }
 

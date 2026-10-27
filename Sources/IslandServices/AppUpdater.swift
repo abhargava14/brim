@@ -137,9 +137,8 @@ public enum AppUpdater {
         }
 
         let mountedApp = try attachAndFindApp(dmg: dmgPath, scratch: temp)
-        // Quiet relaunch: skip Keychain credential migrate on first open after replace.
-        // Usage logs + cached plan windows still load; SecItem paths stay Fail-UI.
-        PostUpdateQuiet.arm()
+        // Live relaunch: first Refresh may unlock Keychain once for live plan % (Always Allow).
+        PostUpdateLive.arm()
         try scheduleReplace(from: mountedApp, to: destination)
         return destination
     }
@@ -301,8 +300,7 @@ public enum AppUpdater {
           codesign --force --sign - -i com.brim.app -r='designated => identifier "com.brim.app"' \(shellEscape(dest))/Contents/Helpers/brim 2>/dev/null || true
           codesign --force --sign - -i com.brim.app -r='designated => identifier "com.brim.app"' \(shellEscape(dest)) 2>/dev/null || true
         fi
-        # Relaunch loads logs + cached plan windows; credential migrate is skipped once via
-        # post-update-quiet (armed before quit). No Keychain unlock demos.
+        # Relaunch: first account refresh may Keychain-prompt once for live plan % (Always Allow).
         open \(shellEscape(dest))
         rm -rf \(shellEscape(src))
         rm -f \(shellEscape(script.path))

@@ -4,8 +4,9 @@ import LocalAuthentication
 import Security
 import SQLite3
 
-/// Shared Keychain policy: never present login-password or Allow sheets from timers / launch / poll.
-/// Callers soft-fail (`nil` / `false`) when the item is locked or ACL-denied.
+/// Shared Keychain policy for **background polls**: Fail-UI so the timer never pops a sheet.
+/// User-visible Refresh and post-update first refresh pass `allowPrompt: true` instead — live
+/// plan % matters more than staying quiet (pick **Always Allow** once).
 enum KeychainSilence {
     /// Applies `kSecUseAuthenticationUIFail` + an `LAContext` with `interactionNotAllowed`.
     static func denyInteraction(_ query: inout [String: Any]) {
@@ -48,22 +49,26 @@ public enum ConnectorError: LocalizedError {
 /// `state.vscdb` (see `VSCodeState`). On first successful read, Brim copies the secret into
 /// Brim's own Keychain and prefers that copy so the editor DB is not re-read every refresh.
 public enum AccountFetcher {
-    public static func fetch(_ connection: Connection) async throws -> AccountUsage {
+    /// - Parameter allowPrompt: `true` for menu Refresh / post-update first fetch (may show Keychain
+    ///   UI once for live plan %). Background timer passes `false` (Fail-UI).
+    public static func fetch(_ connection: Connection, allowPrompt: Bool = false) async throws -> AccountUsage {
         if BrimQA.skipCredentials {
             throw ConnectorError.needsToken("QA mode — Keychain and account refresh skipped")
         }
-        let saved = Keychain.read(connection.id)
+        let saved = Keychain.read(connection.id, allowPrompt: allowPrompt)
         switch connection.kind {
         case .copilot:
             let login = connection.option(Connection.Option.githubLogin)
-            // Background refresh uses Brim's Keychain only. Never call `gh auth token` on a timer —
-            // gh reads its own Keychain without Fail-UI and can pop a Mac login-password sheet
-            // (especially after Brim updates relaunch into a refresh). Sign-in copies the token once.
-            guard let token = saved else {
-                throw ConnectorError.needsToken(login.isEmpty ? tokenHelp(for: .copilot)
-                    : "Reconnect \(login) in Brim (Sign in with GitHub…). Brim never asks for your Mac login password.")
+            if let token = saved {
+                return try await copilot(token: token)
             }
-            return try await copilot(token: token)
+            // Interactive only: read gh (may Keychain-prompt) and copy into Brim for later silent polls.
+            if allowPrompt, let token = GitHubCLI.token(user: login), !token.isEmpty {
+                _ = Keychain.save(token, for: connection.id, allowPrompt: true)
+                return try await copilot(token: token)
+            }
+            throw ConnectorError.needsToken(login.isEmpty ? tokenHelp(for: .copilot)
+                : "The GitHub CLI isn't signed in to \(login) anymore. Sign in with GitHub again, or paste a token.")
         case .cursor:
             let fromEditor = saved == nil
             let token = saved ?? VSCodeState.cursorAccessToken()
@@ -72,7 +77,7 @@ public enum AccountFetcher {
                 // Only Cursor's own sign-in says whose it is; a pasted token may be another account.
                 if fromEditor {
                     usage.accountLabel = VSCodeState.cursorEmail()
-                    if let token, !token.isEmpty { Keychain.save(token, for: connection.id) }
+                    if let token, !token.isEmpty { Keychain.save(token, for: connection.id, allowPrompt: allowPrompt) }
                 }
                 return usage
             } catch ConnectorError.unauthorized where saved != nil {
@@ -81,7 +86,7 @@ public enum AccountFetcher {
                 let retry = VSCodeState.cursorAccessToken()
                 var usage = try await cursor(token: retry)
                 usage.accountLabel = VSCodeState.cursorEmail()
-                if let retry, !retry.isEmpty { Keychain.save(retry, for: connection.id) }
+                if let retry, !retry.isEmpty { Keychain.save(retry, for: connection.id, allowPrompt: allowPrompt) }
                 return usage
             }
         case .windsurf:
@@ -89,13 +94,13 @@ public enum AccountFetcher {
             let apiKey = saved ?? VSCodeState.windsurfAPIKey()
             do {
                 let usage = try await windsurf(apiKey: apiKey)
-                if fromEditor, let apiKey, !apiKey.isEmpty { Keychain.save(apiKey, for: connection.id) }
+                if fromEditor, let apiKey, !apiKey.isEmpty { Keychain.save(apiKey, for: connection.id, allowPrompt: allowPrompt) }
                 return usage
             } catch ConnectorError.unauthorized where saved != nil {
                 Keychain.delete(connection.id)
                 let retry = VSCodeState.windsurfAPIKey()
                 let usage = try await windsurf(apiKey: retry)
-                if let retry, !retry.isEmpty { Keychain.save(retry, for: connection.id) }
+                if let retry, !retry.isEmpty { Keychain.save(retry, for: connection.id, allowPrompt: allowPrompt) }
                 return usage
             }
         case .openrouter: return try await openRouter(key: saved)
@@ -448,12 +453,11 @@ public enum VSCodeState {
 }
 
 /// Tokens the user pasted (or copied once from an editor DB), one Keychain item per connection.
-/// Also stores Claude OAuth JSON under `claude.oauth.<account.key>` so Brim never needs to shell
-/// out to `/usr/bin/security` or re-prompt for Claude Code's Keychain ACL on every refresh.
+/// Also stores Claude OAuth JSON under `claude.oauth.<account.key>`.
 ///
-/// Every `SecItem*` call sets `kSecUseAuthenticationUIFail` + `interactionNotAllowed`. If the
-/// login keychain is locked or an ACL would need a sheet after an ad-hoc re-sign, the call
-/// soft-fails — refresh keeps last-known plan windows and the UI asks to reconnect.
+/// Background polls use Fail-UI (`allowPrompt: false`). Menu Refresh and post-update first
+/// refresh may pass `allowPrompt: true` so live plan % can unlock Keychain once — pick
+/// **Always Allow**. Never delete+re-add on ACL failure (that thrash forces repeated sheets).
 public enum Keychain {
     public static let service = "com.brim.app.connections"
     /// Where AI Island, Brim's old name, kept the same tokens.
@@ -464,11 +468,11 @@ public enum Keychain {
         "claude.oauth.\(accountKey)"
     }
 
-    public static func read(_ account: String, service: String = service) -> String? {
-        readData(account, service: service).flatMap { String(data: $0, encoding: .utf8) }
+    public static func read(_ account: String, service: String = service, allowPrompt: Bool = false) -> String? {
+        readData(account, service: service, allowPrompt: allowPrompt).flatMap { String(data: $0, encoding: .utf8) }
     }
 
-    public static func readData(_ account: String, service: String = service) -> Data? {
+    public static func readData(_ account: String, service: String = service, allowPrompt: Bool = false) -> Data? {
         if BrimQA.skipCredentials { return nil }
         var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
@@ -477,39 +481,38 @@ public enum Keychain {
             kSecReturnData as String: true,
             kSecMatchLimit as String: kSecMatchLimitOne,
         ]
-        KeychainSilence.denyInteraction(&query)
+        if !allowPrompt { KeychainSilence.denyInteraction(&query) }
         var item: CFTypeRef?
         guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess, let data = item as? Data else { return nil }
         return data
     }
 
     @discardableResult
-    public static func save(_ value: String, for account: String) -> Bool {
-        saveData(Data(value.utf8), for: account)
+    public static func save(_ value: String, for account: String, allowPrompt: Bool = false) -> Bool {
+        saveData(Data(value.utf8), for: account, allowPrompt: allowPrompt)
     }
 
     @discardableResult
-    public static func saveData(_ data: Data, for account: String) -> Bool {
+    public static func saveData(_ data: Data, for account: String, allowPrompt: Bool = false) -> Bool {
         if BrimQA.skipCredentials { return false }
         var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
         ]
-        KeychainSilence.denyInteraction(&query)
+        if !allowPrompt { KeychainSilence.denyInteraction(&query) }
         let attributes: [String: Any] = [
             kSecValueData as String: data,
             kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
         ]
         let updated = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
         if updated == errSecSuccess { return true }
-        // ACL / locked / interaction-not-allowed: soft-fail. Never delete+re-add — that churn
-        // after an ad-hoc re-sign is what forces a Mac login-password sheet.
+        // Never delete+re-add on ACL/auth failure — that thrash re-prompts after every rebuild.
         guard updated == errSecItemNotFound else { return false }
         var item = query
         item[kSecValueData as String] = data
         item[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
-        KeychainSilence.denyInteraction(&item)
+        if !allowPrompt { KeychainSilence.denyInteraction(&item) }
         return SecItemAdd(item as CFDictionary, nil) == errSecSuccess
     }
 
@@ -524,7 +527,7 @@ public enum Keychain {
         SecItemDelete(query as CFDictionary)
     }
 
-    /// Existence check without returning the secret (still Fail-UI — never pops a sheet).
+    /// Existence check without returning the secret (Fail-UI — never pops a sheet).
     public static func has(_ account: String) -> Bool {
         if BrimQA.skipCredentials { return false }
         var query: [String: Any] = [
@@ -538,10 +541,12 @@ public enum Keychain {
     }
 
     /// Moves tokens saved under the old service name to the current one.
-    public static func migrateLegacy(accounts: [String]) {
+    public static func migrateLegacy(accounts: [String], allowPrompt: Bool = false) {
         for account in accounts {
-            guard let token = read(account, service: legacyService) else { continue }
-            if read(account) == nil { save(token, for: account) }
+            guard let token = read(account, service: legacyService, allowPrompt: allowPrompt) else { continue }
+            if read(account, allowPrompt: allowPrompt) == nil {
+                save(token, for: account, allowPrompt: allowPrompt)
+            }
             delete(account, service: legacyService)
         }
     }

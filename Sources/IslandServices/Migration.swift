@@ -5,15 +5,15 @@ public enum BrimMigration {
     /// Carries files, Keychain tokens, and the Claude Code status line over from AI Island.
     /// Safe to run on every launch; it does nothing once there's nothing left to move.
     ///
-    /// Keychain migrate always uses Fail-UI (`KeychainSilence`) and soft-fails — Check for
-    /// Updates / post-replace relaunch must never force a Mac login-password unlock.
+    /// After Check for Updates, `PostUpdateLive` arms so the first account refresh may unlock
+    /// Keychain for **live plan %** (pick **Always Allow**). Background polls stay Fail-UI.
     public static func run() {
         LegacyMigration.moveSupportFolder()
         // Never migrate / touch Keychain during screenshot or agent QA (no password sheets).
-        // Post-update quiet flag: skip credential migrate once after Check for Updates relaunch.
-        if !BrimQA.skipCredentials, !PostUpdateQuiet.consume() {
+        if !BrimQA.skipCredentials {
+            let interactive = PostUpdateLive.isArmed
             let accounts = ConnectionStore().load().connections.map(\.id)
-            Keychain.migrateLegacy(accounts: accounts)
+            Keychain.migrateLegacy(accounts: accounts, allowPrompt: interactive)
         }
         _ = try? ClaudeStatusLineSetup(
             supportDirectory: ClaudeStatusLineSetup.defaultSupportDirectory,
@@ -22,22 +22,30 @@ public enum BrimMigration {
     }
 }
 
-/// One-shot flag the in-app updater leaves before `open` so relaunch skips Keychain migrate.
-/// Usage logs and cached plan windows still load; credentials soft-fail until the next quiet launch.
-enum PostUpdateQuiet {
+/// One-shot flag the in-app updater leaves before `open`. First Refresh after relaunch may
+/// prompt Keychain once for live Claude/Cursor plan % — not a soft-fail skip.
+public enum PostUpdateLive {
     static var flagURL: URL {
-        ClaudeStatusLineSetup.defaultSupportDirectory.appendingPathComponent("post-update-quiet")
+        ClaudeStatusLineSetup.defaultSupportDirectory.appendingPathComponent("post-update-live")
     }
 
-    static func arm() {
+    /// True while the flag file exists (before `consume`).
+    public static var isArmed: Bool {
+        FileManager.default.fileExists(atPath: flagURL.path)
+    }
+
+    public static func arm() {
         let dir = flagURL.deletingLastPathComponent()
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         FileManager.default.createFile(atPath: flagURL.path, contents: Data(), attributes: nil)
+        // Drop the old quiet flag from 0.5.3 if present.
+        let legacy = ClaudeStatusLineSetup.defaultSupportDirectory.appendingPathComponent("post-update-quiet")
+        try? FileManager.default.removeItem(at: legacy)
     }
 
-    /// Returns true once if the updater armed a quiet relaunch, then clears the flag.
+    /// Returns true once if the updater armed a live relaunch, then clears the flag.
     @discardableResult
-    static func consume() -> Bool {
+    public static func consume() -> Bool {
         let url = flagURL
         guard FileManager.default.fileExists(atPath: url.path) else { return false }
         try? FileManager.default.removeItem(at: url)

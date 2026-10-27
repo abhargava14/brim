@@ -71,24 +71,24 @@ public enum ClaudeUsageFetcher {
     private static let refreshGate = DispatchQueue(label: "com.brim.claude-oauth-refresh")
     private static var refreshWaiters: [String: [CheckedContinuation<Result<ClaudeCredentials, Error>, Never>]] = [:]
 
-    public static func fetch(_ account: ClaudeAccount, now: Date = Date()) async throws -> [PlanWindow] {
-        let stored = try await validCredentials(for: account, now: now)
+    /// - Parameter allowPrompt: `true` for menu Refresh / post-update first fetch (may unlock Keychain
+    ///   for live plan %). Background timer passes `false`.
+    public static func fetch(_ account: ClaudeAccount, now: Date = Date(), allowPrompt: Bool = false) async throws -> [PlanWindow] {
+        let stored = try await validCredentials(for: account, now: now, allowPrompt: allowPrompt)
         do {
             return try await requestUsage(accessToken: stored.accessToken)
         } catch ClaudeUsageError.rejected {
             // Access token rejected mid-life — refresh once and retry.
-            let renewed = try await refreshCredentials(for: account, force: true)
+            let renewed = try await refreshCredentials(for: account, force: true, allowPrompt: allowPrompt)
             return try await requestUsage(accessToken: renewed.accessToken)
         }
     }
 
     /// Credentials that are usable now: refresh when the access token is past (or within 60s of) expiry.
-    static func validCredentials(for account: ClaudeAccount, now: Date = Date()) async throws -> ClaudeCredentials {
-        // Never allow Keychain UI on the refresh timer — credentials must already live in Brim's Keychain
-        // (imported once at Sign in). Missing → ask the user to sign in again, not type their Mac password.
-        guard let item = ClaudeCodeKeychain.read(for: account, allowPrompt: false) else { throw ClaudeUsageError.notSignedIn }
+    static func validCredentials(for account: ClaudeAccount, now: Date = Date(), allowPrompt: Bool = false) async throws -> ClaudeCredentials {
+        guard let item = ClaudeCodeKeychain.read(for: account, allowPrompt: allowPrompt) else { throw ClaudeUsageError.notSignedIn }
         if !item.credentials.isExpired(now: now) { return item.credentials }
-        return try await refreshCredentials(for: account, force: false)
+        return try await refreshCredentials(for: account, force: false, allowPrompt: allowPrompt)
     }
 
     private static func requestUsage(accessToken: String) async throws -> [PlanWindow] {
@@ -112,8 +112,8 @@ public enum ClaudeUsageFetcher {
     /// Refreshes the account's OAuth tokens and writes them back to Claude Code's Keychain item.
     /// Concurrent callers for the same Keychain service share one in-flight refresh so two Brim
     /// timers can't rotate the same refresh token against each other.
-    static func refreshCredentials(for account: ClaudeAccount, force: Bool) async throws -> ClaudeCredentials {
-        guard let item = ClaudeCodeKeychain.read(for: account, allowPrompt: false) else { throw ClaudeUsageError.notSignedIn }
+    static func refreshCredentials(for account: ClaudeAccount, force: Bool, allowPrompt: Bool = false) async throws -> ClaudeCredentials {
+        guard let item = ClaudeCodeKeychain.read(for: account, allowPrompt: allowPrompt) else { throw ClaudeUsageError.notSignedIn }
         if !force, !item.credentials.isExpired() { return item.credentials }
         guard item.credentials.refreshToken != nil else { throw ClaudeUsageError.expired }
 
@@ -128,7 +128,7 @@ public enum ClaudeUsageFetcher {
                 Task {
                     let result: Result<ClaudeCredentials, Error>
                     do {
-                        result = .success(try await performRefresh(account: account, force: force))
+                        result = .success(try await performRefresh(account: account, force: force, allowPrompt: allowPrompt))
                     } catch {
                         result = .failure(error)
                     }
@@ -141,9 +141,9 @@ public enum ClaudeUsageFetcher {
         }.get()
     }
 
-    private static func performRefresh(account: ClaudeAccount, force: Bool) async throws -> ClaudeCredentials {
+    private static func performRefresh(account: ClaudeAccount, force: Bool, allowPrompt: Bool) async throws -> ClaudeCredentials {
         // Re-read under the single-flight so a concurrent refresh wins without a fight.
-        guard let latest = ClaudeCodeKeychain.read(for: account, allowPrompt: false) else {
+        guard let latest = ClaudeCodeKeychain.read(for: account, allowPrompt: allowPrompt) else {
             throw ClaudeUsageError.notSignedIn
         }
         if !force, !latest.credentials.isExpired() { return latest.credentials }
@@ -154,7 +154,7 @@ public enum ClaudeUsageFetcher {
             throw ClaudeUsageError.unexpected
         }
         // Refresh tokens rotate: write Brim's copy first (required). Claude Code sync is best-effort.
-        guard ClaudeCodeKeychain.write(service: latest.service, data: updatedJSON, account: account) else {
+        guard ClaudeCodeKeychain.write(service: latest.service, data: updatedJSON, account: account, allowPrompt: allowPrompt) else {
             throw ClaudeUsageError.expired
         }
         guard let credentials = ClaudeCredentials.parse(updatedJSON) else { throw ClaudeUsageError.unexpected }
@@ -196,22 +196,11 @@ public enum ClaudeUsageFetcher {
     }
 }
 
-/// Claude OAuth credentials: **Brim-owned Keychain only** on refresh / launch / poll.
-/// Claude Code's Keychain item is touched **only** during explicit Sign-in (`importAfterSignIn`).
+/// Claude OAuth credentials: prefer Brim-owned Keychain; probe Claude Code when `allowPrompt`
+/// (Sign-in, menu Refresh, post-update first fetch) so **live plan %** can unlock Keychain once.
 ///
-/// Why this exists: shelling out to `/usr/bin/security find-generic-password` is a different
-/// binary than Brim.app, so macOS Keychain ACL treats it as untrusted and asks for the **login
-/// password** on every refresh. Even in-process `SecItemCopyMatching` against Claude Code's
-/// item can re-prompt after rebuilds / updates (Fail-UI is not always honored for foreign ACLs).
-/// Brim therefore:
-/// 1. Copies the OAuth JSON into `com.brim.app.connections` once (explicit Sign-in only).
-/// 2. Reads and refreshes that Brim-owned item forever after — no password loops.
-/// 3. Soft-syncs rotated tokens back to Claude Code's item with authentication UI suppressed
-///    (`kSecUseAuthenticationUIFail`) so a denied ACL never pops a dialog.
-/// 4. Never uses the `security` CLI.
-/// 5. Refresh / launch / update-relaunch / island / poll never probe Claude Code's item; if
-///    Brim's copy is missing or ACL-blocked, soft-fail and keep last-known plan windows via
-///    `ClaudeLimits.resolve`.
+/// Background polls use Fail-UI and skip foreign ACL probes. Soft-sync of rotated tokens back to
+/// Claude Code always Fail-UI. Never uses the `security` CLI. Never delete+re-add on ACL failure.
 enum ClaudeCodeKeychain {
     struct Item {
         var service: String
@@ -229,19 +218,16 @@ enum ClaudeCodeKeychain {
         Keychain.claudeOAuthAccount(for: account.key)
     }
 
-    /// Prefer Brim-owned credentials. Foreign Claude Code items are **not** probed unless
-    /// `allowPrompt` is true (explicit Sign-in only).
-    /// - Parameter allowPrompt: only `true` during an explicit Sign-in / Import (one-time Allow sheet).
-    ///   Refresh / UsageCollector / launch / post-update always pass `false`.
+    /// Prefer Brim-owned credentials. When `allowPrompt`, may unlock Keychain and import from Claude Code.
+    /// - Parameter allowPrompt: `true` for Sign-in, menu Refresh, and post-update first fetch.
+    ///   Background timer passes `false`.
     static func read(for account: ClaudeAccount, allowPrompt: Bool = false) -> Item? {
-        if let item = readBrimOwned(for: account) { return item }
-        // Background paths must never touch Claude Code's ACL — that is what pops the Mac
-        // login-password sheet after ad-hoc re-sign / Check for Updates relaunch.
+        if let item = readBrimOwned(for: account, allowPrompt: allowPrompt) { return item }
         guard allowPrompt else { return nil }
         for service in account.keychainServices {
             if let item = readClaudeCodeItem(service: service, allowPrompt: true) {
-                // First successful import — subsequent refreshes never touch Claude Code's ACL.
-                _ = Keychain.saveData(item.raw, for: brimAccount(for: account))
+                // Import into Brim so later silent polls do not need Claude Code's ACL.
+                _ = Keychain.saveData(item.raw, for: brimAccount(for: account), allowPrompt: true)
                 return Item(service: service, credentials: item.credentials, raw: item.raw, ownedByBrim: true)
             }
         }
@@ -249,31 +235,29 @@ enum ClaudeCodeKeychain {
     }
 
     static func read(service: String) -> Item? {
-        // Legacy call sites: never prompt; do not probe foreign ACL on a timer.
         readClaudeCodeItem(service: service, allowPrompt: false)
     }
 
     /// After browser OAuth via Claude Code, copy the new Keychain item into Brim.
-    /// May show one Keychain **Allow** sheet (user-initiated Sign-in only — never from a timer).
-    /// Never shells out to `/usr/bin/security`. Soft-fails if the user cancels.
+    /// May show one Keychain **Allow** sheet — pick **Always Allow**.
     @discardableResult
     static func importAfterSignIn(for account: ClaudeAccount) -> Bool {
         read(for: account, allowPrompt: true) != nil
     }
 
-    private static func readBrimOwned(for account: ClaudeAccount) -> Item? {
+    private static func readBrimOwned(for account: ClaudeAccount, allowPrompt: Bool) -> Item? {
         let accountKey = brimAccount(for: account)
-        guard let data = Keychain.readData(accountKey),
+        guard let data = Keychain.readData(accountKey, allowPrompt: allowPrompt),
               let credentials = ClaudeCredentials.parse(data) else { return nil }
         return Item(service: accountKey, credentials: credentials, raw: data, ownedByBrim: true)
     }
 
-    /// Updates Brim's copy (required) and best-effort syncs Claude Code without showing UI.
+    /// Updates Brim's copy (required) and best-effort syncs Claude Code with Fail-UI.
     /// Returns false only if Brim's write fails — caller must not keep a rotated refresh token.
-    static func write(service: String, data: Data, account: ClaudeAccount) -> Bool {
+    static func write(service: String, data: Data, account: ClaudeAccount, allowPrompt: Bool = false) -> Bool {
         let brimKey = brimAccount(for: account)
-        guard Keychain.saveData(data, for: brimKey) else { return false }
-        // Soft sync so Claude Code stays signed in when its ACL already trusts Brim.
+        guard Keychain.saveData(data, for: brimKey, allowPrompt: allowPrompt) else { return false }
+        // Soft sync — always Fail-UI so OAuth rotation never double-prompts on Claude Code's ACL.
         for name in account.keychainServices {
             if writeClaudeCodeItem(service: name, data: data) { break }
         }

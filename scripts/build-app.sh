@@ -13,7 +13,7 @@ BUNDLE_ID="com.brim.app"
 if [[ -z "${VERSION:-}" ]]; then
     VERSION="$(sed -n 's/.*static let string = \"\([^\"]*\)\".*/\1/p' Sources/IslandCore/BrimVersion.swift | head -1)"
 fi
-VERSION="${VERSION:-0.5.3}"
+VERSION="${VERSION:-0.5.4}"
 APP="build/$APP_NAME.app"
 
 swift build -c release --product BrimApp

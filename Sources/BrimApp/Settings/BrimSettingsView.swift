@@ -771,6 +771,10 @@ struct HelpPage: View {
             "Updating Brim",
             "Quit alone does not update. Use menu › Check for Updates…, run brim update, or download a newer Brim.dmg from GitHub Releases. Rebuilds need Command Line Tools."
         ),
+        (
+            "Mac asks for my login password",
+            "Brim needs Keychain for live Claude/Cursor plan %. After an update or Refresh, macOS may ask once — choose Always Allow so background polls stay quiet. Usage logs on disk never need a password. Soft-failing would hide live %; we prefer the prompt when live numbers matter."
+        ),
     ]
 
     var body: some View {
