@@ -196,20 +196,22 @@ public enum ClaudeUsageFetcher {
     }
 }
 
-/// Claude OAuth credentials: **Brim-owned Keychain first**, Claude Code's item only as a one-shot
-/// import source.
+/// Claude OAuth credentials: **Brim-owned Keychain only** on refresh / launch / poll.
+/// Claude Code's Keychain item is touched **only** during explicit Sign-in (`importAfterSignIn`).
 ///
 /// Why this exists: shelling out to `/usr/bin/security find-generic-password` is a different
 /// binary than Brim.app, so macOS Keychain ACL treats it as untrusted and asks for the **login
 /// password** on every refresh. Even in-process `SecItemCopyMatching` against Claude Code's
-/// item can re-prompt after rebuilds. Brim therefore:
+/// item can re-prompt after rebuilds / updates (Fail-UI is not always honored for foreign ACLs).
+/// Brim therefore:
 /// 1. Copies the OAuth JSON into `com.brim.app.connections` once (explicit Sign-in only).
 /// 2. Reads and refreshes that Brim-owned item forever after — no password loops.
 /// 3. Soft-syncs rotated tokens back to Claude Code's item with authentication UI suppressed
 ///    (`kSecUseAuthenticationUIFail`) so a denied ACL never pops a dialog.
 /// 4. Never uses the `security` CLI.
-/// 5. Refresh / launch / island / poll always Fail-UI; if Keychain is blocked, soft-fail and
-///    keep last-known plan windows via `ClaudeLimits.resolve`.
+/// 5. Refresh / launch / update-relaunch / island / poll never probe Claude Code's item; if
+///    Brim's copy is missing or ACL-blocked, soft-fail and keep last-known plan windows via
+///    `ClaudeLimits.resolve`.
 enum ClaudeCodeKeychain {
     struct Item {
         var service: String
@@ -227,13 +229,17 @@ enum ClaudeCodeKeychain {
         Keychain.claudeOAuthAccount(for: account.key)
     }
 
-    /// Prefer Brim-owned credentials. Optionally silent-import from Claude Code when ACL already allows.
+    /// Prefer Brim-owned credentials. Foreign Claude Code items are **not** probed unless
+    /// `allowPrompt` is true (explicit Sign-in only).
     /// - Parameter allowPrompt: only `true` during an explicit Sign-in / Import (one-time Allow sheet).
-    ///   Refresh / UsageCollector / launch always pass `false`.
+    ///   Refresh / UsageCollector / launch / post-update always pass `false`.
     static func read(for account: ClaudeAccount, allowPrompt: Bool = false) -> Item? {
         if let item = readBrimOwned(for: account) { return item }
+        // Background paths must never touch Claude Code's ACL — that is what pops the Mac
+        // login-password sheet after ad-hoc re-sign / Check for Updates relaunch.
+        guard allowPrompt else { return nil }
         for service in account.keychainServices {
-            if let item = readClaudeCodeItem(service: service, allowPrompt: allowPrompt) {
+            if let item = readClaudeCodeItem(service: service, allowPrompt: true) {
                 // First successful import — subsequent refreshes never touch Claude Code's ACL.
                 _ = Keychain.saveData(item.raw, for: brimAccount(for: account))
                 return Item(service: service, credentials: item.credentials, raw: item.raw, ownedByBrim: true)
@@ -243,7 +249,7 @@ enum ClaudeCodeKeychain {
     }
 
     static func read(service: String) -> Item? {
-        // Legacy call sites: Claude Code service name only, never prompt.
+        // Legacy call sites: never prompt; do not probe foreign ACL on a timer.
         readClaudeCodeItem(service: service, allowPrompt: false)
     }
 

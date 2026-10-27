@@ -539,9 +539,10 @@ final class UsageModel: ObservableObject {
             settings.update(connection)
         }
         let token = token?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        // A saved token wins over the GitHub CLI, so picking a CLI account drops it.
-        if token.isEmpty, options[Connection.Option.githubLogin] != nil { Keychain.delete(id) }
-        connect(id, token: token)
+        // Prefer an explicit token (device flow / paste / copied from gh at Add time). Do not
+        // delete a Brim Keychain copy just because a githubLogin option is set — background
+        // refresh never calls `gh auth token` (that pops Mac login-password sheets).
+        connect(id, token: token.isEmpty ? nil : token)
     }
 
     /// Accounts that are connected already, so the Add Account window can mark them.

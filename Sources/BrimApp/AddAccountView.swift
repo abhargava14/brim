@@ -535,7 +535,11 @@ private struct CopilotSignIn: View {
                                 Text("Added").font(AddChrome.caption).foregroundStyle(Color.white.opacity(0.35))
                             } else {
                                 AddChrome.secondaryButton("Add") {
-                                    finish([Connection.Option.githubLogin: account.login], nil)
+                                    // Copy gh's token into Brim's Keychain once (user-initiated).
+                                    // Background refresh never calls `gh auth token` (Keychain UI).
+                                    let login = account.login
+                                    let copied = GitHubCLI.token(user: login)
+                                    finish([Connection.Option.githubLogin: login], copied)
                                 }
                             }
                         }

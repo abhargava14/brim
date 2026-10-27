@@ -53,6 +53,7 @@ tests and run. Then polish.
    `brim status`, or Keychain unlock demos. Install with
    `./scripts/build-app.sh --copy-only` (copy `.app` + CLI links only — do **not** `open` the app).
    Background refresh must soft-fail when Keychain is locked (`kSecUseAuthenticationUIFail`).
+   Never probe Claude Code's Keychain or call `gh auth token` from timers / post-update relaunch.
 
 ## 3. Prerequisites (check, don't assume)
 

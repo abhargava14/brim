@@ -434,11 +434,12 @@ not API keys.
 `~/.local/bin` to your PATH:
 `echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc`, then open a new terminal.
 
-**Brim never asks for your Mac login password** on refresh, launch, or island open. If a
-Keychain item is locked or ACL-blocked (common after rebuilding an ad-hoc-signed app), Brim
-soft-fails: last-known Claude plan windows stay on screen and the card asks you to **reconnect**
-via Sign in with Claude… A one-time Keychain **Allow** sheet can still appear during that
-explicit Sign-in — not on the background timer.
+**Brim never asks for your Mac login password** on refresh, launch, Check for Updates relaunch,
+or island open. Usage logs live on disk and never need Keychain. If a Keychain item is locked
+or ACL-blocked (common after rebuilding an ad-hoc-signed app), Brim soft-fails: last-known
+Claude plan windows stay on screen and the card asks you to **reconnect** via Sign in with
+Claude… A one-time Keychain **Allow** sheet can still appear during that explicit Sign-in —
+not on the background timer or after an update.
 
 ## Uninstall
 
