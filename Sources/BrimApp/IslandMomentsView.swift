@@ -1,6 +1,48 @@
 import IslandCore
 import SwiftUI
 
+// MARK: - Menu bar moment (G42)
+
+/// Compact black pill for moments while the island has stepped aside to the menu bar.
+struct MenuBarMomentPill: View {
+    let event: IslandEvent
+
+    private var rim: Color? {
+        switch event.style {
+        case .limit: return Brand.limit
+        case .warning: return Brand.attention
+        case .connected: return Brand.good
+        case .milestone, .disconnected: return nil
+        }
+    }
+
+    private var mood: GlyphMood {
+        switch event.style {
+        case .connected, .milestone: return .celebrate
+        case .warning, .limit: return .attention
+        case .disconnected: return .dim
+        }
+    }
+
+    var body: some View {
+        HStack(spacing: 5) {
+            ToolGlyph(kind: event.kind, mood: mood, size: 12, playful: false, bounce: false, name: event.title)
+            Text(event.title)
+                .font(.system(size: 11, weight: .bold, design: .rounded))
+                .lineLimit(1)
+        }
+        .foregroundStyle(.white)
+        .padding(.horizontal, 9)
+        .padding(.vertical, 3)
+        .background(Capsule().fill(Color.black))
+        .overlay(Capsule().strokeBorder(rim ?? .clear, lineWidth: rim == nil ? 0 : 1.2))
+        .shadow(color: (rim ?? .clear).opacity(0.45), radius: 4)
+        .fixedSize()
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(event.title). \(event.detail)")
+    }
+}
+
 // MARK: - Event moments
 
 struct EventView: View {

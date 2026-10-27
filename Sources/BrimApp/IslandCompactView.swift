@@ -19,12 +19,6 @@ struct CompactView: View {
             let page = Int(context.date.timeIntervalSince1970 / Self.pageSeconds) % pageCount
             let pair = pages.isEmpty ? (nil, nil) : pages[page]
             content(left: pair.0, right: pair.1, page: page, pages: pageCount)
-                .id(page)
-                .transition(.asymmetric(
-                    insertion: .offset(y: 13).combined(with: .opacity).animation(.spring(response: 0.46, dampingFraction: 0.72)),
-                    removal: .offset(y: -13).combined(with: .opacity).animation(.easeIn(duration: 0.28))
-                ))
-                .animation(.spring(response: 0.46, dampingFraction: 0.72), value: page)
         }
         .clipped()
     }
@@ -50,14 +44,27 @@ struct CompactView: View {
         return result
     }
 
+    /// Design v2 page change: out rises 13pt / fades 280ms; in rises from below over ~460ms.
+    private static let pageIn = AnyTransition.asymmetric(
+        insertion: .offset(y: 13).combined(with: .opacity),
+        removal: .offset(y: -13).combined(with: .opacity)
+    )
+
     @ViewBuilder
     private func content(left: ToolSnapshot?, right: CompactWingValue?, page: Int, pages: Int) -> some View {
         HStack(spacing: state.hasNotch ? 0 : 12) {
             wing(tool: left, alignment: .leading)
+                .id("L-\(page)-\(left?.id ?? "∅")")
+                .transition(Self.pageIn)
+                .animation(.spring(response: 0.46, dampingFraction: 0.8), value: page)
             if state.hasNotch {
                 Spacer().frame(width: state.notchWidth)
             }
             rightWing(right)
+                .id("R-\(page)")
+                .transition(Self.pageIn)
+                // Right wing lags 60ms (design v2).
+                .animation(.spring(response: 0.46, dampingFraction: 0.8).delay(0.06), value: page)
         }
         .padding(.horizontal, 4)
         .font(.system(size: 12.5, weight: .bold, design: .rounded))
@@ -122,7 +129,6 @@ struct CompactView: View {
                 .frame(maxWidth: wingWidth(.trailing), maxHeight: .infinity)
         case .tool(let tool):
             wing(tool: tool, alignment: .trailing)
-                .animation(.spring(response: 0.46, dampingFraction: 0.72).delay(0.06), value: tool.id)
         case .tokensToday(let total):
             let density = wingDensity(.trailing)
             HStack(alignment: .center, spacing: 4) {

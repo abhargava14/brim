@@ -12,7 +12,7 @@ struct IslandView: View {
     let openSettings: (SettingsSection) -> Void
     let addAccount: (AddAccountRequest) -> Void
 
-    private var cornerRadius: CGFloat { state.isExpanded ? 30 : (state.hasNotch ? 14 : 16) }
+    private var cornerRadius: CGFloat { state.isExpanded ? 28 : (state.hasNotch ? 14 : 16) }
     /// The open island follows Appearance; the closed notch is always black.
     private var theme: IslandTheme { state.isExpanded ? IslandTheme.resolve(settings.appearance) : .dark }
     private var width: CGFloat {

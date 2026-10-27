@@ -111,10 +111,10 @@ extension TabID {
 
 // MARK: - Cards and labels
 
-/// The rounded card every tab is built from.
+/// The rounded card every tab is built from (design v2 · radius 18, padding 12 × 14).
 struct IslandCard<Content: View>: View {
-    var padding = EdgeInsets(top: 14, leading: 16, bottom: 14, trailing: 16)
-    var radius: CGFloat = 20
+    var padding = EdgeInsets(top: 12, leading: 14, bottom: 12, trailing: 14)
+    var radius: CGFloat = 18
     var tint: Color?
     @ViewBuilder var content: Content
     @Environment(\.islandTheme) private var theme
