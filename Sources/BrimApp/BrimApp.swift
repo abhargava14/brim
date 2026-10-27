@@ -225,6 +225,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             menu.addItem(menuItem("Connect All", action: #selector(connectAll), symbol: "link"))
         }
         menu.addItem(menuItem("Settings…", action: #selector(openSettingsFromMenu), key: ",", symbol: "gearshape"))
+        menu.addItem(menuItem("Help…", action: #selector(openHelpFromMenu), symbol: "questionmark.circle"))
+        menu.addItem(menuItem("Send Feedback…", action: #selector(sendFeedbackFromMenu), symbol: "envelope"))
         menu.addItem(menuItem("Check for Updates…", action: #selector(checkForUpdates), symbol: "arrow.triangle.2.circlepath"))
         let show = NSMenuItem(title: "Show Island", action: #selector(showEmptyIsland), keyEquivalent: "")
         show.state = settings.showIsland && settings.emptyIsland == .small ? .on : .off
@@ -309,6 +311,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(menuItem("Add Account…", action: #selector(addAccountFromMenu), symbol: "person.badge.plus"))
         menu.addItem(menuItem("Disconnect All", action: #selector(disconnectAll), symbol: "person.crop.circle.badge.minus"))
         menu.addItem(menuItem("Settings…", action: #selector(openSettingsFromMenu), key: ",", symbol: "gearshape"))
+        menu.addItem(menuItem("Help…", action: #selector(openHelpFromMenu), symbol: "questionmark.circle"))
+        menu.addItem(menuItem("Send Feedback…", action: #selector(sendFeedbackFromMenu), symbol: "envelope"))
         menu.addItem(menuItem("Check for Updates…", action: #selector(checkForUpdates), symbol: "arrow.triangle.2.circlepath"))
         menu.addItem(.separator())
         menu.addItem(menuItem("Quit Brim", action: #selector(NSApplication.terminate(_:)), key: "q", symbol: "xmark.square", bindTarget: false))
@@ -383,6 +387,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc func openSettingsFromMenu() {
         openSettings(at: .general)
+    }
+
+    @objc func openHelpFromMenu() {
+        openSettings(at: .help)
+    }
+
+    @objc func sendFeedbackFromMenu() {
+        BrimFeedback.openMail()
     }
 
     func openSettings(at section: SettingsSection) {

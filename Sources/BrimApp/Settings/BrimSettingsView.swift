@@ -11,6 +11,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     case notch
     case connections
     case perms
+    case help
     case about
 
     var id: String { rawValue }
@@ -22,6 +23,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .notch: return "Closed notch"
         case .connections: return "Connections"
         case .perms: return "Permissions"
+        case .help: return "Help"
         case .about: return "About"
         }
     }
@@ -33,8 +35,29 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .notch: return "rectangle.topthird.inset.filled"
         case .connections: return "link"
         case .perms: return "checkmark.shield"
+        case .help: return "questionmark.circle"
         case .about: return "info.circle"
         }
+    }
+}
+
+/// Opens Mail with a pre-filled note to the maintainer (subject + app version).
+enum BrimFeedback {
+    static let email = "animeshbhargava@gmail.com"
+
+    static func mailtoURL(version: String = BrimVersion.string) -> URL {
+        var components = URLComponents()
+        components.scheme = "mailto"
+        components.path = email
+        components.queryItems = [
+            URLQueryItem(name: "subject", value: "Brim feedback"),
+            URLQueryItem(name: "body", value: "Brim \(version)\n\n"),
+        ]
+        return components.url ?? URL(string: "mailto:\(email)")!
+    }
+
+    static func openMail() {
+        NSWorkspace.shared.open(mailtoURL())
     }
 }
 
@@ -45,7 +68,7 @@ enum ConnectionGroup: String, CaseIterable, Identifiable {
     var title: String { self == .ai ? "AI" : rawValue.capitalized }
 }
 
-/// The Settings window: General, Tabs, Closed notch, Connections, Permissions and About.
+/// The Settings window: General, Tabs, Closed notch, Connections, Permissions, Help and About.
 struct BrimSettingsView: View {
     @ObservedObject var hub: BrimHub
     @ObservedObject var settings: AppSettings
@@ -136,6 +159,7 @@ struct BrimSettingsView: View {
         case .connections:
             ConnectionsPage(hub: hub, settings: settings, model: model, group: $group) { adding = $0 }
         case .perms: PermissionsPage(hub: hub)
+        case .help: HelpPage()
         case .about: AboutPage(settings: settings, updates: hub.updates)
         }
     }
@@ -725,6 +749,65 @@ struct PermissionInfo {
     var action: (() -> Void)?
 }
 
+// MARK: - Help
+
+struct HelpPage: View {
+    @Environment(\.islandTheme) private var theme
+
+    private let faqs: [(q: String, a: String)] = [
+        (
+            "Mac says Brim can’t be opened",
+            "That’s expected until Brim is notarized. Put Brim in Applications, open it once and click Done (not Move to Bin), then System Settings › Privacy & Security › Open Anyway. Don’t turn Gatekeeper off."
+        ),
+        (
+            "Connecting AI tools",
+            "Settings › Connections (or Add Account… from the menu). Connect Claude, Codex, Copilot, Cursor, Windsurf, OpenRouter, a log folder, or a JSON usage URL — as many accounts as you like. Tokens stay in the Keychain."
+        ),
+        (
+            "Using the island",
+            "Hover or click the notch (General › Open the island). ⌥ Space opens or closes it anywhere. The closed notch rotates now playing, AI limits, and optional calendar or weather. Esc or a click elsewhere collapses it."
+        ),
+        (
+            "Updating Brim",
+            "Quit alone does not update. Use menu › Check for Updates…, run brim update, or download a newer Brim.dmg from GitHub Releases. Rebuilds need Command Line Tools."
+        ),
+    ]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            SettingsGroup {
+                SettingsRow(
+                    title: "Send feedback",
+                    sub: "Opens Mail to \(BrimFeedback.email) with Brim \(BrimVersion.string) filled in",
+                    divider: false
+                ) {
+                    IslandButton(title: "Send feedback", style: .primary, height: 26, fontSize: 11.5, symbol: "envelope") {
+                        BrimFeedback.openMail()
+                    }
+                }
+            }
+
+            SettingsGroup(title: "FAQ") {
+                ForEach(Array(faqs.enumerated()), id: \.offset) { index, item in
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(item.q).font(.brim(13, .bold))
+                        Text(item.a)
+                            .font(.brim(11.5, .medium))
+                            .foregroundStyle(theme.f(0.55))
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .overlay(alignment: .top) {
+                        if index > 0 { Rectangle().fill(theme.f(0.07)).frame(height: 1) }
+                    }
+                }
+            }
+        }
+    }
+}
+
 // MARK: - About
 
 struct AboutPage: View {
@@ -765,6 +848,11 @@ struct AboutPage: View {
                 SettingsRow(title: "Source code", sub: "github.com/abhargava14/brim") {
                     IslandButton(title: "Open", height: 26, fontSize: 11.5) {
                         NSWorkspace.shared.open(URL(string: "https://github.com/abhargava14/brim")!)
+                    }
+                }
+                SettingsRow(title: "Send feedback", sub: "Email \(BrimFeedback.email) with Brim \(BrimVersion.string)") {
+                    IslandButton(title: "Email", height: 26, fontSize: 11.5) {
+                        BrimFeedback.openMail()
                     }
                 }
                 SettingsRow(title: "Report a problem", sub: "Opens a GitHub issue you can review before sending") {
