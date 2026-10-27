@@ -57,6 +57,80 @@ final class TimerStateTests: XCTestCase {
         XCTAssertEqual(state.glasses, 0)
     }
 
+    func testGlassesPersistYesterdayWhenRollingOneDay() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let day1 = Date(timeIntervalSince1970: 1_800_000_000)
+        var state = TimerState()
+        state.glassGoal = 8
+        state.addGlass(5, at: day1, calendar: calendar)
+        XCTAssertEqual(state.glasses, 5)
+
+        let day2 = calendar.date(byAdding: .day, value: 1, to: day1)!
+        state.rollDay(at: day2, calendar: calendar)
+        XCTAssertEqual(state.glasses, 0)
+        XCTAssertEqual(state.yesterdayGlasses, 5)
+        XCTAssertEqual(state.yesterdayGoal, 8)
+        XCTAssertTrue(state.yesterdayMissedGoal)
+        XCTAssertEqual(state.yesterdayIncompleteMessage, "Yesterday: 5/8 — goal not met")
+    }
+
+    func testYesterdayNoticeHiddenWhenGoalWasMet() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let day1 = Date(timeIntervalSince1970: 1_800_000_000)
+        var state = TimerState()
+        state.glassGoal = 8
+        state.addGlass(8, at: day1, calendar: calendar)
+
+        let day2 = calendar.date(byAdding: .day, value: 1, to: day1)!
+        state.rollDay(at: day2, calendar: calendar)
+        XCTAssertEqual(state.yesterdayGlasses, 8)
+        XCTAssertFalse(state.yesterdayMissedGoal)
+        XCTAssertNil(state.yesterdayIncompleteMessage)
+    }
+
+    func testYesterdayClearedAcrossMultiDayGap() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let day1 = Date(timeIntervalSince1970: 1_800_000_000)
+        var state = TimerState()
+        state.addGlass(3, at: day1, calendar: calendar)
+
+        let day3 = calendar.date(byAdding: .day, value: 2, to: day1)!
+        state.rollDay(at: day3, calendar: calendar)
+        XCTAssertEqual(state.glasses, 0)
+        XCTAssertNil(state.yesterdayGlasses)
+        XCTAssertNil(state.yesterdayIncompleteMessage)
+    }
+
+    func testGlassesOverflowCapsAtTwoRows() {
+        var state = TimerState()
+        state.glassGoal = 8
+        state.addGlass(20, at: t0)
+        XCTAssertEqual(state.glasses, 16)
+        XCTAssertEqual(state.maxGlasses, 16)
+        XCTAssertEqual(state.hydrationRowCount, 2)
+        XCTAssertEqual(state.filledGlasses(inRow: 0), 8)
+        XCTAssertEqual(state.filledGlasses(inRow: 1), 8)
+        XCTAssertEqual(state.filledGlasses(inRow: 2), 0)
+    }
+
+    func testSecondHydrationRowAppearsOnlyPastGoal() {
+        var state = TimerState()
+        state.glassGoal = 8
+        state.addGlass(8, at: t0)
+        XCTAssertEqual(state.hydrationRowCount, 1)
+        XCTAssertEqual(state.filledGlasses(inRow: 0), 8)
+        XCTAssertEqual(state.filledGlasses(inRow: 1), 0)
+
+        state.addGlass(1, at: t0)
+        XCTAssertEqual(state.glasses, 9)
+        XCTAssertEqual(state.hydrationRowCount, 2)
+        XCTAssertEqual(state.filledGlasses(inRow: 0), 8)
+        XCTAssertEqual(state.filledGlasses(inRow: 1), 1)
+    }
+
     func testClockFormats() {
         XCTAssertEqual(Clock.mmss(1500), "25:00")
         XCTAssertEqual(Clock.mmss(3723), "1:02:03")

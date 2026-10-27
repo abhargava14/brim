@@ -177,6 +177,11 @@ public struct TimerState: Codable, Equatable, Sendable {
     public var glassesDay = ""
     public var glassGoal = 8
     public var remindEveryMinutes = 45
+    /// Glasses logged on the calendar day before `glassesDay`, when that day rolled into today.
+    /// Nil when there is no trustworthy prior day (first launch or a multi-day gap).
+    public var yesterdayGlasses: Int?
+    /// Goal that applied on that prior day (kept so a later goal edit does not rewrite the notice).
+    public var yesterdayGoal: Int?
 
     public init() {}
 
@@ -288,16 +293,63 @@ public struct TimerState: Codable, Equatable, Sendable {
 
     // Hydration
 
-    public mutating func addGlass(_ delta: Int, at now: Date = Date(), calendar: Calendar = .current) {
-        rollDay(at: now, calendar: calendar)
-        glasses = max(0, min(glassGoal * 2, glasses + delta))
+    /// Hard cap: one overflow row (goal × 2), never more.
+    public var maxGlasses: Int { max(glassGoal, 1) * 2 }
+
+    /// 2 when today's count is past the goal; otherwise 1. Never more than two rows.
+    public var hydrationRowCount: Int { glasses > glassGoal ? 2 : 1 }
+
+    /// How many glasses in `row` (0 = goal row, 1 = overflow) are filled.
+    public func filledGlasses(inRow row: Int) -> Int {
+        switch row {
+        case 0: return min(max(glasses, 0), max(glassGoal, 0))
+        case 1: return max(0, min(glasses - glassGoal, glassGoal))
+        default: return 0
+        }
     }
 
-    /// Daily counters start again after midnight.
+    /// True when yesterday existed and finished under goal. Prefer this over a "completed" banner.
+    public var yesterdayMissedGoal: Bool {
+        guard let prior = yesterdayGlasses, let goal = yesterdayGoal else { return false }
+        return prior < goal
+    }
+
+    /// e.g. "Yesterday: 5/8 — goal not met". Nil when met or unknown.
+    public var yesterdayIncompleteMessage: String? {
+        guard yesterdayMissedGoal, let prior = yesterdayGlasses, let goal = yesterdayGoal else { return nil }
+        return "Yesterday: \(prior)/\(goal) — goal not met"
+    }
+
+    public mutating func addGlass(_ delta: Int, at now: Date = Date(), calendar: Calendar = .current) {
+        rollDay(at: now, calendar: calendar)
+        glasses = max(0, min(maxGlasses, glasses + delta))
+    }
+
+    /// True when local day keys for sessions or glasses are stale relative to `now`.
+    public func needsDayRoll(at now: Date = Date(), calendar: Calendar = .current) -> Bool {
+        let day = QuotaHistory.key(for: now, calendar: calendar)
+        return glassesDay != day || sessionsDay != day
+    }
+
+    /// Daily counters start again after midnight. Persists yesterday's count before clearing today.
     public mutating func rollDay(at now: Date = Date(), calendar: Calendar = .current) {
         let day = QuotaHistory.key(for: now, calendar: calendar)
         if sessionsDay != day { sessionsDay = day; sessionsToday = 0 }
-        if glassesDay != day { glassesDay = day; glasses = 0 }
+        guard glassesDay != day else { return }
+        if glassesDay.isEmpty {
+            yesterdayGlasses = nil
+            yesterdayGoal = nil
+        } else if let priorDate = calendar.date(byAdding: .day, value: -1, to: now),
+                  glassesDay == QuotaHistory.key(for: priorDate, calendar: calendar) {
+            yesterdayGlasses = glasses
+            yesterdayGoal = glassGoal
+        } else {
+            // Multi-day gap: do not pretend the last logged day was "yesterday".
+            yesterdayGlasses = nil
+            yesterdayGoal = nil
+        }
+        glassesDay = day
+        glasses = 0
     }
 }
 
