@@ -56,9 +56,12 @@ public enum AccountFetcher {
         switch connection.kind {
         case .copilot:
             let login = connection.option(Connection.Option.githubLogin)
-            guard let token = saved ?? GitHubCLI.token(user: login) else {
+            // Background refresh uses Brim's Keychain only. Never call `gh auth token` on a timer —
+            // gh reads its own Keychain without Fail-UI and can pop a Mac login-password sheet
+            // (especially after Brim updates relaunch into a refresh). Sign-in copies the token once.
+            guard let token = saved else {
                 throw ConnectorError.needsToken(login.isEmpty ? tokenHelp(for: .copilot)
-                    : "The GitHub CLI isn't signed in to \(login) anymore. Sign in with GitHub again, or paste a token.")
+                    : "Reconnect \(login) in Brim (Sign in with GitHub…). Brim never asks for your Mac login password.")
             }
             return try await copilot(token: token)
         case .cursor:
@@ -500,12 +503,13 @@ public enum Keychain {
         ]
         let updated = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
         if updated == errSecSuccess { return true }
-        if updated != errSecItemNotFound {
-            delete(account)
-        }
+        // ACL / locked / interaction-not-allowed: soft-fail. Never delete+re-add — that churn
+        // after an ad-hoc re-sign is what forces a Mac login-password sheet.
+        guard updated == errSecItemNotFound else { return false }
         var item = query
         item[kSecValueData as String] = data
         item[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+        KeychainSilence.denyInteraction(&item)
         return SecItemAdd(item as CFDictionary, nil) == errSecSuccess
     }
 

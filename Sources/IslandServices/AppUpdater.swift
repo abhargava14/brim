@@ -137,6 +137,9 @@ public enum AppUpdater {
         }
 
         let mountedApp = try attachAndFindApp(dmg: dmgPath, scratch: temp)
+        // Quiet relaunch: skip Keychain credential migrate on first open after replace.
+        // Usage logs + cached plan windows still load; SecItem paths stay Fail-UI.
+        PostUpdateQuiet.arm()
         try scheduleReplace(from: mountedApp, to: destination)
         return destination
     }
@@ -292,11 +295,14 @@ public enum AppUpdater {
         cp -R \(shellEscape(src)) \(shellEscape(dest))
         # Keep the release's own signature (a Developer ID one must never be replaced). Only a broken
         # signature is redone, the way build-app.sh signs: a fixed requirement so Keychain and privacy
-        # approvals carry over to the new version.
+        # approvals carry over to the new version. Never re-sign a valid release — that would change
+        # the CDHash and force Keychain re-approval / login-password sheets.
         if ! codesign --verify --strict \(shellEscape(dest)) 2>/dev/null; then
           codesign --force --sign - -i com.brim.app -r='designated => identifier "com.brim.app"' \(shellEscape(dest))/Contents/Helpers/brim 2>/dev/null || true
           codesign --force --sign - -i com.brim.app -r='designated => identifier "com.brim.app"' \(shellEscape(dest)) 2>/dev/null || true
         fi
+        # Relaunch loads logs + cached plan windows; credential migrate is skipped once via
+        # post-update-quiet (armed before quit). No Keychain unlock demos.
         open \(shellEscape(dest))
         rm -rf \(shellEscape(src))
         rm -f \(shellEscape(script.path))
