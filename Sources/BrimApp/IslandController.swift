@@ -173,6 +173,8 @@ final class IslandController {
     private var hotKey: HotKey?
     /// The drag pasteboard as last seen, so one file drag opens Files only once.
     private var lastDragCount = NSPasteboard(name: .drag).changeCount
+    /// AppDelegate refreshes the status item when the island hides / steps aside (menu-bar moments).
+    var statusItemNeedsRefresh: (() -> Void)?
 
     init(hub: BrimHub, setup: SetupWindows,
          statusItemFrame: @escaping () -> NSRect?, openSettings: @escaping (SettingsSection) -> Void,
@@ -307,9 +309,16 @@ final class IslandController {
         settings.showIsland && settings.placement != .menuBarOnly && !(state.isEmpty && settings.emptyIsland == .hidden)
     }
 
+    /// Island is off-screen (notch shared, menu-bar only, hidden, …) and moments aren't held for
+    /// full screen — play them on the status item instead (G42).
+    var playsMomentsInMenuBar: Bool {
+        !shouldShow && !(settings.hideInFullScreen && fullScreenAppActive)
+    }
+
     private func updateVisibility() {
-        // Only full screen holds moments; when the user hides the island they simply play out unseen.
-        model.setMomentsPaused(userWantsIsland && !shouldShow, reason: "fullScreen")
+        // Only full screen holds moments. Stepping aside for another notch app must not pause —
+        // those moments play on the menu bar status item.
+        model.setMomentsPaused(settings.hideInFullScreen && fullScreenAppActive, reason: "fullScreen")
         if shouldShow {
             position()
             panel.orderFrontRegardless()
@@ -317,6 +326,7 @@ final class IslandController {
             state.isExpanded = false
             panel.orderOut(nil)
         }
+        statusItemNeedsRefresh?()
     }
 
     func toggleExpanded() {

@@ -27,6 +27,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var hub = BrimHub(settings: settings, model: model)
     private var island: IslandController?
     private var statusItem: NSStatusItem?
+    /// Hosted black pill while a moment plays on the menu-bar path (notch shared / island hidden).
+    private var momentPillHost: NSHostingView<MenuBarMomentPill>?
     private let setup = SetupWindows()
     private var cancellables = Set<AnyCancellable>()
 
@@ -41,6 +43,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             openSettings: { [weak self] in self?.openSettings(at: $0) },
             addAccount: { [weak self] in self?.openAddAccount($0) }
         )
+        island?.statusItemNeedsRefresh = { [weak self] in self?.updateStatusItem() }
+        model.$event
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.updateStatusItem() }
+            .store(in: &cancellables)
         model.start()
 
         if dedupe.removedCount > 0 {
@@ -132,19 +139,64 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return false
     }
 
+    /// Moment to show on the status item while the island is stepped aside / hidden (G42).
+    private func menuBarMoment() -> IslandEvent? {
+        guard island?.playsMomentsInMenuBar == true, let event = model.event else { return nil }
+        if !settings.interruptLimits, event.style == .warning || event.style == .limit { return nil }
+        return event
+    }
+
     private func updateStatusItem() {
-        guard let item = statusItem else { return }
-        let attention = statusItemNeedsAttention()
-        item.length = NSStatusItem.squareLength
-        item.button?.image = Self.statusImage(attention: attention)
-        item.button?.title = ""
-        item.button?.imagePosition = .imageOnly
-        if settings.enabledConnections.isEmpty {
-            item.button?.toolTip = "Brim — nothing connected"
+        guard let item = statusItem, let button = item.button else { return }
+        if let event = menuBarMoment() {
+            showMomentPill(event, on: item, button: button)
+            button.toolTip = "\(event.title) · \(event.detail)"
         } else {
-            item.button?.toolTip = statusItemTooltip()
+            clearMomentPill(from: button)
+            let attention = statusItemNeedsAttention()
+            item.length = NSStatusItem.squareLength
+            button.image = Self.statusImage(attention: attention)
+            button.title = ""
+            button.imagePosition = .imageOnly
+            if settings.enabledConnections.isEmpty {
+                button.toolTip = "Brim — nothing connected"
+            } else {
+                button.toolTip = statusItemTooltip()
+            }
         }
         item.menu = settings.enabledConnections.isEmpty ? buildEmptyMenu() : buildMenu()
+    }
+
+    private func showMomentPill(_ event: IslandEvent, on item: NSStatusItem, button: NSStatusBarButton) {
+        button.image = nil
+        button.title = ""
+        button.imagePosition = .imageOnly
+        let pill = MenuBarMomentPill(event: event)
+        if let host = momentPillHost {
+            host.rootView = pill
+        } else {
+            let host = NSHostingView(rootView: pill)
+            host.translatesAutoresizingMaskIntoConstraints = false
+            button.addSubview(host)
+            NSLayoutConstraint.activate([
+                host.centerXAnchor.constraint(equalTo: button.centerXAnchor),
+                host.centerYAnchor.constraint(equalTo: button.centerYAnchor),
+            ])
+            momentPillHost = host
+        }
+        guard let host = momentPillHost else { return }
+        host.layoutSubtreeIfNeeded()
+        let size = host.fittingSize
+        item.length = max(NSStatusItem.squareLength, ceil(size.width) + 10)
+    }
+
+    private func clearMomentPill(from button: NSStatusBarButton) {
+        momentPillHost?.removeFromSuperview()
+        momentPillHost = nil
+        // Drop any leftover hosted subviews if the host pointer was cleared.
+        for sub in button.subviews where sub is NSHostingView<MenuBarMomentPill> {
+            sub.removeFromSuperview()
+        }
     }
 
     /// Hover summary when the bar itself is icon-only (or as a fallback tooltip).
