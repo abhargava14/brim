@@ -109,18 +109,32 @@ struct TimersTabView: View {
                 ])
             }
         case .water:
-            VStack(spacing: 14) {
-                HStack(spacing: 8) {
-                    ForEach(0..<state.glassGoal, id: \.self) { index in
-                        ZStack(alignment: .bottom) {
-                            UnevenGlass().stroke(theme.f(0.2), lineWidth: 1.6)
-                            UnevenGlass()
-                                .fill(theme.f(0.85))
-                                .frame(height: index < state.glasses ? 56 : 0)
-                                .animation(.spring(response: 0.4, dampingFraction: 0.7), value: state.glasses)
+            let glassW: CGFloat = state.glassGoal > 8 || state.hydrationRowCount == 2 ? 26 : 34
+            let glassH: CGFloat = state.hydrationRowCount == 2 ? 40 : (state.glassGoal > 8 ? 48 : 56)
+            let gap: CGFloat = state.hydrationRowCount == 2 ? 5 : 8
+            VStack(spacing: 12) {
+                if let notice = state.yesterdayIncompleteMessage {
+                    Text(notice)
+                        .font(.brim(12, .bold))
+                        .foregroundStyle(theme.f(0.7))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                VStack(spacing: gap) {
+                    ForEach(0..<state.hydrationRowCount, id: \.self) { row in
+                        let filled = state.filledGlasses(inRow: row)
+                        HStack(spacing: gap) {
+                            ForEach(0..<state.glassGoal, id: \.self) { index in
+                                ZStack(alignment: .bottom) {
+                                    UnevenGlass().stroke(theme.f(0.2), lineWidth: 1.4)
+                                    UnevenGlass()
+                                        .fill(theme.f(row == 0 ? 0.85 : 0.55))
+                                        .frame(height: index < filled ? glassH : 0)
+                                        .animation(.spring(response: 0.4, dampingFraction: 0.7), value: state.glasses)
+                                }
+                                .frame(width: glassW, height: glassH)
+                                .clipShape(UnevenGlass())
+                            }
                         }
-                        .frame(width: 34, height: 56)
-                        .clipShape(UnevenGlass())
                     }
                 }
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
@@ -204,6 +218,9 @@ struct TimersTabView: View {
                 StepRow(title: "Remind every", value: $timers.state.remindEveryMinutes, range: 0...120, step: 15, unit: "min", offText: "Off")
                 StepRow(title: "Goal", value: $timers.state.glassGoal, range: 4...12, step: 1, unit: "glasses")
                 DetailRow(key: "Today", value: "\(state.glasses) of \(state.glassGoal) glasses", height: 32)
+                if let notice = state.yesterdayIncompleteMessage {
+                    DetailRow(key: "Yesterday", value: notice.replacingOccurrences(of: "Yesterday: ", with: ""), height: 32)
+                }
                 DetailRow(key: "Glass size", value: "250 ml", height: 32)
             }
         }

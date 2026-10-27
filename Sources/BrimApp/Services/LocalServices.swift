@@ -279,6 +279,11 @@ final class TimerService: ObservableObject {
     private func tick() {
         let date = Date()
         if anyRunning { now = date }
+        // Roll hydration / pomodoro day counters at local midnight without waiting for a tap.
+        if state.needsDayRoll(at: date) {
+            state.rollDay(at: date)
+            now = date
+        }
         if state.pomodoroRunning, state.pomodoroRemaining(at: date) <= 0 {
             let phase = state.advancePomodoro(at: date)
             announce(phase == .focus ? "Focus done. Time for a break." : "\(phase.title) over. Back to focus.")
