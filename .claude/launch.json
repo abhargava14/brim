@@ -1,0 +1,49 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "kemory-dashboard",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": [
+        "--dir",
+        "/Users/bhargava/SeKondBrain/Core/kemory/dashboard",
+        "dev"
+      ],
+      "port": 3011
+    },
+    {
+      "name": "redaction-app",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "/Users/bhargava/SeKondBrain/Core/redaction_app",
+        "run",
+        "dev"
+      ],
+      "port": 4300
+    },
+    {
+      "name": "redaction-app-mock",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": [
+        "-c",
+        "cd /Users/bhargava/SeKondBrain/Core/redaction_app && VITE_API_MODE=mock npx vite --port 4301 --strictPort"
+      ],
+      "port": 4301
+    },
+    {
+      "name": "kora-ext-ref",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "4317",
+        "--bind",
+        "127.0.0.1",
+        "--directory",
+        "/private/tmp/claude-501/-Users-bhargava--claude-spares-spare-byHRUk/90538494-495b-4384-a4c2-78e7472c9cd8/scratchpad/koraext-ref/site"
+      ],
+      "port": 4317
+    }
+  ]
+}

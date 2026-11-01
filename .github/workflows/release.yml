@@ -47,7 +47,13 @@ jobs:
       - name: Install the DMG layout tool
         run: |
           python3 -m venv "$RUNNER_TEMP/dmg"
-          "$RUNNER_TEMP/dmg/bin/pip" install --quiet --require-hashes -r packaging/dmg/requirements.txt
+          # PyPI can be briefly unreachable from hosted runners; try three times before failing.
+          for attempt in 1 2 3; do
+            "$RUNNER_TEMP/dmg/bin/pip" install --quiet --require-hashes -r packaging/dmg/requirements.txt && break
+            if [ "$attempt" = 3 ]; then exit 1; fi
+            echo "::warning::Installing dmgbuild failed (attempt $attempt); retrying in $((attempt * 20))s"
+            sleep $((attempt * 20))
+          done
           echo "DMGBUILD=$RUNNER_TEMP/dmg/bin/dmgbuild" >> "$GITHUB_ENV"
 
       - name: Build Brim.dmg
