@@ -7,7 +7,7 @@ Prefer the **Mac app** if you don’t want Terminal: download **Brim.dmg** from
 This page is for **Terminal** users. Prefer the app for **Add Account…** (menu bar ✳ →
 Connections & Settings). CLI is best for status and update.
 
-Current release tag: **[v0.5.2](https://github.com/abhargava14/brim/releases/tag/v0.5.2)**.
+Current release tag: **[v0.5.4](https://github.com/abhargava14/brim/releases/tag/v0.5.4)**.
 
 ## 0. Easiest (no Terminal)
 
@@ -31,15 +31,15 @@ pipe into `bash`.
 # once, if needed:
 xcode-select --install
 
-curl -fsSL https://raw.githubusercontent.com/abhargava14/brim/v0.5.2/install.sh -o install-brim.sh
+curl -fsSL https://raw.githubusercontent.com/abhargava14/brim/v0.5.4/install.sh -o install-brim.sh
 chmod +x install-brim.sh
 ./install-brim.sh
 ```
 
-The script’s built-in pin may lag the DMG release; prefer `BRIM_REF=v0.5.2` (or the tag you installed). To be explicit:
+The script’s built-in pin may lag the DMG release; prefer `BRIM_REF=v0.5.4` (or the tag you installed). To be explicit:
 
 ```bash
-BRIM_REF=v0.5.2 ./install-brim.sh
+BRIM_REF=v0.5.4 ./install-brim.sh
 # or
 BRIM_COMMIT=2e5bcbffde221d3a0848268edd7459bc23a77ebc ./install-brim.sh
 ```
@@ -60,7 +60,7 @@ Prefer A or C if you want a release pin; Homebrew `--HEAD` tracks `main`.
 ```bash
 git clone https://github.com/abhargava14/brim.git
 cd brim
-git checkout v0.5.2
+git checkout v0.5.4
 ./scripts/build-app.sh --install
 ```
 

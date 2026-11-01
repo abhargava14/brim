@@ -20,7 +20,7 @@ SRC="${BRIM_SRC:-$HOME/.brim/src}"
 
 # Source-of-truth pin — bump when cutting a release (tag preferred via BRIM_REF=vX.Y.Z).
 # This SHA is the hardened install baseline; override with BRIM_COMMIT for another revision.
-PINNED_COMMIT="2e5bcbffde221d3a0848268edd7459bc23a77ebc"  # v0.5.2; bump on each release; override with BRIM_COMMIT
+PINNED_COMMIT="7c67dd7f0b2e25a8ccf94582e9adba1acc1622b1"  # v0.5.4; bump on each release; override with BRIM_COMMIT
 REF="${BRIM_REF:-}"
 COMMIT="${BRIM_COMMIT:-}"
 
