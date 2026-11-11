@@ -53,7 +53,9 @@ final class AnalyticsService: ObservableObject {
         } catch {
             return error.localizedDescription
         }
-        _ = Keychain.save(secret, for: Self.keychainAccount(site.id))
+        guard Keychain.save(secret, for: Self.keychainAccount(site.id), allowPrompt: true) else {
+            return "Brim couldn't save the key in your Keychain. Unlock it and try again."
+        }
         sites.append(site)
         save()
         selected = site.id
@@ -70,7 +72,10 @@ final class AnalyticsService: ObservableObject {
     }
 
     func updateKey(_ id: String, secret: String) {
-        _ = Keychain.save(secret.trimmingCharacters(in: .whitespacesAndNewlines), for: Self.keychainAccount(id))
+        guard Keychain.save(secret.trimmingCharacters(in: .whitespacesAndNewlines), for: Self.keychainAccount(id), allowPrompt: true) else {
+            errors[id] = "Brim couldn't save the new key in your Keychain. Unlock it and try again."
+            return
+        }
         tokens[id] = nil
         errors[id] = nil
         load(force: true)

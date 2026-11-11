@@ -50,12 +50,10 @@ struct IslandView: View {
             syncExpandedGeometry()
         }
         .onChange(of: model.featuredTools.count) { _ in syncExpandedGeometry() }
-        .onChange(of: settings.expandedLayout) { _ in syncExpandedGeometry() }
     }
 
     private func syncExpandedGeometry() {
         state.expandedToolCount = model.featuredTools.count
-        state.expandedLayoutIsStrip = settings.expandedLayout == .strip
     }
 
     private var island: some View {

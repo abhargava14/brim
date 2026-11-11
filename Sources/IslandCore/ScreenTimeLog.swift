@@ -144,18 +144,32 @@ public struct Forecast: Codable, Equatable, Sendable {
     public var days: [Day]
     public var fetchedAt: Date
     public var place: String
+    /// The place's offset from UTC in seconds; nil in forecasts saved before it was kept.
+    public var utcOffset: Int?
 
-    public init(current: Current, hours: [Hour], days: [Day], fetchedAt: Date, place: String) {
+    public init(current: Current, hours: [Hour], days: [Day], fetchedAt: Date, place: String, utcOffset: Int? = nil) {
         self.current = current
         self.hours = hours
         self.days = days
         self.fetchedAt = fetchedAt
         self.place = place
+        self.utcOffset = utcOffset
+    }
+
+    /// The place's own time zone, so a saved city shows its local sunrise and hours.
+    public var timeZone: TimeZone { utcOffset.flatMap(TimeZone.init(secondsFromGMT:)) ?? .current }
+
+    /// A calendar in the place's time zone, for day boundaries.
+    public var calendar: Calendar {
+        var calendar = Calendar.current
+        calendar.timeZone = timeZone
+        return calendar
     }
 
     /// The 24 hours of one day (local to the place), for the day chart.
-    public func hours(on day: Date, calendar: Calendar = .current) -> [Hour] {
-        hours.filter { calendar.isDate($0.time, inSameDayAs: day) }
+    public func hours(on day: Date) -> [Hour] {
+        let calendar = self.calendar
+        return hours.filter { calendar.isDate($0.time, inSameDayAs: day) }
     }
 
     /// The next hours starting with the current one.
@@ -304,7 +318,7 @@ public enum OpenMeteo {
                                      sunset: index < sunset.count ? sunset[index] : nil))
         }
         guard !days.isEmpty else { return nil }
-        return Forecast(current: now, hours: hours, days: days, fetchedAt: Date(), place: place)
+        return Forecast(current: now, hours: hours, days: days, fetchedAt: Date(), place: place, utcOffset: offset)
     }
 
     /// WMO weather code → short words.

@@ -10,8 +10,9 @@ extension Color {
 }
 
 enum When {
-    static func time(_ date: Date) -> String {
+    static func time(_ date: Date, zone: TimeZone = .current) -> String {
         let formatter = DateFormatter()
+        formatter.timeZone = zone
         formatter.timeStyle = .short
         return formatter.string(from: date)
     }
@@ -893,7 +894,7 @@ struct WeatherTabView: View {
         let sun = f.days.first.flatMap { day in day.sunrise.flatMap { rise in day.sunset.map { (rise, $0) } } }
         let cells: [(String, String)] = [
             ("Humidity", "\(Int(f.current.humidity))%"), ("Wind", wind), ("UV", "\(Int(f.current.uvIndex.rounded()))"),
-            ("Air", air), ("Sunrise", sun.map { When.time($0.0) } ?? "–"), ("Sunset", sun.map { When.time($0.1) } ?? "–"),
+            ("Air", air), ("Sunrise", sun.map { When.time($0.0, zone: f.timeZone) } ?? "–"), ("Sunset", sun.map { When.time($0.1, zone: f.timeZone) } ?? "–"),
         ]
         return Grid(horizontalSpacing: 6, verticalSpacing: 6) {
             ForEach(0..<2, id: \.self) { row in
@@ -918,13 +919,13 @@ struct WeatherTabView: View {
     private func dayChart(_ f: Forecast, index: Int) -> some View {
         let date = f.days.indices.contains(index) ? f.days[index].date : Date()
         let hours = f.hours(on: date)
-        let isToday = Calendar.current.isDateInToday(date)
+        let isToday = f.calendar.isDateInToday(date)
         let rainiest = hours.map(\.precipitation).max() ?? 0
         return VStack(alignment: .leading, spacing: 6) {
-            SectionTitle(title: isToday ? "Today, hour by hour" : Self.longDay(date),
+            SectionTitle(title: isToday ? "Today, hour by hour" : Self.longDay(date, zone: f.timeZone),
                          aside: rainiest >= 20 ? "up to \(Int(rainiest))% rain" : "dry")
             if hours.count >= 2 {
-                HourlyChart(hours: hours, now: isToday ? Date() : nil)
+                HourlyChart(hours: hours, now: isToday ? Date() : nil, zone: f.timeZone)
             } else {
                 Text("No hourly forecast for this day.").font(.brim(12, .bold)).foregroundStyle(theme.f(0.4))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -939,7 +940,7 @@ struct WeatherTabView: View {
                 let lowest = f.days.map(\.low).min() ?? 0, highest = f.days.map(\.high).max() ?? 1
                 ForEach(Array(f.days.enumerated()), id: \.offset) { index, day in
                     HStack(spacing: 8) {
-                        Text(index == 0 ? "Today" : Self.weekday(day.date)).frame(width: 42, alignment: .leading)
+                        Text(index == 0 ? "Today" : Self.weekday(day.date, zone: f.timeZone)).frame(width: 42, alignment: .leading)
                         Image(systemName: OpenMeteo.symbol(day.code)).symbolRenderingMode(.hierarchical).font(.system(size: 13)).frame(width: 20)
                         Text(day.precipitation >= 20 ? "\(Int(day.precipitation))%" : "")
                             .font(.brim(10.5, .bold)).foregroundStyle(theme.f(0.5)).frame(width: 30, alignment: .leading)
@@ -1016,21 +1017,22 @@ struct WeatherTabView: View {
         }
     }
 
-    static func hour(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.setLocalizedDateFormatFromTemplate("j")
-        return formatter.string(from: date)
+    static func hour(_ date: Date, zone: TimeZone = .current) -> String {
+        format(date, "j", zone)
     }
 
-    static func weekday(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.setLocalizedDateFormatFromTemplate("EEE")
-        return formatter.string(from: date)
+    static func weekday(_ date: Date, zone: TimeZone = .current) -> String {
+        format(date, "EEE", zone)
     }
 
-    static func longDay(_ date: Date) -> String {
+    static func longDay(_ date: Date, zone: TimeZone = .current) -> String {
+        format(date, "EEEE d MMM", zone)
+    }
+
+    private static func format(_ date: Date, _ template: String, _ zone: TimeZone) -> String {
         let formatter = DateFormatter()
-        formatter.setLocalizedDateFormatFromTemplate("EEEE d MMM")
+        formatter.timeZone = zone
+        formatter.setLocalizedDateFormatFromTemplate(template)
         return formatter.string(from: date)
     }
 }
@@ -1039,6 +1041,7 @@ struct WeatherTabView: View {
 struct HourlyChart: View {
     let hours: [Forecast.Hour]
     var now: Date?
+    var zone: TimeZone = .current
     @Environment(\.islandTheme) private var theme
 
     var body: some View {
@@ -1078,7 +1081,7 @@ struct HourlyChart: View {
                 ForEach(Array(stride(from: 0, to: hours.count, by: 3)), id: \.self) { i in
                     Text("\(Int(hours[i].temperature.rounded()))°").font(.brim(10.5))
                         .position(x: min(max(point(i).x, 10), w - 10), y: point(i).y - 9)
-                    Text(WeatherTabView.hour(hours[i].time)).font(.brim(9.5, .bold)).foregroundStyle(theme.f(0.45))
+                    Text(WeatherTabView.hour(hours[i].time, zone: zone)).font(.brim(9.5, .bold)).foregroundStyle(theme.f(0.45))
                         .position(x: min(max(point(i).x, 12), w - 12), y: h - labels / 2)
                 }
                 if let now, let first = hours.first?.time {

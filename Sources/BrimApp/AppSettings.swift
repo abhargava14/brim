@@ -65,28 +65,6 @@ enum ClaudeCardStyle: String, CaseIterable, Identifiable {
     }
 }
 
-/// Expanded island connection presentation (design v2 · 1a Cards / 1b Strip).
-enum ExpandedLayout: String, CaseIterable, Identifiable {
-    case cards
-    case strip
-
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .cards: return "Cards"
-        case .strip: return "Strip"
-        }
-    }
-
-    var detail: String {
-        switch self {
-        case .cards: return "Full detail per connection; row scrolls past four."
-        case .strip: return "One column each; seven fit without scrolling."
-        }
-    }
-}
-
 /// When another app already draws in the notch.
 enum NotchConflictPolicy: String, CaseIterable, Identifiable {
     case moveToMenuBar
@@ -131,6 +109,8 @@ final class AppSettings: ObservableObject {
     private let defaults = AppSettings.isSnapshot ? UserDefaults(suiteName: "com.brim.snapshot")! : UserDefaults.standard
     let store = ConnectionStore()
     private var lastSeenFileDate: Date?
+    /// The connections file couldn't be read at launch; never save an empty list over it.
+    private var connectionsUnreadable = false
 
     /// Every connection the user added, in display order. Saved to the shared connections file.
     @Published var connections: [Connection] {
@@ -164,11 +144,6 @@ final class AppSettings: ObservableObject {
         didSet { defaults.set(hideInFullScreen, forKey: "hideInFullScreen") }
     }
 
-    /// Legacy preference. Kept so older installs don't lose the key; the menu bar is always
-    /// Brim-mark-only (usage lives in the island). Not shown in Settings or the status menu.
-    @Published var showInMenuBar: Bool {
-        didSet { defaults.set(showInMenuBar, forKey: "showInMenuBar") }
-    }
 
     @Published var compactMetric: CompactMetric {
         didSet { defaults.set(compactMetric.rawValue, forKey: "compactMetric") }
@@ -183,10 +158,6 @@ final class AppSettings: ObservableObject {
         didSet { defaults.set(playful, forKey: "playful") }
     }
 
-    /// A connection to always feature in the compact island; empty means automatic.
-    @Published var pinnedID: String {
-        didSet { defaults.set(pinnedID, forKey: "pinnedID") }
-    }
 
     @Published var refreshSeconds: Double {
         didSet { defaults.set(refreshSeconds, forKey: "refreshSeconds") }
@@ -205,10 +176,6 @@ final class AppSettings: ObservableObject {
         didSet { defaults.set(claudeCardStyle.rawValue, forKey: "claudeCardStyle") }
     }
 
-    /// Expanded island: Cards (wide) or Strip (narrow columns). Design v2 live prototype.
-    @Published var expandedLayout: ExpandedLayout {
-        didSet { defaults.set(expandedLayout.rawValue, forKey: "expandedLayout") }
-    }
 
     /// What to do when another app already draws in the notch.
     @Published var notchConflict: NotchConflictPolicy {
@@ -282,26 +249,23 @@ final class AppSettings: ObservableObject {
 
     init() {
         Self.copyLegacyDefaults(into: defaults)
-        let file = Self.isSnapshot ? ConnectionFile(connections: []) : store.load()
-        connections = file.connections
+        let loaded = Self.isSnapshot ? ConnectionFile(connections: []) : store.load()
+        connectionsUnreadable = loaded == nil
+        connections = loaded?.connections ?? []
         showIsland = defaults.object(forKey: "showIsland") as? Bool ?? true
         placement = defaults.string(forKey: "placement").flatMap(IslandPlacement.init(rawValue:)) ?? .wrapNotch
         placementMovedForCrowding = defaults.bool(forKey: "placementMovedForCrowding")
         hideInFullScreen = defaults.object(forKey: "hideInFullScreen") as? Bool ?? true
-        // Legacy key only — menu bar is always icon-only regardless of this value.
-        showInMenuBar = defaults.object(forKey: "showInMenuBar") as? Bool ?? false
         compactMetric = defaults.string(forKey: "compactMetric").flatMap(CompactMetric.init(rawValue:)) ?? .auto
         expandOnHover = defaults.object(forKey: "expandOnHover") as? Bool ?? true
         // Quiet by default — less motion in the notch until the user opts in.
         playful = defaults.object(forKey: "playful") as? Bool ?? false
-        pinnedID = defaults.string(forKey: "pinnedID") ?? ""
         let refresh = defaults.double(forKey: "refreshSeconds")
         refreshSeconds = refresh > 0 ? refresh : 10
         emptyIsland = defaults.string(forKey: "emptyIsland").flatMap(EmptyIsland.init(rawValue:)) ?? .small
         showAccountEmails = defaults.object(forKey: "showAccountEmails") as? Bool ?? true
         // Short Claude cards by default (minimal island).
         claudeCardStyle = defaults.string(forKey: "claudeCardStyle").flatMap(ClaudeCardStyle.init(rawValue:)) ?? .short
-        expandedLayout = defaults.string(forKey: "expandedLayout").flatMap(ExpandedLayout.init(rawValue:)) ?? .cards
         notchConflict = defaults.string(forKey: "notchConflict").flatMap(NotchConflictPolicy.init(rawValue:)) ?? .moveToMenuBar
         useNotchAnyway = defaults.bool(forKey: "useNotchAnyway")
         pendingIslandTip = defaults.bool(forKey: "pendingIslandTip")
@@ -341,7 +305,7 @@ final class AppSettings: ObservableObject {
     }
 
     private func save() {
-        guard !Self.isSnapshot else { return }
+        guard !Self.isSnapshot, !(connectionsUnreadable && connections.isEmpty) else { return }
         try? store.save(ConnectionFile(connections: connections))
         lastSeenFileDate = store.modificationDate()
     }
@@ -350,7 +314,12 @@ final class AppSettings: ObservableObject {
     func reloadIfChangedOnDisk() {
         guard let date = store.modificationDate(), date != lastSeenFileDate else { return }
         lastSeenFileDate = date
-        let file = store.load()
+        // Unreadable (e.g. a newer `brim` wrote it): keep what we have rather than an empty list.
+        guard let file = store.load() else {
+            connectionsUnreadable = true
+            return
+        }
+        connectionsUnreadable = false
         if file.connections != connections { connections = file.connections }
     }
 
@@ -384,7 +353,6 @@ final class AppSettings: ObservableObject {
 
     func remove(_ id: String) {
         connections.removeAll { $0.id == id }
-        if pinnedID == id { pinnedID = "" }
     }
 
     func setAllEnabled(_ enabled: Bool) {
@@ -412,7 +380,6 @@ final class AppSettings: ObservableObject {
         guard result.removedCount > 0 else { return result }
         let removed = Set(connections.map(\.id)).subtracting(result.connections.map(\.id))
         connections = result.connections
-        if removed.contains(pinnedID) { pinnedID = "" }
         return result
     }
 }

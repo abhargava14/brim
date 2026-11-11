@@ -108,13 +108,13 @@ public enum AppUpdater {
 
     /// Downloads the DMG, verifies SHA-256 when a `.sha256` asset exists, and schedules replace + relaunch.
     /// Caller should quit Brim (or `exit`) shortly after this returns so the helper can replace the bundle.
-    /// When `requireChecksum` is true and the release has no `.sha256` asset, install is refused.
+    /// Every release ships a `.sha256`; without one the install is refused unless `requireChecksum` is false.
     @discardableResult
     public static func downloadAndInstall(
         _ update: Update,
         destination: URL = installDestination(),
         session: URLSession = .shared,
-        requireChecksum: Bool = false
+        requireChecksum: Bool = true
     ) async throws -> URL {
         try assertTrusted(update.dmgURL)
         if let shaURL = update.sha256URL { try assertTrusted(shaURL) }
@@ -197,12 +197,17 @@ public enum AppUpdater {
         let (data, response) = try await session.data(from: url)
         let code = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard (200..<300).contains(code) else { throw Error.http(code) }
-        let text = String(data: data, encoding: .utf8) ?? ""
-        // `shasum -a 256` lines: "<hex>  <filename>" or just hex.
-        let token = text.split(whereSeparator: { $0.isWhitespace || $0.isNewline }).first.map(String.init) ?? ""
-        let hex = token.lowercased().filter { $0.isHexDigit }
-        guard hex.count == 64 else { throw Error.downloadFailed("Couldn't parse SHA-256 from \(url.lastPathComponent).") }
+        guard let hex = parseSHA256(String(data: data, encoding: .utf8) ?? "") else {
+            throw Error.downloadFailed("Couldn't parse SHA-256 from \(url.lastPathComponent).")
+        }
         return hex
+    }
+
+    /// The hash from a `shasum -a 256` line ("<hex>  <filename>") or a bare hex string.
+    static func parseSHA256(_ text: String) -> String? {
+        let token = text.split(whereSeparator: { $0.isWhitespace || $0.isNewline }).first.map(String.init) ?? ""
+        guard token.count == 64, token.allSatisfy(\.isHexDigit) else { return nil }
+        return token.lowercased()
     }
 
     // MARK: - Assets / trust
@@ -223,7 +228,7 @@ public enum AppUpdater {
         return assets.first { $0.name.lowercased().hasSuffix(".sha256") }
     }
 
-    private static func assertTrusted(_ url: URL) throws {
+    static func assertTrusted(_ url: URL) throws {
         guard let host = url.host?.lowercased() else { throw Error.badURL }
         let allowed = ["api.github.com", "github.com", "objects.githubusercontent.com", "release-assets.githubusercontent.com"]
         guard allowed.contains(host) || host.hasSuffix(".githubusercontent.com") else {
@@ -289,9 +294,12 @@ public enum AppUpdater {
         pkill -x Brim 2>/dev/null || true
         pkill -x AIIsland 2>/dev/null || true
         sleep 0.5
-        rm -rf \(shellEscape(dest))
+        # Copy next to the old app first: if the copy fails (e.g. a full disk), the old app stays.
         mkdir -p "$(dirname \(shellEscape(dest)))"
-        cp -R \(shellEscape(src)) \(shellEscape(dest))
+        rm -rf \(shellEscape(dest + ".new"))
+        cp -R \(shellEscape(src)) \(shellEscape(dest + ".new"))
+        rm -rf \(shellEscape(dest))
+        mv \(shellEscape(dest + ".new")) \(shellEscape(dest))
         # Keep the release's own signature (a Developer ID one must never be replaced). Only a broken
         # signature is redone, the way build-app.sh signs: a fixed requirement so Keychain and privacy
         # approvals carry over to the new version. Never re-sign a valid release — that would change

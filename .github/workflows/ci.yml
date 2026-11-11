@@ -8,7 +8,7 @@ jobs:
   build:
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Test core
         run: swift test
       - name: Build app bundle and CLI
@@ -19,7 +19,7 @@ jobs:
           "build/Brim.app/Contents/Helpers/ai-island" help
       - name: Zip app
         run: cd build && ditto -c -k --keepParent "Brim.app" Brim.zip
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: Brim
           path: build/Brim.zip

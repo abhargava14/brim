@@ -11,7 +11,10 @@ if URL(fileURLWithPath: CommandLine.arguments[0]).lastPathComponent == "ai-islan
     FileHandle.standardError.write(Data("ai-island is now called brim. The old name still works for now.\n".utf8))
 }
 let store = ConnectionStore()
-var file = store.load()
+guard var file = store.load() else {
+    FileHandle.standardError.write(Data("error: Couldn't read \(ConnectionStore.defaultURL.path) (a copy is in connections.json.unreadable). It may be from a newer Brim; update Brim, or fix or remove the file.\n".utf8))
+    exit(1)
+}
 var arguments = Array(CommandLine.arguments.dropFirst())
 let useColor = isatty(STDOUT_FILENO) != 0 && ProcessInfo.processInfo.environment["NO_COLOR"] == nil
 

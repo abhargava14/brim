@@ -125,6 +125,17 @@ public struct ClaudeStatusLineSetup: Sendable {
         return true
     }
 
+    /// Rewrites the bridge script when it's connected but older than this build's, so fixes to the
+    /// script reach people who connected earlier. Leaves `settings.json` alone. True when it changed.
+    @discardableResult
+    public func refreshScriptIfStale() throws -> Bool {
+        guard state() == .connected, FileManager.default.fileExists(atPath: scriptURL.path),
+              (try? String(contentsOf: scriptURL, encoding: .utf8)) != bridgeScript else { return false }
+        try Data(bridgeScript.utf8).write(to: scriptURL, options: .atomic)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: scriptURL.path)
+        return true
+    }
+
     /// Settings as a dictionary; an empty one when the file does not exist yet, nil when unreadable.
     private func readSettings() -> [String: Any]? {
         guard FileManager.default.fileExists(atPath: settingsURL.path) else { return [:] }
@@ -157,20 +168,22 @@ public struct ClaudeStatusLineSetup: Sendable {
         mkdir -p "$DIR"
         umask 077
         RAW="$(mktemp -t brim-statusline)"
-        trap 'rm -f "$RAW" "$DIR/claude-statusline.limits.tmp" "$DIR/claude-statusline.json.tmp"' EXIT
+        # Unique names per run: several Claude Code sessions run this at the same moment.
+        LIMITS="$(mktemp "$DIR/statusline-limits.XXXXXX")"
+        TMP="$(mktemp "$DIR/statusline-json.XXXXXX")"
+        trap 'rm -f "$RAW" "$LIMITS" "$TMP"' EXIT
         chmod 600 "$RAW"
         printf '%s' "$INPUT" > "$RAW"
-        TMP="$DIR/claude-statusline.json.tmp"
-        if plutil -extract rate_limits json -o "$DIR/claude-statusline.limits.tmp" "$RAW" 2>/dev/null; then
+        if plutil -extract rate_limits json -o "$LIMITS" "$RAW" 2>/dev/null; then
           printf '{"rate_limits":' > "$TMP"
-          cat "$DIR/claude-statusline.limits.tmp" >> "$TMP"
+          cat "$LIMITS" >> "$TMP"
           printf '}' >> "$TMP"
         else
           printf '{"rate_limits":{}}' > "$TMP"
         fi
         chmod 600 "$TMP"
         mv -f "$TMP" "$DIR/claude-statusline.json"
-        rm -f "$RAW" "$DIR/claude-statusline.limits.tmp"
+        rm -f "$RAW" "$LIMITS"
         trap - EXIT
         if [ -s "$DIR/claude-statusline.previous" ]; then
           printf '%s' "$INPUT" | sh -c "$(cat "$DIR/claude-statusline.previous")"
