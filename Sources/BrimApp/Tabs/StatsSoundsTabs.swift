@@ -213,6 +213,8 @@ struct SoundsTabView: View {
                         addTile
                     }
                 }
+                // Not inside a card, so stretch like one: a live ScrollView otherwise shrinks to the grid's minimum.
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                 mixesCard.frame(width: 214)
             }
         }
@@ -241,7 +243,7 @@ struct SoundsTabView: View {
             }
         }
         .padding(.horizontal, 12)
-        .frame(height: 60)
+        .frame(maxWidth: .infinity, minHeight: 60, maxHeight: 60)
         .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(on ? theme.f(0.12) : theme.f(0.05)))
         .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(on ? theme.f(0.5) : .clear, lineWidth: 1.5))
         .contentShape(RoundedRectangle(cornerRadius: 14))
@@ -263,7 +265,7 @@ struct SoundsTabView: View {
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 12)
-        .frame(height: 60)
+        .frame(maxWidth: .infinity, minHeight: 60, maxHeight: 60)
         .background(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(theme.f(targeted ? 0.6 : 0.18), style: StrokeStyle(lineWidth: 1.2, dash: [4, 3])))
         .contentShape(RoundedRectangle(cornerRadius: 14))
         .onTapGesture { choose() }
