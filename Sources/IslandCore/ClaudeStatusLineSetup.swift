@@ -125,6 +125,17 @@ public struct ClaudeStatusLineSetup: Sendable {
         return true
     }
 
+    /// Rewrites the bridge script when it's connected but older than this build's, so fixes to the
+    /// script reach people who connected earlier. Leaves `settings.json` alone. True when it changed.
+    @discardableResult
+    public func refreshScriptIfStale() throws -> Bool {
+        guard state() == .connected, FileManager.default.fileExists(atPath: scriptURL.path),
+              (try? String(contentsOf: scriptURL, encoding: .utf8)) != bridgeScript else { return false }
+        try Data(bridgeScript.utf8).write(to: scriptURL, options: .atomic)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: scriptURL.path)
+        return true
+    }
+
     /// Settings as a dictionary; an empty one when the file does not exist yet, nil when unreadable.
     private func readSettings() -> [String: Any]? {
         guard FileManager.default.fileExists(atPath: settingsURL.path) else { return [:] }

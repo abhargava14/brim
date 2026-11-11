@@ -99,7 +99,7 @@ final class SoundsService: ObservableObject {
     @Published private(set) var customLevels: [String: Double] = [:]
     /// Mixes you saved; the built-in ones come first in the list.
     @Published private(set) var mixes: [SoundMix] = []
-    /// The last file skipped for being longer than `maxLoopSeconds` (or unreadable), to say why.
+    /// The last file skipped for being unreadable or longer than `maxLoopSeconds`, to say why.
     @Published private(set) var tooLong: String?
     static let maxLoopSeconds: Double = 10 * 60
 
@@ -246,6 +246,7 @@ final class SoundsService: ObservableObject {
         if let existing = players[id] { return existing }
         guard let custom = customs.first(where: { $0.id == id }),
               let audio = try? AVAudioFile(forReading: Self.folder.appendingPathComponent(custom.file)),
+              Double(audio.length) / audio.processingFormat.sampleRate <= Self.maxLoopSeconds,
               let buffer = AVAudioPCMBuffer(pcmFormat: audio.processingFormat, frameCapacity: AVAudioFrameCount(audio.length)),
               (try? audio.read(into: buffer)) != nil else { return nil }
         let player = AVAudioPlayerNode()

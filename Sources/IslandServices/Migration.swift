@@ -15,10 +15,12 @@ public enum BrimMigration {
             let accounts = ConnectionStore().load()?.connections.map(\.id) ?? []
             Keychain.migrateLegacy(accounts: accounts, allowPrompt: interactive)
         }
-        _ = try? ClaudeStatusLineSetup(
+        let statusLine = ClaudeStatusLineSetup(
             supportDirectory: ClaudeStatusLineSetup.defaultSupportDirectory,
             settingsURL: ClaudeStatusLineSetup.defaultSettingsURL()
-        ).repairIfMoved()
+        )
+        _ = try? statusLine.repairIfMoved()
+        _ = try? statusLine.refreshScriptIfStale()
     }
 }
 

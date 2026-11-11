@@ -427,6 +427,12 @@ final class StatusLineSetupTests: XCTestCase {
         // Connecting twice must not overwrite the saved original with our own entry.
         try setup.connect()
 
+        // A script from an older build is replaced at launch; an up-to-date one is left alone.
+        try Data("#!/bin/sh\n# old bridge\n".utf8).write(to: setup.scriptURL)
+        XCTAssertTrue(try setup.refreshScriptIfStale())
+        XCTAssertEqual(try String(contentsOf: setup.scriptURL, encoding: .utf8), setup.bridgeScript)
+        XCTAssertFalse(try setup.refreshScriptIfStale())
+
         try setup.disconnect()
         XCTAssertEqual(setup.state(), .notConnected)
         settings = try XCTUnwrap(JSON.object(Data(contentsOf: settingsURL)))

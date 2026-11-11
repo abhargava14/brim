@@ -44,7 +44,7 @@ public enum ClaudeUsageError: LocalizedError {
         case .notSignedIn:
             // Soft-fail path: Keychain locked/ACL after rebuild — keep last plan windows; no Mac password sheet.
             return "Reconnect Claude in Brim (Sign in with Claude…). Brim never asks for your Mac login password."
-        case .expired: return "Sign-in expired and couldn't be renewed. Choose Refresh in Brim's menu to pick up Claude Code's current sign-in; if that fails, sign in again in Claude Code."
+        case .expired: return "Sign-in expired and couldn't be renewed. Sign in with Claude again in Brim, or choose Refresh in Brim's menu if you already signed in to Claude Code."
         case .rejected: return "Claude didn't accept the sign-in. Sign in with Claude again in Brim."
         case .http(let code): return "Claude's usage service returned an error (HTTP \(code))."
         case .unexpected: return "Claude's usage service answered in a format Brim doesn't understand yet."
@@ -232,12 +232,11 @@ enum ClaudeCodeKeychain {
     /// - Parameter allowPrompt: `true` for Sign-in, menu Refresh, and post-update first fetch.
     ///   Background timer passes `false`.
     static func read(for account: ClaudeAccount, allowPrompt: Bool = false) -> Item? {
-        let owned = readBrimOwned(for: account, allowPrompt: allowPrompt)
-        if let owned, !owned.credentials.isExpired() { return owned }
+        if let item = readBrimOwned(for: account, allowPrompt: allowPrompt) { return item }
         // Claude Code's item is only read when a prompt is allowed: a silent probe of its ACL can
-        // still raise a login-password sheet (#43). Expired copy: Claude Code may have renewed since.
-        guard allowPrompt else { return owned }
-        return adoptNewer(for: account, than: owned) ?? owned
+        // still raise a login-password sheet (#43).
+        guard allowPrompt else { return nil }
+        return adoptNewer(for: account, than: nil)
     }
 
     /// Claude Code's current tokens when they're newer than `current`, copied into Brim's item so
@@ -256,11 +255,12 @@ enum ClaudeCodeKeychain {
         readClaudeCodeItem(service: service, allowPrompt: false)
     }
 
-    /// After browser OAuth via Claude Code, copy the new Keychain item into Brim.
-    /// May show one Keychain **Allow** sheet — pick **Always Allow**.
+    /// After browser OAuth via Claude Code, copy the new Keychain item into Brim, replacing an older
+    /// copy when the account signed in again. May show one Keychain **Allow** sheet — pick **Always Allow**.
     @discardableResult
     static func importAfterSignIn(for account: ClaudeAccount) -> Bool {
-        read(for: account, allowPrompt: true) != nil
+        let owned = readBrimOwned(for: account, allowPrompt: true)
+        return adoptNewer(for: account, than: owned) != nil || owned != nil
     }
 
     private static func readBrimOwned(for account: ClaudeAccount, allowPrompt: Bool) -> Item? {
@@ -353,19 +353,23 @@ public enum ClaudeAccountSetupError: LocalizedError, Equatable {
 
 /// Signs a Claude account in via Anthropic's browser OAuth (`claude auth login --claudeai`).
 /// Opens the browser, waits for the sign-in, and lets Claude Code store the token in the Keychain.
-/// Brim never sees the password or the token. Uses a separate config folder so accounts don't mix;
-/// `~/.claude` is never touched. Plan limits come from Anthropic's usage API after sign-in.
+/// Brim never sees the password or the token. A new account gets its own config folder so accounts
+/// don't mix; signing an account in again reuses its folder. Plan limits come from Anthropic's usage API.
 public enum ClaudeAccountSetup {
     /// Creates `~/.claude-<label>`, signs in there and returns the new account. `onSignInURL` gets
     /// the sign-in page in case the browser didn't open. Cancelling the task stops the sign-in
     /// and removes the folder.
+    /// Pass `existingConfigDir` to sign an account in again in its own folder (kept on failure).
     public static func addAccount(label: String,
+                                  existingConfigDir: URL? = nil,
                                   home: URL = FileManager.default.homeDirectoryForCurrentUser,
                                   timeout: TimeInterval = 600,
                                   onSignInURL: @escaping @Sendable (URL) -> Void = { _ in }) async throws -> ClaudeAccount {
         guard let claude = ClaudeCode.executable(home: home) else { throw ClaudeAccountSetupError.notInstalled }
-        let configDir = ClaudeAccounts.newConfigDir(label: label, home: home)
-        try FileManager.default.createDirectory(at: configDir, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
+        let configDir = existingConfigDir ?? ClaudeAccounts.newConfigDir(label: label, home: home)
+        if existingConfigDir == nil {
+            try FileManager.default.createDirectory(at: configDir, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
+        }
 
         do {
             let status = try await signIn(claude: claude, configDir: configDir, timeout: timeout, onSignInURL: onSignInURL)
@@ -376,7 +380,7 @@ public enum ClaudeAccountSetup {
             _ = ClaudeCodeKeychain.importAfterSignIn(for: account)
             return account
         } catch {
-            if !ClaudeAccounts.account(configDir: configDir, home: home).isSignedIn {
+            if existingConfigDir == nil, !ClaudeAccounts.account(configDir: configDir, home: home).isSignedIn {
                 try? FileManager.default.removeItem(at: configDir)
             }
             throw Task.isCancelled ? ClaudeAccountSetupError.cancelled : error

@@ -196,7 +196,7 @@ struct AddAccountView: View {
                 EndpointEntry(finish: finish)
             case .claude:
                 ClaudeSignIn(defaultTaken: settings.connections.contains { $0.kind == .claude && $0.usesDefaultLocation },
-                             model: model, settings: settings, done: done, finish: finish)
+                             existing: existing, model: model, settings: settings, done: done, finish: finish)
             case .codex, .customLogs:
                 LogFolderEntry(kind: kind, defaultTaken: settings.connections.contains { $0.kind == kind && $0.usesDefaultLocation },
                                finish: finish)
@@ -308,6 +308,8 @@ typealias FinishAccount = (_ options: [String: String], _ token: String?) -> Voi
 /// Plan limits via Anthropic OAuth. Local Claude Code logs are optional / advanced.
 private struct ClaudeSignIn: View {
     let defaultTaken: Bool
+    /// The connection being signed in again, if any; its folder is reused.
+    var existing: Connection?
     @ObservedObject var model: UsageModel
     @ObservedObject var settings: AppSettings
     let done: () -> Void
@@ -427,9 +429,11 @@ private struct ClaudeSignIn: View {
         signingIn = true
         problem = nil
         let label = label.trimmingCharacters(in: .whitespaces)
+        // "Sign in again" signs the same folder in, so the same email isn't refused as a duplicate.
+        let reuse: URL? = existing.flatMap { $0.kind == .claude ? $0.claudeConfigDir() : nil }
         Task {
             do {
-                let account = try await add(label.isEmpty ? "Claude" : label)
+                let account = try await add(label.isEmpty ? "Claude" : label, reuse)
                 // Check when email is known (after OAuth), including “Claude Code” vs “Claude · Personal”.
                 if let email = account.email,
                    let existing = ClaudeDuplicateEmail.existing(email: email, in: settings.connections),

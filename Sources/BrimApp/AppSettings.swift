@@ -315,7 +315,10 @@ final class AppSettings: ObservableObject {
         guard let date = store.modificationDate(), date != lastSeenFileDate else { return }
         lastSeenFileDate = date
         // Unreadable (e.g. a newer `brim` wrote it): keep what we have rather than an empty list.
-        guard let file = store.load() else { return }
+        guard let file = store.load() else {
+            connectionsUnreadable = true
+            return
+        }
         connectionsUnreadable = false
         if file.connections != connections { connections = file.connections }
     }
