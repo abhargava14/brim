@@ -25,11 +25,15 @@ public struct ConnectionStore: Sendable {
         ClaudeStatusLineSetup.defaultSupportDirectory.appendingPathComponent("connections.json")
     }
 
-    /// The saved file, or an empty list when there is none yet (first run asks the user to choose).
-    public func load() -> ConnectionFile {
-        guard let data = try? Data(contentsOf: url),
-              let file = try? Self.decoder.decode(ConnectionFile.self, from: data)
-        else { return ConnectionFile(connections: []) }
+    /// The saved file, an empty list when there is none yet (first run asks the user to choose), or
+    /// nil when it exists but can't be read, e.g. written by a newer Brim. Never save over a nil load:
+    /// the unreadable file is also kept as `connections.json.unreadable`.
+    public func load() -> ConnectionFile? {
+        guard let data = try? Data(contentsOf: url) else { return ConnectionFile(connections: []) }
+        guard let file = try? Self.decoder.decode(ConnectionFile.self, from: data) else {
+            JSONFile<ConnectionFile>.keepUnreadable(url)
+            return nil
+        }
         return file
     }
 

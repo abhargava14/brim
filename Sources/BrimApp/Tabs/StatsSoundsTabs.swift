@@ -257,7 +257,8 @@ struct SoundsTabView: View {
             Image(systemName: "plus").font(.system(size: 12.5, weight: .semibold)).frame(width: 18)
             VStack(alignment: .leading, spacing: 1) {
                 Text("Your own").font(.brim(12.5))
-                Text("Drop or pick audio").font(.brim(10, .bold)).foregroundStyle(theme.f(0.45))
+                Text(sounds.tooLong.map { "\($0) is over 10 min" } ?? "Drop or pick audio")
+                    .font(.brim(10, .bold)).foregroundStyle(theme.f(0.45)).lineLimit(1)
             }
             Spacer(minLength: 0)
         }

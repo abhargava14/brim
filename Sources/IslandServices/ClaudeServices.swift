@@ -44,7 +44,7 @@ public enum ClaudeUsageError: LocalizedError {
         case .notSignedIn:
             // Soft-fail path: Keychain locked/ACL after rebuild — keep last plan windows; no Mac password sheet.
             return "Reconnect Claude in Brim (Sign in with Claude…). Brim never asks for your Mac login password."
-        case .expired: return "Sign-in expired and couldn't be renewed. Sign in with Claude again in Brim."
+        case .expired: return "Sign-in expired and couldn't be renewed. Choose Refresh in Brim's menu to pick up Claude Code's current sign-in; if that fails, sign in again in Claude Code."
         case .rejected: return "Claude didn't accept the sign-in. Sign in with Claude again in Brim."
         case .http(let code): return "Claude's usage service returned an error (HTTP \(code))."
         case .unexpected: return "Claude's usage service answered in a format Brim doesn't understand yet."
@@ -147,14 +147,24 @@ public enum ClaudeUsageFetcher {
             throw ClaudeUsageError.notSignedIn
         }
         if !force, !latest.credentials.isExpired() { return latest.credentials }
-        guard let refreshToken = latest.credentials.refreshToken else { throw ClaudeUsageError.expired }
+        do {
+            return try await rotate(latest, account: account, allowPrompt: allowPrompt)
+        } catch ClaudeUsageError.expired where allowPrompt {
+            // Claude Code renewed first, so Brim's refresh token is spent: take Claude Code's current one.
+            guard let adopted = ClaudeCodeKeychain.adoptNewer(for: account, than: latest) else { throw ClaudeUsageError.expired }
+            if !force, !adopted.credentials.isExpired() { return adopted.credentials }
+            return try await rotate(adopted, account: account, allowPrompt: true)
+        }
+    }
 
+    private static func rotate(_ item: ClaudeCodeKeychain.Item, account: ClaudeAccount, allowPrompt: Bool) async throws -> ClaudeCredentials {
+        guard let refreshToken = item.credentials.refreshToken else { throw ClaudeUsageError.expired }
         let tokens = try await requestTokenRefresh(refreshToken: refreshToken)
-        guard let updatedJSON = ClaudeCredentialsJSON.applying(tokens, to: latest.raw) else {
+        guard let updatedJSON = ClaudeCredentialsJSON.applying(tokens, to: item.raw) else {
             throw ClaudeUsageError.unexpected
         }
         // Refresh tokens rotate: write Brim's copy first (required). Claude Code sync is best-effort.
-        guard ClaudeCodeKeychain.write(service: latest.service, data: updatedJSON, account: account, allowPrompt: allowPrompt) else {
+        guard ClaudeCodeKeychain.write(service: item.service, data: updatedJSON, account: account, allowPrompt: allowPrompt) else {
             throw ClaudeUsageError.expired
         }
         guard let credentials = ClaudeCredentials.parse(updatedJSON) else { throw ClaudeUsageError.unexpected }
@@ -222,14 +232,22 @@ enum ClaudeCodeKeychain {
     /// - Parameter allowPrompt: `true` for Sign-in, menu Refresh, and post-update first fetch.
     ///   Background timer passes `false`.
     static func read(for account: ClaudeAccount, allowPrompt: Bool = false) -> Item? {
-        if let item = readBrimOwned(for: account, allowPrompt: allowPrompt) { return item }
-        guard allowPrompt else { return nil }
+        let owned = readBrimOwned(for: account, allowPrompt: allowPrompt)
+        if let owned, !owned.credentials.isExpired() { return owned }
+        // Claude Code's item is only read when a prompt is allowed: a silent probe of its ACL can
+        // still raise a login-password sheet (#43). Expired copy: Claude Code may have renewed since.
+        guard allowPrompt else { return owned }
+        return adoptNewer(for: account, than: owned) ?? owned
+    }
+
+    /// Claude Code's current tokens when they're newer than `current`, copied into Brim's item so
+    /// later silent polls don't need Claude Code's ACL. May show one Keychain Allow sheet.
+    static func adoptNewer(for account: ClaudeAccount, than current: Item?) -> Item? {
         for service in account.keychainServices {
-            if let item = readClaudeCodeItem(service: service, allowPrompt: true) {
-                // Import into Brim so later silent polls do not need Claude Code's ACL.
-                _ = Keychain.saveData(item.raw, for: brimAccount(for: account), allowPrompt: true)
-                return Item(service: service, credentials: item.credentials, raw: item.raw, ownedByBrim: true)
-            }
+            guard let item = readClaudeCodeItem(service: service, allowPrompt: true),
+                  item.credentials.isNewer(than: current?.credentials) else { continue }
+            _ = Keychain.saveData(item.raw, for: brimAccount(for: account), allowPrompt: true)
+            return Item(service: service, credentials: item.credentials, raw: item.raw, ownedByBrim: true)
         }
         return nil
     }

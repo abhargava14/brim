@@ -600,12 +600,11 @@ final class UsageModel: ObservableObject {
         }
     }
 
-    /// Connected tools, most urgent first: pinned, then near a limit or working, then the user's order.
+    /// Connected tools, most urgent first: near a limit or working, then the user's order.
     var featuredTools: [ToolSnapshot] {
         let tools = snapshot.tools
         let now = Date()
         func rank(_ tool: ToolSnapshot) -> Int {
-            if tool.id == settings.pinnedID { return 0 }
             let tightest = tool.tightestWindow?.usedPercent ?? 0
             if tightest >= 95 { return 1 }
             if let last = tool.lastActivity, now.timeIntervalSince(last) < 120 { return 2 }

@@ -157,20 +157,22 @@ public struct ClaudeStatusLineSetup: Sendable {
         mkdir -p "$DIR"
         umask 077
         RAW="$(mktemp -t brim-statusline)"
-        trap 'rm -f "$RAW" "$DIR/claude-statusline.limits.tmp" "$DIR/claude-statusline.json.tmp"' EXIT
+        # Unique names per run: several Claude Code sessions run this at the same moment.
+        LIMITS="$(mktemp "$DIR/statusline-limits.XXXXXX")"
+        TMP="$(mktemp "$DIR/statusline-json.XXXXXX")"
+        trap 'rm -f "$RAW" "$LIMITS" "$TMP"' EXIT
         chmod 600 "$RAW"
         printf '%s' "$INPUT" > "$RAW"
-        TMP="$DIR/claude-statusline.json.tmp"
-        if plutil -extract rate_limits json -o "$DIR/claude-statusline.limits.tmp" "$RAW" 2>/dev/null; then
+        if plutil -extract rate_limits json -o "$LIMITS" "$RAW" 2>/dev/null; then
           printf '{"rate_limits":' > "$TMP"
-          cat "$DIR/claude-statusline.limits.tmp" >> "$TMP"
+          cat "$LIMITS" >> "$TMP"
           printf '}' >> "$TMP"
         else
           printf '{"rate_limits":{}}' > "$TMP"
         fi
         chmod 600 "$TMP"
         mv -f "$TMP" "$DIR/claude-statusline.json"
-        rm -f "$RAW" "$DIR/claude-statusline.limits.tmp"
+        rm -f "$RAW" "$LIMITS"
         trap - EXIT
         if [ -s "$DIR/claude-statusline.previous" ]; then
           printf '%s' "$INPUT" | sh -c "$(cat "$DIR/claude-statusline.previous")"

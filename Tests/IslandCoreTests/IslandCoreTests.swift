@@ -197,13 +197,37 @@ final class ConnectionTests: XCTestCase {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).appendingPathComponent("connections.json")
         defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
         let store = ConnectionStore(url: url)
-        XCTAssertEqual(store.load().connections, []) // first run starts empty; the app asks the user
-        var file = store.load()
+        XCTAssertEqual(store.load()?.connections, []) // first run starts empty; the app asks the user
+        var file = try XCTUnwrap(store.load())
         var custom = file.add(.customEndpoint, name: "Acme")
         custom.options[Connection.Option.url] = "https://api.acme.dev/usage"
         file.connections[file.connections.count - 1] = custom
         try store.save(file)
         XCTAssertEqual(store.load(), file)
+    }
+
+    func testUnreadableConnectionsAreKeptNotEmptied() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).appendingPathComponent("connections.json")
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        // A kind this build doesn't know, as a newer `brim` could write.
+        let newer = Data(#"{"version":1,"connections":[{"id":"x","kind":"futuretool","name":"F","planID":"","isEnabled":true,"options":{}}]}"#.utf8)
+        try newer.write(to: url)
+        XCTAssertNil(ConnectionStore(url: url).load())
+        XCTAssertEqual(try Data(contentsOf: url.appendingPathExtension("unreadable")), newer)
+        XCTAssertEqual(try Data(contentsOf: url), newer)
+    }
+
+    func testUnreadableJSONFileIsCopiedAside() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let file = JSONFile<[String]>("notes.json", directory: folder)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try Data("{not json".utf8).write(to: file.url)
+        XCTAssertNil(file.load())
+        XCTAssertEqual(try String(contentsOf: file.url.appendingPathExtension("unreadable")), "{not json")
+        XCTAssertNil(JSONFile<[String]>("missing.json", directory: folder).load())
+        XCTAssertFalse(FileManager.default.fileExists(atPath: folder.appendingPathComponent("missing.json.unreadable").path))
     }
 
     func testDetectsLogToolsWithRecentActivity() throws {
@@ -667,5 +691,54 @@ final class StatusLineBridgeHardeningTests: XCTestCase {
         let attrs = try FileManager.default.attributesOfItem(atPath: setup.dataURL.path)
         let mode = attrs[.posixPermissions] as? NSNumber
         XCTAssertEqual(mode?.intValue ?? 0, 0o600)
+    }
+}
+
+final class ClaudeCredentialsNewerTests: XCTestCase {
+    func testOnlyDifferentLongerLivedTokensAreNewer() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let brim = ClaudeCredentials(accessToken: "a1", refreshToken: "r1", expiresAt: now, subscriptionType: nil)
+        // Claude Code renewed: new tokens that last longer.
+        XCTAssertTrue(ClaudeCredentials(accessToken: "a2", refreshToken: "r2", expiresAt: now.addingTimeInterval(3600), subscriptionType: nil).isNewer(than: brim))
+        // Same tokens: nothing to adopt.
+        XCTAssertFalse(ClaudeCredentials(accessToken: "a1", refreshToken: "r1", expiresAt: now, subscriptionType: nil).isNewer(than: brim))
+        // Brim renewed but couldn't sync: Claude Code's copy is older and must not win.
+        XCTAssertFalse(ClaudeCredentials(accessToken: "a0", refreshToken: "r0", expiresAt: now.addingTimeInterval(-3600), subscriptionType: nil).isNewer(than: brim))
+        XCTAssertTrue(brim.isNewer(than: nil))
+    }
+}
+
+final class StatusLineBridgeConcurrencyTests: XCTestCase {
+    /// Several Claude Code sessions run the bridge at the same moment; the saved file must stay valid.
+    func testConcurrentRunsLeaveValidJSON() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let setup = ClaudeStatusLineSetup(supportDirectory: root.appendingPathComponent("support"), settingsURL: root.appendingPathComponent("claude/settings.json"))
+        try setup.connect()
+        let input = #"{"rate_limits":{"five_hour":{"used_percentage":42,"resets_at":1800000000}},"model":{"id":"x"}}"#
+        let group = DispatchGroup()
+        for _ in 0..<24 {
+            group.enter()
+            DispatchQueue.global().async {
+                let process = Process()
+                process.executableURL = URL(fileURLWithPath: "/bin/sh")
+                process.arguments = [setup.scriptURL.path]
+                let pipe = Pipe()
+                process.standardInput = pipe
+                process.standardOutput = FileHandle.nullDevice
+                try? process.run()
+                pipe.fileHandleForWriting.write(Data(input.utf8))
+                try? pipe.fileHandleForWriting.close()
+                process.waitUntilExit()
+                group.leave()
+            }
+        }
+        group.wait()
+        let saved = try Data(contentsOf: setup.dataURL)
+        let object = try XCTUnwrap(try JSONSerialization.jsonObject(with: saved) as? [String: Any])
+        XCTAssertNotNil((object["rate_limits"] as? [String: Any])?["five_hour"])
+        // No temp files left behind.
+        let leftovers = try FileManager.default.contentsOfDirectory(atPath: setup.supportDirectory.path).filter { $0.hasPrefix("statusline-") }
+        XCTAssertEqual(leftovers, [])
     }
 }

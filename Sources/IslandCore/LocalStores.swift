@@ -13,11 +13,24 @@ public struct JSONFile<Value: Codable> {
             .appendingPathComponent("Brim", isDirectory: true)
     }
 
+    /// The saved value, or nil when there is none. A file that exists but can't be decoded is copied
+    /// to `<name>.unreadable` first, so the empty start that follows can't erase it for good.
     public func load() -> Value? {
         guard let data = try? Data(contentsOf: url) else { return nil }
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
-        return try? decoder.decode(Value.self, from: data)
+        guard let value = try? decoder.decode(Value.self, from: data) else {
+            JSONFile.keepUnreadable(url)
+            return nil
+        }
+        return value
+    }
+
+    /// Copies a file that couldn't be read to `<name>.unreadable`, replacing an older copy.
+    public static func keepUnreadable(_ url: URL) {
+        let backup = url.appendingPathExtension("unreadable")
+        try? FileManager.default.removeItem(at: backup)
+        try? FileManager.default.copyItem(at: url, to: backup)
     }
 
     public func save(_ value: Value) {

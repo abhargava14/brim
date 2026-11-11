@@ -187,6 +187,15 @@ public struct ClaudeCredentials: Equatable, Sendable, CustomStringConvertible {
         return expiresAt <= now.addingTimeInterval(60)
     }
 
+    /// True when these are different tokens that last at least as long as `other`: Claude Code
+    /// renewed (or re-signed in) since Brim copied them. An older copy never replaces a newer one,
+    /// e.g. when Brim renewed but couldn't write the result back to Claude Code.
+    public func isNewer(than other: ClaudeCredentials?) -> Bool {
+        guard let other else { return true }
+        guard accessToken != other.accessToken || refreshToken != other.refreshToken else { return false }
+        return (expiresAt ?? .distantPast) >= (other.expiresAt ?? .distantPast)
+    }
+
     public var description: String { "ClaudeCredentials(<redacted>)" }
 }
 

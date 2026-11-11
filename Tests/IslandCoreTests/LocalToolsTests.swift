@@ -293,3 +293,24 @@ final class ClipTextTests: XCTestCase {
         XCTAssertEqual(ClipText.stats("a"), "1 character · 1 word")
     }
 }
+
+final class ForecastTimeZoneTests: XCTestCase {
+    func testKeepsThePlacesZoneForItsDays() throws {
+        // London in summer (UTC+1): one day of two hours and one daily row.
+        let json = #"{"utc_offset_seconds":3600,"current":{"temperature_2m":18,"weather_code":2},"hourly":{"time":["2026-07-01T00:00","2026-07-01T23:00"],"temperature_2m":[14,15],"weather_code":[1,1],"precipitation_probability":[0,0]},"daily":{"time":["2026-07-01"],"temperature_2m_max":[21],"temperature_2m_min":[13],"weather_code":[2],"precipitation_probability_max":[10],"sunrise":["2026-07-01T04:45"],"sunset":["2026-07-01T21:20"]}}"#
+        let forecast = try XCTUnwrap(OpenMeteo.parse(Data(json.utf8), place: "London"))
+        XCTAssertEqual(forecast.timeZone.secondsFromGMT(), 3600)
+        // Both hours belong to London's 1 July, whatever zone this Mac is in.
+        XCTAssertEqual(forecast.hours(on: forecast.days[0].date).count, 2)
+        var london = Calendar(identifier: .gregorian)
+        london.timeZone = forecast.timeZone
+        XCTAssertEqual(london.component(.hour, from: try XCTUnwrap(forecast.days[0].sunrise)), 4)
+    }
+
+    func testOldSavedForecastStillDecodes() throws {
+        let old = #"{"current":{"temperature":1,"feelsLike":1,"humidity":1,"windSpeed":1,"uvIndex":1,"code":1,"isDay":true},"hours":[],"days":[],"fetchedAt":0,"place":"X"}"#
+        let forecast = try JSONDecoder().decode(Forecast.self, from: Data(old.utf8))
+        XCTAssertNil(forecast.utcOffset)
+        XCTAssertEqual(forecast.timeZone, .current)
+    }
+}

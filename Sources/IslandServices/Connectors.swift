@@ -544,9 +544,8 @@ public enum Keychain {
     public static func migrateLegacy(accounts: [String], allowPrompt: Bool = false) {
         for account in accounts {
             guard let token = read(account, service: legacyService, allowPrompt: allowPrompt) else { continue }
-            if read(account, allowPrompt: allowPrompt) == nil {
-                save(token, for: account, allowPrompt: allowPrompt)
-            }
+            // Only drop the old copy once the new one is safely saved.
+            guard read(account, allowPrompt: allowPrompt) != nil || save(token, for: account, allowPrompt: allowPrompt) else { continue }
             delete(account, service: legacyService)
         }
     }

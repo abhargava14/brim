@@ -60,8 +60,6 @@ final class IslandState: ObservableObject {
 
     /// Connection count used to size the horizontal expanded island (Cards / Strip).
     @Published var expandedToolCount: Int = 0
-    /// When true, expanded columns use the narrow Strip layout.
-    @Published var expandedLayoutIsStrip: Bool = false
 
     var compactWidth: CGFloat { compactWidth(for: nil) }
     var expandedWidth: CGFloat {

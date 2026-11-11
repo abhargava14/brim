@@ -25,5 +25,6 @@ let package = Package(
         // `brim`: connect tools and check usage from the terminal.
         .executableTarget(name: "BrimCLI", dependencies: ["IslandCore", "IslandServices"]),
         .testTarget(name: "IslandCoreTests", dependencies: ["IslandCore"]),
+        .testTarget(name: "IslandServicesTests", dependencies: ["IslandServices"]),
     ]
 )
